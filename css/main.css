@@ -1,0 +1,175 @@
+/* WhatsApp Android Dark Mode - Core Variables & Reset */
+:root {
+  --wa-bg-main: #0b141a;
+  --wa-surface: #111b21;
+  --wa-surface-elevated: #1f2c34;
+  --wa-divider-strip: #070d11;
+
+  /* Bubbles */
+  --wa-bubble-incoming: #1f2c34;
+  --wa-bubble-outgoing: #1d3c4e;
+  --wa-bubble-outgoing-green: #005c4b;
+  --wa-bubble-inner-card: #162f3e;
+  --wa-bubble-inner-card-green: #025144;
+
+  /* Typography */
+  --wa-text-primary: #e9edef;
+  --wa-text-secondary: #8696a0;
+  --wa-text-subtle: #667781;
+
+  /* Accents */
+  --wa-green: #25d366;
+  --wa-green-active-chip: #0a332c;
+  --wa-cyan: #53bdeb;
+  --wa-danger: #f15c6d;
+
+  /* Safe Area & Heights */
+  --app-height: 100dvh;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  width: 100%;
+  height: var(--app-height);
+  background-color: var(--wa-bg-main);
+  color: var(--wa-text-primary);
+  font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app-root {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--wa-bg-main);
+}
+
+.screen-view {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Button & Input Resets */
+button {
+  background: none;
+  border: none;
+  outline: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+input, textarea, select {
+  font: inherit;
+  color: var(--wa-text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+/* Common App Bar */
+.wa-app-bar {
+  height: 56px;
+  min-height: 56px;
+  background-color: var(--wa-surface);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  z-index: 10;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.app-title {
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--wa-text-primary);
+  letter-spacing: -0.2px;
+}
+
+.center-title {
+  flex: 1;
+  text-align: center;
+  font-size: 19px;
+  font-weight: 500;
+}
+
+.app-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-bar-icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: var(--wa-text-secondary);
+  transition: background 0.15s;
+}
+
+.app-bar-icon-btn:active {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--wa-text-primary);
+}
+
+.app-bar-text-btn {
+  color: var(--wa-green);
+  font-weight: 600;
+  padding: 6px 12px;
+  font-size: 15px;
+}
+
+/* Thick Section Separator Strip */
+.thick-section-divider {
+  width: 100%;
+  height: 8px;
+  background-color: var(--wa-divider-strip);
+  margin: 8px 0;
+}
+
+/* Utility Colors & Text */
+.danger-text {
+  color: var(--wa-danger) !important;
+}
+
+.read-receipt-blue {
+  color: var(--wa-cyan) !important;
+}
+
+.receipt-grey {
+  color: var(--wa-text-secondary) !important;
+}
+
+.call-missed-red {
+  color: var(--wa-danger) !important;
+}
+
+.call-incoming-green, .call-outgoing-green {
+  color: var(--wa-green) !important;
+}
+
+/* Bidirectional Text */
+[dir="auto"] {
+  text-align: start;
+}

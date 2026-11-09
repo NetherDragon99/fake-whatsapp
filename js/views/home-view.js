@@ -1,0 +1,587 @@
+// Screen 1: Home View (Chats Tab)
+import { Icons } from '../icons.js';
+import { db } from '../db.js';
+import { PinDialog } from '../components/pin-dialog.js';
+import { Toast } from '../components/toast.js';
+
+export class HomeView {
+  constructor(router) {
+    this.router = router;
+    this.container = null;
+    this.activeFilter = 'All'; // 'All', 'Unread', 'Favourites', 'Groups', or custom list id
+    this.selectedChatIds = new Set();
+    this.isSelectionMode = false;
+  }
+
+  async render(rootEl) {
+    this.container = rootEl;
+    this.selectedChatIds.clear();
+    this.isSelectionMode = false;
+
+    rootEl.innerHTML = `
+      <div class="screen-view home-screen">
+        <!-- Default App Bar -->
+        <header class="wa-app-bar" id="home-default-bar">
+          <div class="app-title">WhatsApp</div>
+          <div class="app-bar-actions">
+            <button class="app-bar-icon-btn" id="btn-open-gallery" title="Gallery">
+              ${Icons.gallery('', 22)}
+            </button>
+          </div>
+        </header>
+
+        <!-- Selection Mode Action Bar (replaces app bar when chats are selected) -->
+        <header class="wa-app-bar selection-bar" id="home-selection-bar" style="display:none;">
+          <div class="selection-left">
+            <button class="app-bar-icon-btn" id="btn-cancel-selection">${Icons.arrowBack('', 24)}</button>
+            <span class="selection-count" id="selection-count-text">1</span>
+          </div>
+          <div class="app-bar-actions">
+            <button class="app-bar-icon-btn" id="btn-pin-selected" title="Pin / Unpin">${Icons.pin('', 20)}</button>
+            <button class="app-bar-icon-btn" id="btn-delete-selected" title="Delete">${Icons.trash('', 20)}</button>
+            <button class="app-bar-icon-btn" id="btn-archive-selected" title="Archive">${Icons.archive('', 20)}</button>
+            <button class="app-bar-icon-btn" id="btn-mark-unread" title="Mark as unread">${Icons.unread('', 20)}</button>
+            <button class="app-bar-icon-btn" id="btn-fav-selected" title="Favourite">${Icons.star('', 20)}</button>
+          </div>
+        </header>
+
+        <!-- Search Bar Pill -->
+        <div class="home-search-wrap">
+          <div class="home-search-pill">
+            ${Icons.search('search-icon', 18)}
+            <input type="text" id="home-search-input" placeholder="Search" />
+            <button class="search-clear-btn" id="btn-clear-search" style="display:none;">${Icons.close('', 16)}</button>
+          </div>
+        </div>
+
+        <!-- Filter Chips Bar -->
+        <div class="filter-chips-scroller" id="filter-chips-bar">
+          <!-- Populated dynamically -->
+        </div>
+
+        <!-- Chat List Container -->
+        <div class="chat-list-scroller" id="chat-list-container">
+          <!-- Populated dynamically -->
+        </div>
+
+        <!-- Floating Action Button (FAB) -->
+        <button class="wa-fab" id="home-fab-import" title="Import WhatsApp Export">
+          ${Icons.chatPlus('fab-icon', 26)}
+        </button>
+
+        <!-- Bottom Navigation Bar (3 Tabs Only) -->
+        <nav class="wa-bottom-nav">
+          <a href="#/chats" class="nav-tab active">
+            <div class="tab-icon-wrap">${Icons.chatsTab('', 22)}</div>
+            <span class="tab-label">Chats</span>
+          </a>
+          <a href="#/calls" class="nav-tab">
+            <div class="tab-icon-wrap">${Icons.callsTab('', 22)}</div>
+            <span class="tab-label">Calls</span>
+          </a>
+          <a href="#/settings" class="nav-tab">
+            <div class="tab-icon-wrap">${Icons.settingsTab('', 22)}</div>
+            <span class="tab-label">Settings</span>
+          </a>
+        </nav>
+      </div>
+    `;
+
+    this.bindEvents();
+    await this.loadFilterChips();
+    await this.loadChatList();
+  }
+
+  bindEvents() {
+    // Gallery button
+    this.container.querySelector('#btn-open-gallery').addEventListener('click', () => {
+      this.router.navigate('#/gallery');
+    });
+
+    // FAB button -> trigger import modal
+    this.container.querySelector('#home-fab-import').addEventListener('click', () => {
+      if (window.app && window.app.showImportModal) {
+        window.app.showImportModal();
+      }
+    });
+
+    // Search input
+    const searchInput = this.container.querySelector('#home-search-input');
+    const clearBtn = this.container.querySelector('#btn-clear-search');
+    searchInput.addEventListener('input', (e) => {
+      const q = e.target.value;
+      if (q.trim()) {
+        clearBtn.style.display = 'block';
+      } else {
+        clearBtn.style.display = 'none';
+      }
+      this.filterChats(q);
+    });
+
+    clearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      clearBtn.style.display = 'none';
+      this.filterChats('');
+    });
+
+    // Selection bar actions
+    this.container.querySelector('#btn-cancel-selection').addEventListener('click', () => this.exitSelectionMode());
+    this.container.querySelector('#btn-pin-selected').addEventListener('click', () => this.togglePinSelected());
+    this.container.querySelector('#btn-delete-selected').addEventListener('click', () => this.deleteSelected());
+    this.container.querySelector('#btn-archive-selected').addEventListener('click', () => this.toggleArchiveSelected());
+    this.container.querySelector('#btn-mark-unread').addEventListener('click', () => this.markSelectedUnread());
+    this.container.querySelector('#btn-fav-selected').addEventListener('click', () => this.toggleFavSelected());
+  }
+
+  async loadFilterChips() {
+    const chipsBar = this.container.querySelector('#filter-chips-bar');
+    const customFilters = await db.getFilters();
+
+    const standardFilters = [
+      { id: 'All', name: 'All' },
+      { id: 'Unread', name: 'Unread' },
+      { id: 'Favourites', name: 'Favourites' },
+      { id: 'Groups', name: 'Groups' }
+    ];
+
+    chipsBar.innerHTML = '';
+
+    standardFilters.forEach((f) => {
+      const chip = document.createElement('button');
+      chip.className = `filter-chip ${this.activeFilter === f.id ? 'active' : ''}`;
+      chip.dataset.filterId = f.id;
+      chip.textContent = f.name;
+      chip.addEventListener('click', () => {
+        this.activeFilter = f.id;
+        this.updateActiveChip();
+        this.loadChatList();
+      });
+      chipsBar.appendChild(chip);
+    });
+
+    // Add custom user filters
+    customFilters.forEach((cf) => {
+      const chip = document.createElement('button');
+      chip.className = `filter-chip ${this.activeFilter === cf.id ? 'active' : ''}`;
+      chip.dataset.filterId = cf.id;
+      chip.textContent = cf.name;
+      chip.addEventListener('click', () => {
+        this.activeFilter = cf.id;
+        this.updateActiveChip();
+        this.loadChatList();
+      });
+      chipsBar.appendChild(chip);
+    });
+
+    // Last chip: "+" button to open New List screen
+    const plusChip = document.createElement('button');
+    plusChip.className = 'filter-chip chip-add-list';
+    plusChip.title = 'New list';
+    plusChip.innerHTML = `+`;
+    plusChip.addEventListener('click', () => {
+      this.router.navigate('#/new-list');
+    });
+    chipsBar.appendChild(plusChip);
+  }
+
+  updateActiveChip() {
+    const chips = this.container.querySelectorAll('.filter-chip');
+    chips.forEach((c) => {
+      if (c.dataset.filterId === this.activeFilter) {
+        c.classList.add('active');
+      } else {
+        c.classList.remove('active');
+      }
+    });
+  }
+
+  async loadChatList() {
+    const listEl = this.container.querySelector('#chat-list-container');
+    const allChats = await db.getChats();
+
+    // Check if any chat is locked or archived
+    const hasLocked = allChats.some((c) => c.isLocked);
+    const hasArchived = allChats.some((c) => c.isArchived);
+
+    // Apply active filter
+    let filteredChats = allChats.filter((c) => !c.isArchived && !c.isLocked);
+
+    if (this.activeFilter === 'Unread') {
+      filteredChats = filteredChats.filter((c) => c.unreadCount > 0);
+    } else if (this.activeFilter === 'Favourites') {
+      filteredChats = filteredChats.filter((c) => c.isFavourite);
+    } else if (this.activeFilter === 'Groups') {
+      filteredChats = filteredChats.filter((c) => c.isGroup);
+    } else if (this.activeFilter !== 'All') {
+      // Custom filter
+      const customFilter = (await db.getFilters()).find((f) => f.id === this.activeFilter);
+      if (customFilter && customFilter.chatIds) {
+        filteredChats = filteredChats.filter((c) => customFilter.chatIds.includes(c.id));
+      }
+    }
+
+    // Sort: pinned first, then newest updatedAt
+    filteredChats.sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return (b.updatedAt || 0) - (a.updatedAt || 0);
+    });
+
+    listEl.innerHTML = '';
+
+    // Locked Chats Row (if any locked chats exist)
+    if (hasLocked) {
+      const lockedRow = document.createElement('div');
+      lockedRow.className = 'special-chat-row locked-row';
+      lockedRow.innerHTML = `
+        <div class="special-icon">${Icons.lock('', 22)}</div>
+        <div class="special-content">
+          <div class="special-title">Locked chats</div>
+        </div>
+      `;
+      lockedRow.addEventListener('click', async () => {
+        const unlocked = await PinDialog.promptUnlock();
+        if (unlocked) {
+          this.activeFilter = 'Locked';
+          this.renderLockedChats(allChats.filter((c) => c.isLocked));
+        }
+      });
+      listEl.appendChild(lockedRow);
+    }
+
+    // Archived Chats Row (if any archived chats exist)
+    if (hasArchived) {
+      const archivedCount = allChats.filter((c) => c.isArchived).length;
+      const archivedRow = document.createElement('div');
+      archivedRow.className = 'special-chat-row archived-row';
+      archivedRow.innerHTML = `
+        <div class="special-icon">${Icons.archive('', 22)}</div>
+        <div class="special-content">
+          <div class="special-title">Archived</div>
+        </div>
+        <div class="special-meta">${archivedCount}</div>
+      `;
+      archivedRow.addEventListener('click', () => {
+        this.renderArchivedChats(allChats.filter((c) => c.isArchived));
+      });
+      listEl.appendChild(archivedRow);
+    }
+
+    if (filteredChats.length === 0) {
+      const emptyDiv = document.createElement('div');
+      emptyDiv.className = 'empty-chats-state';
+      emptyDiv.innerHTML = `
+        <div class="empty-icon">${Icons.chatsTab('', 48)}</div>
+        <h3>No conversations yet</h3>
+        <p>Tap the green chat button below to restore your WhatsApp chat archives.</p>
+      `;
+      listEl.appendChild(emptyDiv);
+      return;
+    }
+
+    filteredChats.forEach((chat) => {
+      const item = this.createChatItemElement(chat);
+      listEl.appendChild(item);
+    });
+  }
+
+  createChatItemElement(chat) {
+    const item = document.createElement('div');
+    item.className = 'chat-list-item';
+    item.dataset.chatId = chat.id;
+
+    const lastMsg = chat.lastMessage || {};
+    const timeFormatted = lastMsg.timestamp ? this.formatChatDate(lastMsg.timestamp) : '';
+
+    let checkIcon = '';
+    if (lastMsg.isOutgoing) {
+      checkIcon = Icons.checks(true, 'list-check', 16);
+    }
+
+    let mediaPrefix = '';
+    if (lastMsg.mediaType === 'image') mediaPrefix = `${Icons.gallery('', 14)} Photo`;
+    else if (lastMsg.mediaType === 'video') mediaPrefix = `${Icons.callVideo('', 14)} Video`;
+    else if (lastMsg.mediaType === 'audio') mediaPrefix = `${Icons.mic('', 14)} Voice note`;
+    else if (lastMsg.mediaType === 'pdf') mediaPrefix = `${Icons.pdfIcon('', 14)} PDF`;
+    else if (lastMsg.mediaType === 'document') mediaPrefix = `${Icons.documentIcon('', 14)} Document`;
+
+    const previewText = mediaPrefix || (lastMsg.text ? lastMsg.text.replace(/\n/g, ' ') : 'No messages yet');
+
+    item.innerHTML = `
+      <div class="chat-avatar-wrap">
+        ${chat.avatarBlob ? `<img src="${URL.createObjectURL(chat.avatarBlob)}" class="chat-avatar-img" />` : (chat.isGroup ? Icons.groupAvatar('', 50) : Icons.userAvatar('', 50))}
+      </div>
+      <div class="chat-main-wrap">
+        <div class="chat-top-row">
+          <span class="chat-title" dir="auto">${chat.name}</span>
+          <span class="chat-time ${chat.unreadCount > 0 ? 'unread-time' : ''}">${timeFormatted}</span>
+        </div>
+        <div class="chat-bottom-row">
+          <div class="chat-snippet" dir="auto">
+            ${checkIcon}
+            <span class="snippet-text">${previewText}</span>
+          </div>
+          <div class="chat-badges">
+            ${chat.isPinned ? `<span class="pin-badge">${Icons.pin('', 14)}</span>` : ''}
+            ${chat.unreadCount > 0 ? `<span class="unread-pill">${chat.unreadCount}</span>` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Long press detection for selection mode
+    let pressTimer = null;
+    item.addEventListener('touchstart', (e) => {
+      pressTimer = setTimeout(() => {
+        this.enterSelectionMode(chat.id);
+      }, 500);
+    }, { passive: true });
+
+    item.addEventListener('touchend', () => {
+      if (pressTimer) clearTimeout(pressTimer);
+    });
+
+    item.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      this.enterSelectionMode(chat.id);
+    });
+
+    // Item click
+    item.addEventListener('click', () => {
+      if (this.isSelectionMode) {
+        this.toggleItemSelection(chat.id);
+      } else {
+        this.router.navigate(`#/chat/${chat.id}`);
+      }
+    });
+
+    return item;
+  }
+
+  formatChatDate(timestamp) {
+    const date = new Date(timestamp);
+    const today = new Date();
+    const isToday = date.toDateString() === today.toDateString();
+
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    const isYesterday = date.toDateString() === yesterday.toDateString();
+
+    if (isToday) {
+      return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+    } else if (isYesterday) {
+      return 'Yesterday';
+    } else {
+      return date.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' });
+    }
+  }
+
+  // --- Selection Mode ---
+  enterSelectionMode(chatId) {
+    this.isSelectionMode = true;
+    this.selectedChatIds.clear();
+    this.selectedChatIds.add(chatId);
+    this.updateSelectionBar();
+  }
+
+  toggleItemSelection(chatId) {
+    if (this.selectedChatIds.has(chatId)) {
+      this.selectedChatIds.delete(chatId);
+    } else {
+      this.selectedChatIds.add(chatId);
+    }
+
+    if (this.selectedChatIds.size === 0) {
+      this.exitSelectionMode();
+    } else {
+      this.updateSelectionBar();
+    }
+  }
+
+  updateSelectionBar() {
+    const defaultBar = this.container.querySelector('#home-default-bar');
+    const selectBar = this.container.querySelector('#home-selection-bar');
+    const countText = this.container.querySelector('#selection-count-text');
+
+    defaultBar.style.display = 'none';
+    selectBar.style.display = 'flex';
+    countText.textContent = this.selectedChatIds.size;
+
+    this.container.querySelectorAll('.chat-list-item').forEach((item) => {
+      const id = item.dataset.chatId;
+      if (this.selectedChatIds.has(id)) {
+        item.classList.add('selected');
+      } else {
+        item.classList.remove('selected');
+      }
+    });
+  }
+
+  exitSelectionMode() {
+    this.isSelectionMode = false;
+    this.selectedChatIds.clear();
+
+    const defaultBar = this.container.querySelector('#home-default-bar');
+    const selectBar = this.container.querySelector('#home-selection-bar');
+
+    defaultBar.style.display = 'flex';
+    selectBar.style.display = 'none';
+
+    this.container.querySelectorAll('.chat-list-item').forEach((item) => {
+      item.classList.remove('selected');
+    });
+  }
+
+  async togglePinSelected() {
+    for (const id of this.selectedChatIds) {
+      const chat = await db.getChat(id);
+      if (chat) {
+        await db.updateChat(id, { isPinned: !chat.isPinned });
+      }
+    }
+    this.exitSelectionMode();
+    this.loadChatList();
+  }
+
+  async toggleArchiveSelected() {
+    for (const id of this.selectedChatIds) {
+      const chat = await db.getChat(id);
+      if (chat) {
+        await db.updateChat(id, { isArchived: !chat.isArchived });
+      }
+    }
+    this.exitSelectionMode();
+    this.loadChatList();
+  }
+
+  async markSelectedUnread() {
+    for (const id of this.selectedChatIds) {
+      const chat = await db.getChat(id);
+      if (chat) {
+        const newUnread = chat.unreadCount > 0 ? 0 : 1;
+        await db.updateChat(id, { unreadCount: newUnread });
+      }
+    }
+    this.exitSelectionMode();
+    this.loadChatList();
+  }
+
+  async toggleFavSelected() {
+    for (const id of this.selectedChatIds) {
+      const chat = await db.getChat(id);
+      if (chat) {
+        await db.updateChat(id, { isFavourite: !chat.isFavourite });
+      }
+    }
+    Toast.show('Favourites updated');
+    this.exitSelectionMode();
+    this.loadChatList();
+  }
+
+  async deleteSelected() {
+    if (confirm(`Delete ${this.selectedChatIds.size} selected chat(s)?`)) {
+      for (const id of this.selectedChatIds) {
+        await db.deleteChat(id);
+      }
+      Toast.show('Chat(s) deleted');
+      this.exitSelectionMode();
+      this.loadChatList();
+    }
+  }
+
+  // Live in-message & chat search
+  async filterChats(query) {
+    const listEl = this.container.querySelector('#chat-list-container');
+    if (!query || !query.trim()) {
+      this.loadChatList();
+      return;
+    }
+
+    const q = query.toLowerCase().trim();
+    const chats = await db.getChats();
+    const nameMatches = chats.filter((c) => c.name.toLowerCase().includes(q));
+
+    // Deep search in message contents
+    const messageMatches = await db.searchMessages(q);
+    const chatIdsWithMessageMatches = new Set(messageMatches.map((m) => m.chatId));
+
+    listEl.innerHTML = '';
+
+    // Render name matches
+    if (nameMatches.length > 0) {
+      const sectionHeader = document.createElement('div');
+      sectionHeader.className = 'search-results-divider';
+      sectionHeader.textContent = 'CHATS';
+      listEl.appendChild(sectionHeader);
+
+      nameMatches.forEach((chat) => {
+        listEl.appendChild(this.createChatItemElement(chat));
+      });
+    }
+
+    // Render message snippet matches
+    if (messageMatches.length > 0) {
+      const sectionHeader = document.createElement('div');
+      sectionHeader.className = 'search-results-divider';
+      sectionHeader.textContent = 'MESSAGES';
+      listEl.appendChild(sectionHeader);
+
+      messageMatches.slice(0, 30).forEach((msg) => {
+        const item = document.createElement('div');
+        item.className = 'search-message-result-item';
+        const parentChat = chats.find((c) => c.id === msg.chatId);
+        const chatName = parentChat ? parentChat.name : 'Chat';
+
+        // Highlight matching query
+        const textEscaped = msg.text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const reg = new RegExp(`(${q})`, 'gi');
+        const highlighted = textEscaped.replace(reg, '<mark class="search-highlight">$1</mark>');
+
+        item.innerHTML = `
+          <div class="search-result-chat-name">${chatName}</div>
+          <div class="search-result-snippet" dir="auto">${highlighted}</div>
+          <div class="search-result-time">${new Date(msg.timestamp).toLocaleDateString()}</div>
+        `;
+
+        item.addEventListener('click', () => {
+          this.router.navigate(`#/chat/${msg.chatId}?msgId=${msg.id}`);
+        });
+
+        listEl.appendChild(item);
+      });
+    }
+
+    if (nameMatches.length === 0 && messageMatches.length === 0) {
+      listEl.innerHTML = `<div class="empty-chats-state"><p>No results found for "${query}"</p></div>`;
+    }
+  }
+
+  renderLockedChats(lockedChats) {
+    const listEl = this.container.querySelector('#chat-list-container');
+    listEl.innerHTML = `
+      <div class="view-header-back">
+        <button class="app-bar-icon-btn" id="btn-back-to-all">${Icons.arrowBack('', 24)}</button>
+        <h3>Locked chats</h3>
+      </div>
+    `;
+    this.container.querySelector('#btn-back-to-all').addEventListener('click', () => {
+      this.activeFilter = 'All';
+      this.loadChatList();
+    });
+    lockedChats.forEach((c) => listEl.appendChild(this.createChatItemElement(c)));
+  }
+
+  renderArchivedChats(archivedChats) {
+    const listEl = this.container.querySelector('#chat-list-container');
+    listEl.innerHTML = `
+      <div class="view-header-back">
+        <button class="app-bar-icon-btn" id="btn-back-to-all">${Icons.arrowBack('', 24)}</button>
+        <h3>Archived chats</h3>
+      </div>
+    `;
+    this.container.querySelector('#btn-back-to-all').addEventListener('click', () => {
+      this.loadChatList();
+    });
+    archivedChats.forEach((c) => listEl.appendChild(this.createChatItemElement(c)));
+  }
+}
