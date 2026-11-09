@@ -12,8 +12,8 @@
   content: '';
   position: absolute;
   inset: 0;
-  /* WhatsApp subtle dark doodle overlay */
-  background: radial-gradient(circle at 50% 50%, rgba(17, 27, 33, 0.4) 0%, rgba(11, 20, 26, 0.95) 100%);
+  /* WhatsApp subtle doodle overlay */
+  background: var(--wa-chat-doodle-tint);
   pointer-events: none;
   z-index: 1;
 }
@@ -186,13 +186,13 @@
 }
 
 .date-pill {
-  background-color: #182229;
-  color: var(--wa-text-secondary);
+  background-color: var(--wa-date-pill-bg);
+  color: var(--wa-date-pill-text);
   font-size: 12px;
   font-weight: 500;
   padding: 5px 12px;
   border-radius: 8px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
   text-transform: capitalize;
 }
 
@@ -256,7 +256,7 @@
   border-radius: 8px;
   padding: 6px 9px 4px 9px;
   position: relative;
-  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--wa-bubble-shadow);
   word-break: break-word;
 }
 
@@ -295,7 +295,11 @@
   font-size: 14.5px;
   line-height: 1.38;
   white-space: pre-wrap;
-  user-select: text;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .msg-text.is-deleted {
@@ -351,6 +355,50 @@
 }
 
 /* --- Media Elements Inside Bubbles --- */
+.sticker-bubble {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+
+.sticker-bubble .media-image-wrap {
+  background: transparent !important;
+  border-radius: 0 !important;
+  margin-bottom: 0 !important;
+  max-width: 140px !important;
+  position: relative;
+}
+
+.sticker-bubble img,
+.sticker-bubble .bubble-photo {
+  max-width: 140px !important;
+  max-height: 140px !important;
+  width: auto !important;
+  height: auto !important;
+  border-radius: 0 !important;
+  object-fit: contain !important;
+  display: block;
+}
+
+.sticker-bubble .msg-meta {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffffff !important;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 10.5px;
+  margin: 0;
+  backdrop-filter: blur(4px);
+  z-index: 2;
+}
+
+.sticker-bubble .msg-meta .receipt-check {
+  color: var(--wa-cyan) !important;
+}
+
 .media-image-wrap, .media-video-wrap {
   border-radius: 6px;
   overflow: hidden;
@@ -424,7 +472,7 @@
 .pdf-filename {
   font-size: 13.5px;
   font-weight: 500;
-  color: #ffffff;
+  color: var(--wa-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -440,8 +488,8 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  color: #ffffff;
+  background: rgba(128, 128, 128, 0.15);
+  color: var(--wa-text-primary);
   margin-left: 6px;
 }
 
@@ -636,11 +684,19 @@
 
 .react-btn {
   cursor: pointer;
-  transition: transform 0.15s;
+  transition: transform 0.15s, background-color 0.15s;
+  padding: 4px 6px;
+  border-radius: 50%;
 }
 
 .react-btn:active {
   transform: scale(1.3);
+}
+
+.react-btn.active {
+  background-color: rgba(37, 211, 102, 0.28);
+  box-shadow: 0 0 0 2px var(--wa-green);
+  transform: scale(1.15);
 }
 
 .context-action-list {

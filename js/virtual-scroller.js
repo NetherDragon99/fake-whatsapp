@@ -78,21 +78,30 @@ export class VirtualMessageScroller {
       return;
     }
 
-    let targetIdx = this.allMessages.length - 1;
     if (targetMessageId) {
       const foundIdx = this.allMessages.findIndex((m) => m.id === targetMessageId);
-      if (foundIdx !== -1) targetIdx = foundIdx;
+      const targetIdx = foundIdx !== -1 ? foundIdx : this.allMessages.length - 1;
+      this.visibleStartIndex = Math.max(0, targetIdx - Math.floor(this.CHUNK_SIZE / 2));
+      this.visibleEndIndex = Math.min(this.allMessages.length, this.visibleStartIndex + this.CHUNK_SIZE);
+    } else {
+      // Default: Initialize with the LAST chunk of the messages array (the bottom)
+      this.visibleStartIndex = Math.max(0, this.allMessages.length - this.CHUNK_SIZE);
+      this.visibleEndIndex = this.allMessages.length;
     }
 
-    this.visibleStartIndex = Math.max(0, targetIdx - this.CHUNK_SIZE + 1);
-    this.visibleEndIndex = Math.min(this.allMessages.length, this.visibleStartIndex + this.CHUNK_SIZE * 2);
-
-    this.renderBatch(this.visibleStartIndex, this.visibleEndIndex, 'replace');
+    await this.renderBatch(this.visibleStartIndex, this.visibleEndIndex, 'replace');
 
     if (targetMessageId) {
       this.scrollToMessage(targetMessageId);
     } else {
-      this.scrollToBottom(false);
+      // Immediately force scroll to the very bottom
+      this.container.scrollTop = this.container.scrollHeight;
+      requestAnimationFrame(() => {
+        this.container.scrollTop = this.container.scrollHeight;
+      });
+      setTimeout(() => {
+        this.container.scrollTop = this.container.scrollHeight;
+      }, 50);
     }
   }
 
@@ -185,6 +194,7 @@ export class VirtualMessageScroller {
   async createMessageElement(msg) {
     const row = document.createElement('div');
     row.className = `msg-row ${msg.isOutgoing ? 'outgoing' : 'incoming'}`;
+    row.id = `msg-${msg.id}`;
     row.dataset.msgId = msg.id;
 
     if (msg.isSystem) {
@@ -193,8 +203,10 @@ export class VirtualMessageScroller {
       return row;
     }
 
+    const isSticker = msg.mediaType === 'sticker' || (msg.mediaName && /\.webp$/i.test(msg.mediaName) && (!msg.text || !msg.text.trim()));
+
     const bubble = document.createElement('div');
-    bubble.className = `msg-bubble ${msg.isOutgoing ? 'bubble-outgoing' : 'bubble-incoming'} ${this.outgoingTheme === 'green' && msg.isOutgoing ? 'theme-green' : ''}`;
+    bubble.className = `msg-bubble ${msg.isOutgoing ? 'bubble-outgoing' : 'bubble-incoming'} ${this.outgoingTheme === 'green' && msg.isOutgoing ? 'theme-green' : ''} ${isSticker ? 'sticker-bubble' : ''}`;
     bubble.setAttribute('dir', 'auto');
 
     // Group sender label (for incoming messages in group chats)
@@ -446,6 +458,30 @@ export class VirtualMessageScroller {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       el.classList.add('highlight-flash');
       setTimeout(() => el.classList.remove('highlight-flash'), 2500);
+    }
+  }
+
+  updateMessageReactionDOM(msgId, reaction) {
+    const found = this.allMessages.find((m) => m.id === msgId);
+    if (found) found.reaction = reaction;
+
+    const row = this.container.querySelector(`#msg-${msgId}`) ||
+                this.container.querySelector(`[data-msg-id="${msgId}"]`);
+    if (!row) return;
+
+    const bubble = row.querySelector('.msg-bubble');
+    if (!bubble) return;
+
+    let badge = bubble.querySelector('.msg-reaction-badge');
+    if (reaction) {
+      if (!badge) {
+        badge = document.createElement('div');
+        badge.className = 'msg-reaction-badge';
+        bubble.appendChild(badge);
+      }
+      badge.textContent = reaction;
+    } else if (badge) {
+      badge.remove();
     }
   }
 

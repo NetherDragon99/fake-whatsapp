@@ -12,7 +12,7 @@ import { ImportModal } from './components/modal-import.js';
 import { Toast } from './components/toast.js';
 
 // Application Version Constant
-window.APP_VERSION = '0.0.0';
+window.APP_VERSION = '0.0.1';
 
 // Global deferred PWA install prompt holder
 window.deferredInstallPrompt = null;
@@ -29,9 +29,27 @@ class Application {
   }
 
   async init() {
+    // 0. Apply Saved Theme Mode (Light / Dark)
+    const savedTheme = localStorage.getItem('wa_theme_mode') || 'dark';
+    if (savedTheme === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light');
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', '#ffffff');
+    }
+
     // 1. Initialize IndexedDB
     try {
       await db.init();
+      const dbTheme = await db.getSetting('themeMode', savedTheme);
+      if (dbTheme === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', '#ffffff');
+      } else if (dbTheme === 'dark') {
+        document.documentElement.removeAttribute('data-theme');
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', '#0b141a');
+      }
       console.log('[DB] IndexedDB initialized successfully');
     } catch (err) {
       console.error('[DB] Failed to initialize database:', err);

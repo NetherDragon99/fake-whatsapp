@@ -1,4 +1,4 @@
-/* WhatsApp Android Dark Mode - Core Variables & Reset */
+/* WhatsApp Android Dark & Light Mode - Core Variables & Reset */
 :root {
   --wa-bg-main: #0b141a;
   --wa-surface: #111b21;
@@ -23,10 +23,52 @@
   --wa-cyan: #53bdeb;
   --wa-danger: #f15c6d;
 
+  /* Overlays & Borders */
+  --wa-chat-doodle-tint: radial-gradient(circle at 50% 50%, rgba(17, 27, 33, 0.4) 0%, rgba(11, 20, 26, 0.95) 100%);
+  --wa-date-pill-bg: #182229;
+  --wa-date-pill-text: #8696a0;
+  --wa-border-color: rgba(255, 255, 255, 0.05);
+  --wa-bubble-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
+  --wa-app-title-color: #e9edef;
+
   /* Safe Area & Heights */
   --app-height: 100dvh;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Modern WhatsApp Android Light Theme */
+[data-theme="light"] {
+  --wa-bg-main: #efeae2;
+  --wa-surface: #ffffff;
+  --wa-surface-elevated: #f0f2f5;
+  --wa-divider-strip: #e9edef;
+
+  /* Bubbles */
+  --wa-bubble-incoming: #ffffff;
+  --wa-bubble-outgoing: #d9fdd3;
+  --wa-bubble-outgoing-green: #d9fdd3;
+  --wa-bubble-inner-card: #e7f8e8;
+  --wa-bubble-inner-card-green: #e7f8e8;
+
+  /* Typography */
+  --wa-text-primary: #111b21;
+  --wa-text-secondary: #667781;
+  --wa-text-subtle: #8696a0;
+
+  /* Accents */
+  --wa-green: #008069;
+  --wa-green-active-chip: #dcf8c6;
+  --wa-cyan: #53bdeb;
+  --wa-danger: #ea0038;
+
+  /* Overlays & Borders */
+  --wa-chat-doodle-tint: radial-gradient(circle at 50% 50%, rgba(239, 234, 226, 0.5) 0%, rgba(239, 234, 226, 0.9) 100%);
+  --wa-date-pill-bg: #ffffff;
+  --wa-date-pill-text: #54656f;
+  --wa-border-color: rgba(0, 0, 0, 0.08);
+  --wa-bubble-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
+  --wa-app-title-color: #008069;
 }
 
 * {
@@ -44,8 +86,28 @@ html, body {
   font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   font-size: 15px;
   overflow: hidden;
-  user-select: none;
   -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+body, .msg-bubble, .msg-text, .msg-row, .chat-list-item {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+input, textarea, [contenteditable] {
+  -webkit-user-select: auto;
+  -moz-user-select: auto;
+  -ms-user-select: auto;
+  user-select: auto;
+  -webkit-touch-callout: default;
 }
 
 #app-root {
@@ -97,13 +159,13 @@ input, textarea, select {
   justify-content: space-between;
   padding: 0 16px;
   z-index: 10;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--wa-border-color);
 }
 
 .app-title {
   font-size: 21px;
   font-weight: 700;
-  color: var(--wa-text-primary);
+  color: var(--wa-app-title-color);
   letter-spacing: -0.2px;
 }
 

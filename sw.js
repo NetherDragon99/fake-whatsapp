@@ -1,5 +1,5 @@
 // WhatsApp Android Clone Service Worker
-const CACHE_NAME = 'wa-clone-v0.0.0';
+const CACHE_NAME = 'wa-clone-v0.0.1';
 
 const PRECACHE_ASSETS = [
   './',
@@ -31,6 +31,7 @@ const PRECACHE_ASSETS = [
   './js/views/settings-view.js',
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png',
+  './assets/icons/icon.svg',
   './assets/demo_whatsapp_archive.zip'
 ];
 

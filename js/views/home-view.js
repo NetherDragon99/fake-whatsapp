@@ -11,6 +11,15 @@ export class HomeView {
     this.activeFilter = 'All'; // 'All', 'Unread', 'Favourites', 'Groups', or custom list id
     this.selectedChatIds = new Set();
     this.isSelectionMode = false;
+    this.currentSearchQuery = '';
+  }
+
+  debounce(fn, delay = 300) {
+    let timer = null;
+    return (...args) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn.apply(this, args), delay);
+    };
   }
 
   async render(rootEl) {
@@ -105,21 +114,27 @@ export class HomeView {
       }
     });
 
-    // Search input
+    // Search input with 300ms debounce
     const searchInput = this.container.querySelector('#home-search-input');
     const clearBtn = this.container.querySelector('#btn-clear-search');
+    const debouncedFilter = this.debounce((query) => {
+      this.filterChats(query);
+    }, 300);
+
     searchInput.addEventListener('input', (e) => {
       const q = e.target.value;
+      this.currentSearchQuery = q;
       if (q.trim()) {
         clearBtn.style.display = 'block';
       } else {
         clearBtn.style.display = 'none';
       }
-      this.filterChats(q);
+      debouncedFilter(q);
     });
 
     clearBtn.addEventListener('click', () => {
       searchInput.value = '';
+      this.currentSearchQuery = '';
       clearBtn.style.display = 'none';
       this.filterChats('');
     });
@@ -196,6 +211,9 @@ export class HomeView {
   }
 
   async loadChatList() {
+    if (this.currentSearchQuery && this.currentSearchQuery.trim()) {
+      return this.filterChats(this.currentSearchQuery);
+    }
     const listEl = this.container.querySelector('#chat-list-container');
     const allChats = await db.getChats();
 
@@ -492,7 +510,9 @@ export class HomeView {
   // Live in-message & chat search
   async filterChats(query) {
     const listEl = this.container.querySelector('#chat-list-container');
+    this.currentSearchQuery = query || '';
     if (!query || !query.trim()) {
+      this.currentSearchQuery = '';
       this.loadChatList();
       return;
     }

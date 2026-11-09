@@ -13,9 +13,10 @@ export class SettingsView {
   async render(rootEl) {
     this.container = rootEl;
     const currentTheme = await db.getSetting('theme', 'slate');
+    const currentThemeMode = localStorage.getItem('wa_theme_mode') || await db.getSetting('themeMode', 'dark');
     const ownerName = await db.getSetting('ownerName', 'You');
     const storageStats = await db.getStorageUsage();
-    const appVersion = window.APP_VERSION || '0.0.0';
+    const appVersion = window.APP_VERSION || '0.0.1';
 
     // Standalone display mode check
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
@@ -54,6 +55,16 @@ export class SettingsView {
           <!-- Appearance & Bubble Theme -->
           <div class="settings-section">
             <div class="settings-section-header">Appearance</div>
+            <div class="settings-option-row clickable" id="row-theme-mode">
+              <span class="settings-icon">${Icons.star('', 20)}</span>
+              <div class="settings-texts">
+                <div class="setting-title">Theme Mode</div>
+                <div class="setting-sub" id="theme-mode-sub">${currentThemeMode === 'light' ? 'Light Mode' : 'Dark Mode'}</div>
+              </div>
+              <button class="settings-action-btn" id="btn-toggle-theme-mode">
+                ${currentThemeMode === 'light' ? 'Dark Mode' : 'Light Mode'}
+              </button>
+            </div>
             <div class="settings-option-row" id="row-bubble-theme">
               <span class="settings-icon">${Icons.star('', 20)}</span>
               <div class="settings-texts">
@@ -165,6 +176,33 @@ export class SettingsView {
         }
       });
     }
+
+    // Toggle Light / Dark Mode
+    const toggleThemeModeBtn = this.container.querySelector('#btn-toggle-theme-mode');
+    const themeModeSub = this.container.querySelector('#theme-mode-sub');
+
+    toggleThemeModeBtn.addEventListener('click', async () => {
+      const isCurrentlyLight = document.documentElement.getAttribute('data-theme') === 'light';
+      const newMode = isCurrentlyLight ? 'dark' : 'light';
+
+      if (newMode === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+      }
+
+      localStorage.setItem('wa_theme_mode', newMode);
+      await db.setSetting('themeMode', newMode);
+
+      const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+      if (metaThemeColor) {
+        metaThemeColor.setAttribute('content', newMode === 'light' ? '#ffffff' : '#0b141a');
+      }
+
+      themeModeSub.textContent = newMode === 'light' ? 'Light Mode' : 'Dark Mode';
+      toggleThemeModeBtn.textContent = newMode === 'light' ? 'Dark Mode' : 'Light Mode';
+      Toast.show(`Switched to ${newMode === 'light' ? 'Light' : 'Dark'} Mode`);
+    });
 
     // Switch Outgoing Bubble Theme
     const switchThemeBtn = this.container.querySelector('#btn-switch-theme');

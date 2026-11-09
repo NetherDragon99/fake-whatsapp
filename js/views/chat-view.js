@@ -123,10 +123,10 @@ export class ChatView {
       </div>
     `;
 
-    this.bindEvents(outgoingTheme, targetMsgId);
+    await this.bindEvents(outgoingTheme, targetMsgId);
   }
 
-  bindEvents(outgoingTheme, targetMsgId) {
+  async bindEvents(outgoingTheme, targetMsgId) {
     const messagesWrap = this.container.querySelector('#chat-messages-wrap');
 
     // Initialize Virtual Message Scroller
@@ -144,7 +144,7 @@ export class ChatView {
       }
     });
 
-    this.scroller.loadInitial(targetMsgId);
+    await this.scroller.loadInitial(targetMsgId);
 
     // Header Back
     this.container.querySelector('#btn-chat-back').addEventListener('click', () => {
@@ -462,13 +462,25 @@ export class ChatView {
     const overlay = this.container.querySelector('#msg-context-overlay');
     overlay.style.display = 'flex';
 
-    // Reactions
+    // Reactions: Highlight active reaction and toggle without re-rendering
+    const currentReaction = msg.reaction || null;
     overlay.querySelectorAll('.react-btn').forEach((btn) => {
+      const emoji = btn.dataset.emoji;
+      if (emoji === currentReaction) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+
       btn.onclick = async () => {
-        const emoji = btn.dataset.emoji;
-        await db.updateMessage(msg.id, { reaction: emoji });
+        const clickedReaction = btn.dataset.emoji;
+        const newReaction = (msg.reaction === clickedReaction) ? null : clickedReaction;
+        msg.reaction = newReaction;
+        await db.updateMessage(msg.id, { reaction: newReaction });
         overlay.style.display = 'none';
-        this.scroller.loadInitial();
+
+        // Update ONLY this message's DOM node (no scroll jump, no re-render!)
+        this.scroller.updateMessageReactionDOM(msg.id, newReaction);
       };
     });
 
