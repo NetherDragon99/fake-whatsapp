@@ -269,3 +269,4 @@ export class DrawerResizer {
     window.removeEventListener('pointercancel', this.boundPointerUp);
   }
 }
+

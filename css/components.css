@@ -2064,39 +2064,45 @@ input:checked + .switch-slider::before {
 .theme-preview-header {
   position: relative;
   z-index: 10;
-  height: 56px;
+  height: 60px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
-  background: rgba(11, 20, 26, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  padding: 8px 16px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 0) 100%);
 }
 
 .preview-header-btn {
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
 }
 
 .preview-header-title {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 19px;
+  font-weight: 500;
   color: #ffffff;
+  letter-spacing: 0.2px;
 }
 
 .preview-header-apply {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background-color: var(--app-accent, #25d366);
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   transition: transform 0.15s;
 }
 
@@ -2110,16 +2116,17 @@ input:checked + .switch-slider::before {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 16px;
+  padding: 16px 16px 140px 16px;
   gap: 12px;
+  overflow: hidden;
 }
 
 .preview-date-pill {
   align-self: center;
-  background-color: rgba(24, 34, 41, 0.85);
+  background-color: rgba(24, 34, 41, 0.88);
   color: #8696a0;
-  padding: 5px 12px;
-  border-radius: 10px;
+  padding: 4px 12px;
+  border-radius: 8px;
   font-size: 12px;
   margin-bottom: 8px;
 }
@@ -2140,21 +2147,22 @@ input:checked + .switch-slider::before {
 .preview-bubble {
   max-width: 82%;
   padding: 8px 12px;
-  border-radius: 12px;
+  border-radius: 10px;
   position: relative;
   font-size: 14.5px;
   line-height: 1.35;
   color: #ffffff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 .preview-bubble-incoming {
-  background-color: var(--wa-bubble-incoming);
+  background-color: #202c33;
+  color: #e9edef;
   border-top-left-radius: 2px;
 }
 
 .preview-bubble-outgoing {
-  background-color: var(--wa-bubble-outgoing);
+  color: #ffffff;
   border-top-right-radius: 2px;
 }
 
@@ -2169,27 +2177,37 @@ input:checked + .switch-slider::before {
 }
 
 .preview-bottom-bar {
-  position: relative;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
   z-index: 10;
-  height: 72px;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  padding: 0 20px;
+  padding: 0 20px calc(28px + env(safe-area-inset-bottom, 0px)) 20px;
+  pointer-events: none;
+}
+
+.preview-bottom-bar > * {
+  pointer-events: auto;
 }
 
 .preview-bubble-color-btn {
-  width: 44px;
-  height: 44px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
-  background-color: rgba(0, 0, 0, 0.4);
+  background-color: rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid #ffffff;
+  border: 3px solid #ffffff;
   cursor: pointer;
-  transition: transform 0.15s;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
+  transition: transform 0.15s ease;
+  margin-bottom: 2px;
 }
 
 .preview-bubble-color-btn:active {
@@ -2197,62 +2215,123 @@ input:checked + .switch-slider::before {
 }
 
 .preview-color-circle {
-  width: 28px;
-  height: 28px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
+  box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.3);
 }
 
-.preview-pagination-dots {
+.preview-pagination-capsule {
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(6px);
-  padding: 6px 12px;
-  border-radius: 16px;
+  gap: 8px;
+  background: #ffffff;
+  padding: 7px 16px;
+  border-radius: 20px;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.35);
+  margin-bottom: 8px;
+  cursor: pointer;
 }
 
 .preview-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background-color: rgba(255, 255, 255, 0.4);
-  transition: all 0.2s;
+  background-color: #c4c9cd;
+  transition: all 0.2s ease;
 }
 
 .preview-dot.active {
   width: 8px;
   height: 8px;
-  background-color: #ffffff;
+  background-color: #111b21;
 }
 
-.preview-dimmer-wrap {
-  display: flex;
-  align-items: center;
-}
-
-.dimmer-slider-pill {
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(8px);
-  border-radius: 24px;
-  padding: 10px 8px;
+.preview-right-controls {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+  position: relative;
 }
 
-.dimmer-slider-pill input[type="range"] {
-  writing-mode: vertical-lr;
-  direction: rtl;
-  width: 8px;
-  height: 90px;
-  accent-color: var(--app-accent, #25d366);
+.dimmer-slider-capsule {
+  width: 44px;
+  height: 140px;
+  border-radius: 28px;
+  background: #111b21;
+  border: 3.5px solid #ffffff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: opacity 0.22s ease, transform 0.22s ease, visibility 0.22s;
 }
 
-.dimmer-icon-box {
-  color: #ffffff;
+.dimmer-slider-capsule.hidden {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transform: scale(0.85) translateY(10px);
+}
+
+.dimmer-slider-track {
+  width: 3px;
+  height: 96px;
+  background: rgba(255, 255, 255, 0.28);
+  border-radius: 2px;
+  position: absolute;
+  pointer-events: none;
+}
+
+.dimmer-slider-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #111b21;
+  border: 2.5px solid #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  cursor: grab;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  top: 6px;
+  transition: transform 0.05s ease;
+}
+
+.dimmer-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.05);
+}
+
+.btn-toggle-dim-mode {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background-color: #ffffff;
+  color: #111b21;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s ease, background-color 0.2s ease, color 0.2s ease;
+  margin-bottom: 2px;
+}
+
+.btn-toggle-dim-mode:active {
+  transform: scale(0.92);
 }
 
 /* Universal Resizable Drawer Styles */

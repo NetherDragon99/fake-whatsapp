@@ -14,7 +14,9 @@ export class ThemePreviewView {
     this.scope = 'global';
     this.chatId = null;
     this.currentId = 'default';
-    this.dimming = 0; // 0 to 100
+    this.dimming = 35; // 0 to 75
+    this.savedDimming = 35;
+    this.isDimmingEnabled = true;
     this.bubbleColor = '#1d3c4e'; // default slate-blue
     this.presets = WALLPAPER_PRESETS;
     this.currentIndex = 0;
@@ -34,16 +36,21 @@ export class ThemePreviewView {
       const chat = await db.getChat(this.chatId);
       if (chat) {
         if (!params.wallpaper && !params.id && chat.wallpaper) this.currentId = chat.wallpaper;
-        this.dimming = chat.wallpaperDimming || 0;
+        const loadedDim = chat.wallpaperDimming;
+        this.dimming = loadedDim !== undefined ? loadedDim : 35;
         this.bubbleColor = params.bubbleColor || chat.outgoingBubbleColor || (await db.getSetting('defaultBubbleColor', '#1d3c4e'));
       }
     } else {
       if (!params.wallpaper && !params.id) {
         this.currentId = await db.getSetting('defaultWallpaper', 'default');
       }
-      this.dimming = await db.getSetting('defaultDimming', 0);
+      const loadedDim = await db.getSetting('defaultDimming', 35);
+      this.dimming = loadedDim !== undefined ? loadedDim : 35;
       this.bubbleColor = params.bubbleColor || (await db.getSetting('defaultBubbleColor', '#1d3c4e'));
     }
+
+    this.savedDimming = this.dimming > 0 ? this.dimming : 35;
+    this.isDimmingEnabled = this.dimming > 0;
 
     if (this.currentId === 'custom') {
       this.customBlob = await db.getSetting('temp_preview_wallpaper', null);
@@ -64,7 +71,7 @@ export class ThemePreviewView {
           <button type="button" class="preview-header-btn" id="btn-preview-back" aria-label="Cancel">
             ${Icons.arrowBack('', 24)}
           </button>
-          <div class="preview-header-title">Chat bubble</div>
+          <div class="preview-header-title">Preview</div>
           <button type="button" class="preview-header-apply" id="btn-preview-apply" aria-label="Apply wallpaper">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="#ffffff">
               <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
@@ -79,7 +86,7 @@ export class ThemePreviewView {
           <div class="preview-msg-row incoming">
             <div class="preview-bubble preview-bubble-incoming" dir="auto">
               <div class="preview-text">Swipe left or right to preview more wallpapers 🏞️✨</div>
-              <div class="preview-meta">8:24 am</div>
+              <div class="preview-meta">11:09 pm</div>
             </div>
           </div>
 
@@ -87,35 +94,42 @@ export class ThemePreviewView {
             <div class="preview-bubble preview-bubble-outgoing" id="preview-outgoing-bubble" dir="auto">
               <div class="preview-text">This will replace your existing default chat theme. Only you see your chat themes.</div>
               <div class="preview-meta">
-                <span>8:24 am</span>
+                <span>11:09 pm</span>
                 ${Icons.checks(true, 'preview-receipt', 15)}
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Bottom Controls Bar -->
+        <!-- Bottom Controls Bar (Aligned & Spaced authentically) -->
         <div class="preview-bottom-bar">
           <!-- Bubble Color Picker Trigger Button (Left) -->
           <button type="button" class="preview-bubble-color-btn" id="btn-open-palette" aria-label="Change bubble color" title="Change bubble color">
             <span class="preview-color-circle" id="preview-current-color-dot" style="background-color: ${this.bubbleColor};"></span>
           </button>
 
-          <!-- Pagination Dots (Center) -->
-          <div class="preview-pagination-dots" id="preview-dots-wrap">
+          <!-- Pagination Dots Capsule (Center) -->
+          <div class="preview-pagination-capsule" id="preview-dots-wrap">
             ${this.renderPaginationDots()}
           </div>
 
-          <!-- Vertical Dimming Slider Pill (Right) -->
-          <div class="preview-dimmer-wrap">
-            <div class="dimmer-slider-pill">
-              <input type="range" id="preview-dimmer-slider" min="0" max="75" value="${this.dimming}" orient="vertical" aria-label="Wallpaper brightness" />
-              <div class="dimmer-icon-box">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                  <path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0s-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0s-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41l-1.06-1.06zm1.06-10.96c.39-.39.39-1.03 0-1.41s-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36c.39-.39.39-1.03 0-1.41s-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/>
+          <!-- Vertical Dimming Slider & Sun/Moon Toggle (Right) -->
+          <div class="preview-right-controls" id="preview-right-controls">
+            <!-- Vertical Slider Capsule -->
+            <div class="dimmer-slider-capsule ${this.isDimmingEnabled ? '' : 'hidden'}" id="preview-dimmer-capsule" role="slider" aria-label="Wallpaper brightness slider" aria-valuemin="0" aria-valuemax="75" aria-valuenow="${this.dimming}">
+              <div class="dimmer-slider-track"></div>
+              <div class="dimmer-slider-thumb" id="preview-dimmer-thumb">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="3.5"/>
+                  <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
                 </svg>
               </div>
             </div>
+
+            <!-- Sun / Moon Toggle Button -->
+            <button type="button" class="btn-toggle-dim-mode" id="btn-toggle-dim-mode" aria-label="Toggle wallpaper dimming">
+              ${this.renderDimToggleIcon()}
+            </button>
           </div>
         </div>
 
@@ -158,6 +172,25 @@ export class ThemePreviewView {
     this.updateDisplay();
   }
 
+  renderDimToggleIcon() {
+    if (this.isDimmingEnabled) {
+      // Sun icon with rays
+      return `
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#111b21" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+        </svg>
+      `;
+    } else {
+      // Crescent Moon icon
+      return `
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="#111b21" stroke="none">
+          <path d="M12.3 2a10 10 0 0 0-.19 1.4 10 10 0 0 0 10 10c.48 0 .95-.04 1.4-.11a10 10 0 1 1-11.21-11.29z"/>
+        </svg>
+      `;
+    }
+  }
+
   renderPaginationDots() {
     const total = Math.min(8, this.presets.length);
     const activeDot = this.currentIndex % total;
@@ -166,6 +199,17 @@ export class ThemePreviewView {
       dots += `<span class="preview-dot ${i === activeDot ? 'active' : ''}"></span>`;
     }
     return dots;
+  }
+
+  updateDimmerThumb() {
+    const thumb = this.container ? this.container.querySelector('#preview-dimmer-thumb') : null;
+    const capsule = this.container ? this.container.querySelector('#preview-dimmer-capsule') : null;
+    if (!thumb || !capsule) return;
+    const ratio = Math.max(0, Math.min(1, this.dimming / 75));
+    // Travel range is 92px, top padding is 6px
+    const topPx = ratio * 92 + 6;
+    thumb.style.top = `${topPx}px`;
+    capsule.setAttribute('aria-valuenow', this.dimming);
   }
 
   updateDisplay() {
@@ -179,6 +223,7 @@ export class ThemePreviewView {
     if (dimLayer) {
       dimLayer.style.backgroundColor = `rgba(0, 0, 0, ${this.dimming / 100})`;
     }
+    this.updateDimmerThumb();
 
     // 2. Update Bubble Color
     if (outgoingBubble) {
@@ -225,12 +270,62 @@ export class ThemePreviewView {
       this.router.back();
     });
 
-    // Dimming slider
-    const dimmerSlider = this.container.querySelector('#preview-dimmer-slider');
-    dimmerSlider.addEventListener('input', (e) => {
-      this.dimming = parseInt(e.target.value, 10);
-      this.updateDisplay();
-    });
+    // Vertical Dimming Slider Capsule Dragging
+    const capsule = this.container.querySelector('#preview-dimmer-capsule');
+    if (capsule) {
+      let isDraggingDimmer = false;
+      const handlePointerDrag = (e) => {
+        const rect = capsule.getBoundingClientRect();
+        // Travel range is 92px (140 - 36 - 12), thumb center offset is 18px + 6px top padding
+        const rawY = e.clientY - rect.top - 18 - 6;
+        const clampedY = Math.max(0, Math.min(92, rawY));
+        const ratio = clampedY / 92;
+        this.dimming = Math.round(ratio * 75);
+        this.savedDimming = this.dimming;
+        this.updateDisplay();
+      };
+
+      capsule.addEventListener('pointerdown', (e) => {
+        isDraggingDimmer = true;
+        try { capsule.setPointerCapture(e.pointerId); } catch (err) {}
+        handlePointerDrag(e);
+      });
+
+      capsule.addEventListener('pointermove', (e) => {
+        if (!isDraggingDimmer) return;
+        handlePointerDrag(e);
+      });
+
+      const onPointerEnd = (e) => {
+        if (!isDraggingDimmer) return;
+        isDraggingDimmer = false;
+        try { capsule.releasePointerCapture(e.pointerId); } catch (err) {}
+      };
+
+      capsule.addEventListener('pointerup', onPointerEnd);
+      capsule.addEventListener('pointercancel', onPointerEnd);
+    }
+
+    // Sun / Moon Dimming Mode Toggle Button
+    const toggleBtn = this.container.querySelector('#btn-toggle-dim-mode');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        if (this.isDimmingEnabled) {
+          // Dimming enabled -> Switch to Moon: remove dimming, hide slider
+          this.isDimmingEnabled = false;
+          this.savedDimming = this.dimming || 35;
+          this.dimming = 0;
+          if (capsule) capsule.classList.add('hidden');
+        } else {
+          // Dimming disabled -> Switch to Sun: restore dimming, show slider
+          this.isDimmingEnabled = true;
+          this.dimming = this.savedDimming || 35;
+          if (capsule) capsule.classList.remove('hidden');
+        }
+        toggleBtn.innerHTML = this.renderDimToggleIcon();
+        this.updateDisplay();
+      });
+    }
 
     // Initialize Universal Resizable Drawer for Bubble Color Bottom Sheet
     const colorSheet = this.container.querySelector('#preview-color-sheet');
