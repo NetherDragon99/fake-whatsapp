@@ -214,6 +214,11 @@ export const Icons = {
       <polyline points="6 9 12 15 18 9"></polyline>
     </svg>`,
 
+  chevronRight: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>`,
+
   calendar: (cls = '', size = 20) => `
     <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>

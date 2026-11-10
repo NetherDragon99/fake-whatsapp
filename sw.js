@@ -1,5 +1,5 @@
-// WhatsApp Android Clone Service Worker v0.0.4
-const CACHE_NAME = 'wa-clone-v0.0.4';
+// WhatsApp Android Clone Service Worker v0.0.5
+const CACHE_NAME = 'wa-clone-v0.0.5';
 
 const WALLPAPER_FILES = [
   './assets/wallpapers/nature-1.webp',
