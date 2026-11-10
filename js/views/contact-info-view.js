@@ -4,7 +4,7 @@ import { db } from '../db.js';
 import { PinDialog } from '../components/pin-dialog.js';
 import { mediaLightbox } from '../components/lightbox.js';
 import { Toast } from '../components/toast.js';
-import { showConfirm } from '../components/custom-dialog.js';
+import { showConfirm, showAlert, showPrompt } from '../components/custom-dialog.js';
 import { openImageCropper } from '../components/image-cropper.js';
 
 export class ContactInfoView {
@@ -60,10 +60,12 @@ export class ContactInfoView {
         </header>
 
         <div class="contact-info-scroll-body" id="contact-scroll-body">
-          <!-- Hero Section (Collapsible on scroll) -->
+          <!-- Hero Section (Collapsible on scroll - Task 7 Avatar fix) -->
           <div class="contact-hero-card">
             <div class="hero-avatar-wrap" id="contact-hero-avatar">
-              ${avatarUrl ? `<img src="${avatarUrl}" class="hero-avatar-img" alt="Avatar" />` : (this.chat.isGroup ? Icons.groupAvatar('', 120) : Icons.userAvatar('', 120))}
+              <div class="hero-avatar-circle">
+                ${avatarUrl ? `<img src="${avatarUrl}" class="hero-avatar-img" alt="Avatar" />` : (this.chat.isGroup ? Icons.groupAvatar('', 120) : Icons.userAvatar('', 120))}
+              </div>
               <label class="hero-avatar-edit-badge" title="Change photo">
                 <input type="file" id="hero-avatar-input" accept="image/*" style="display:none;" />
                 ${Icons.camera('', 18)}
@@ -75,14 +77,72 @@ export class ContactInfoView {
 
           <div class="thick-section-divider"></div>
 
-          <!-- Media, Links, and Docs Horizontal Strip -->
+          <!-- Media, Links, and Docs Horizontal Strip with Dedicated Stickers Tab (Task 5) -->
           <div class="info-section-card">
-            <div class="section-row-header" id="btn-view-all-media">
+            <div class="section-row-header" id="btn-view-all-media" style="cursor:pointer;" title="View all in gallery">
               <span class="section-title">Media, links, and docs</span>
-              <span class="section-counter">${chatMedia.length} &gt;</span>
+              <span class="section-counter" id="info-media-total-count">${chatMedia.length} &gt;</span>
+            </div>
+            <div class="info-media-chips" style="display:flex; gap:8px; padding:4px 16px 8px 16px;">
+              <button type="button" class="filter-chip active" id="chip-show-photos">Photos &amp; Videos</button>
+              <button type="button" class="filter-chip" id="chip-show-stickers">Stickers</button>
             </div>
             <div class="media-horizontal-strip" id="info-media-strip">
               <!-- Populated dynamically -->
+            </div>
+          </div>
+
+          <div class="thick-section-divider"></div>
+
+          <!-- Chat Management Actions (Migrated from 3-Dot Menu - Task 6 & Task 10) -->
+          <div class="info-options-group">
+            <div class="option-row clickable" id="row-search-in-chat">
+              <span class="option-icon">${Icons.search('', 20)}</span>
+              <div class="option-texts">
+                <div class="option-title">Search in chat</div>
+                <div class="option-subtitle">Find messages, media, or keywords in this conversation</div>
+              </div>
+            </div>
+
+            <div class="option-row clickable" id="row-swap-perspective">
+              <span class="option-icon">${Icons.swap('', 20)}</span>
+              <div class="option-texts">
+                <div class="option-title">Swap Sender / Receiver</div>
+                <div class="option-subtitle">Flip incoming and outgoing sides for this chat</div>
+              </div>
+            </div>
+
+            <div class="option-row clickable" id="row-jump-to-date">
+              <span class="option-icon">${Icons.calendar('', 20)}</span>
+              <div class="option-texts">
+                <div class="option-title">Jump to Date</div>
+                <div class="option-subtitle">Navigate to messages from a specific date</div>
+              </div>
+              <input type="date" id="info-date-picker" style="display:none;" />
+            </div>
+
+            <div class="option-row clickable" id="row-edit-chat-info">
+              <span class="option-icon">${Icons.userAvatar('', 20)}</span>
+              <div class="option-texts">
+                <div class="option-title">Edit Chat Info</div>
+                <div class="option-subtitle">Change contact or group name</div>
+              </div>
+            </div>
+
+            <div class="option-row clickable" id="row-chat-wallpaper">
+              <span class="option-icon">${Icons.gallery('', 20)}</span>
+              <div class="option-texts">
+                <div class="option-title">Wallpaper</div>
+                <div class="option-subtitle">Change background theme and dimming</div>
+              </div>
+            </div>
+
+            <div class="option-row clickable" id="row-manage-lists">
+              <span class="option-icon">${Icons.archive('', 20)}</span>
+              <div class="option-texts">
+                <div class="option-title">Add to / Manage Lists</div>
+                <div class="option-subtitle">Organize this chat into custom home tabs</div>
+              </div>
             </div>
           </div>
 
@@ -204,41 +264,122 @@ export class ContactInfoView {
       }
     });
 
-    // Populate media horizontal strip
-    const mediaStrip = this.container.querySelector('#info-media-strip');
-    const visualMedia = chatMedia.filter((m) => {
-      const mime = m.mimeType || m.type || '';
-      return mime.startsWith('image/') || mime.startsWith('video/') || mime === 'image' || mime === 'video';
+    // View all media in gallery
+    this.container.querySelector('#btn-view-all-media').addEventListener('click', () => {
+      this.router.navigate(`#/gallery?chatId=${this.chatId}`);
     });
 
-    if (visualMedia.length === 0) {
-      mediaStrip.innerHTML = `<div class="empty-media-hint">No media shared yet</div>`;
-    } else {
-      visualMedia.slice(0, 10).forEach((med) => {
+    // Populate media horizontal strip with strict sticker separation (Task 5)
+    const isSticker = (m) => m.type === 'sticker' || m.mediaType === 'sticker' || (m.filename && /\.webp$/i.test(m.filename));
+    const photosAndVideos = chatMedia.filter((m) => {
+      const mime = m.mimeType || m.type || '';
+      const isVisual = mime.startsWith('image/') || mime.startsWith('video/') || mime === 'image' || mime === 'video';
+      return isVisual && !isSticker(m);
+    });
+    const stickerMedia = chatMedia.filter((m) => isSticker(m));
+
+    const mediaStrip = this.container.querySelector('#info-media-strip');
+    const chipPhotos = this.container.querySelector('#chip-show-photos');
+    const chipStickers = this.container.querySelector('#chip-show-stickers');
+
+    let currentStripCategory = 'photos';
+
+    const renderStrip = () => {
+      mediaStrip.innerHTML = '';
+      const items = currentStripCategory === 'photos' ? photosAndVideos : stickerMedia;
+      if (items.length === 0) {
+        mediaStrip.innerHTML = `<div class="empty-media-hint">No ${currentStripCategory === 'photos' ? 'photos or videos' : 'stickers'} shared yet</div>`;
+        return;
+      }
+
+      items.slice(0, 15).forEach((med) => {
         const thumb = document.createElement('div');
         thumb.className = 'strip-thumb-box';
         const url = URL.createObjectURL(med.blob);
-
         const mime = med.mimeType || med.type || '';
-        if (mime.startsWith('video/') || mime === 'video') {
+
+        if (currentStripCategory === 'stickers') {
+          thumb.innerHTML = `<img src="${url}" class="strip-thumb-img" style="object-fit:contain; background:transparent;" alt="sticker" />`;
+          thumb.addEventListener('click', () => {
+            Toast.show('Sticker');
+          });
+        } else if (mime.startsWith('video/') || mime === 'video') {
           thumb.innerHTML = `
             <video src="${url}" preload="metadata" class="strip-thumb-img"></video>
             <div class="strip-video-icon">${Icons.play('', 14)}</div>
           `;
+          thumb.addEventListener('click', () => {
+            const parentMsg = msgs.find((m) => m.mediaId === med.id) || {};
+            mediaLightbox.show(med, parentMsg, () => {
+              this.router.navigate(`#/chat/${this.chatId}`);
+            });
+          });
         } else {
           thumb.innerHTML = `<img src="${url}" class="strip-thumb-img" alt="media" />`;
-        }
-
-        thumb.addEventListener('click', () => {
-          const parentMsg = msgs.find((m) => m.mediaId === med.id) || {};
-          mediaLightbox.show(med, parentMsg, () => {
-            this.router.navigate(`#/chat/${this.chatId}`);
+          thumb.addEventListener('click', () => {
+            const parentMsg = msgs.find((m) => m.mediaId === med.id) || {};
+            mediaLightbox.show(med, parentMsg, () => {
+              this.router.navigate(`#/chat/${this.chatId}`);
+            });
           });
-        });
+        }
 
         mediaStrip.appendChild(thumb);
       });
-    }
+    };
+
+    chipPhotos.addEventListener('click', () => {
+      chipPhotos.classList.add('active');
+      chipStickers.classList.remove('active');
+      currentStripCategory = 'photos';
+      renderStrip();
+    });
+
+    chipStickers.addEventListener('click', () => {
+      chipStickers.classList.add('active');
+      chipPhotos.classList.remove('active');
+      currentStripCategory = 'stickers';
+      renderStrip();
+    });
+
+    renderStrip();
+
+    // --- Chat Management Actions (Migrated from 3-Dot Menu - Task 6) ---
+    // Search in chat
+    this.container.querySelector('#row-search-in-chat').addEventListener('click', () => {
+      this.router.navigate(`#/chat/${this.chatId}?search=1`);
+    });
+
+    // Swap Sender / Receiver
+    this.container.querySelector('#row-swap-perspective').addEventListener('click', async () => {
+      await this.flipPerspective(msgs);
+    });
+
+    // Jump to Date
+    const datePicker = this.container.querySelector('#info-date-picker');
+    this.container.querySelector('#row-jump-to-date').addEventListener('click', () => {
+      datePicker.showPicker ? datePicker.showPicker() : datePicker.click();
+    });
+    datePicker.addEventListener('change', (e) => {
+      if (e.target.value) {
+        this.router.navigate(`#/chat/${this.chatId}?jumpDate=${e.target.value}`);
+      }
+    });
+
+    // Edit Chat Info (Task 9)
+    this.container.querySelector('#row-edit-chat-info').addEventListener('click', () => {
+      this.openEditChatModal();
+    });
+
+    // Wallpaper
+    this.container.querySelector('#row-chat-wallpaper').addEventListener('click', () => {
+      this.router.navigate(`#/wallpaper-picker?chatId=${this.chatId}`);
+    });
+
+    // Add to / Manage Lists (Task 10)
+    this.container.querySelector('#row-manage-lists').addEventListener('click', () => {
+      this.openManageListsModal();
+    });
 
     // Chat Lock Toggle
     const lockCb = this.container.querySelector('#cb-chat-lock');
@@ -301,5 +442,142 @@ export class ContactInfoView {
         this.router.navigate('#/chats');
       }
     });
+  }
+
+  // --- Migrated Actions Implementation ---
+  async flipPerspective(msgs) {
+    if (!msgs || msgs.length === 0) {
+      msgs = await db.getMessages(this.chatId);
+    }
+    if (msgs.length === 0) {
+      Toast.show('No messages in this chat');
+      return;
+    }
+    const confirmed = await showConfirm({
+      title: 'Swap perspective?',
+      message: 'This will reverse sender and receiver for all messages in this conversation so your messages appear on the right.',
+      confirmText: 'Swap',
+      cancelText: 'Cancel'
+    });
+    if (!confirmed) return;
+
+    for (const m of msgs) {
+      m.isOutgoing = !m.isOutgoing;
+      await db.saveMessage(m);
+    }
+    this.chat.isOutgoingDefault = !this.chat.isOutgoingDefault;
+    await db.updateChat(this.chatId, { isOutgoingDefault: this.chat.isOutgoingDefault });
+    Toast.show('Perspective swapped!');
+    this.router.navigate(`#/chat/${this.chatId}`);
+  }
+
+  async openEditChatModal() {
+    const newName = await showPrompt({
+      title: 'Edit Chat Info',
+      message: 'Enter new contact or group name:',
+      defaultValue: this.chat.name,
+      placeholder: 'Name',
+      confirmText: 'Save',
+      cancelText: 'Cancel'
+    });
+    if (newName && newName.trim()) {
+      const trimmed = newName.trim();
+      await db.updateChat(this.chatId, { name: trimmed });
+      this.chat.name = trimmed;
+      const heroName = this.container.querySelector('#contact-hero-name');
+      if (heroName) heroName.textContent = trimmed;
+      const compactName = this.container.querySelector('.compact-header-name');
+      if (compactName) compactName.textContent = trimmed;
+      Toast.show('Chat name updated');
+    }
+  }
+
+  async openManageListsModal() {
+    const filters = await db.getFilters();
+    if (filters.length === 0) {
+      const wantCreate = await showConfirm({
+        title: 'No custom lists',
+        message: 'You have not created any custom lists yet. Would you like to create one now?',
+        confirmText: 'Create list',
+        cancelText: 'Cancel'
+      });
+      if (wantCreate) {
+        const listName = await showPrompt({
+          title: 'New List Name',
+          message: 'Enter a name for your custom list (e.g., Work, Family):',
+          placeholder: 'List name',
+          confirmText: 'Create',
+          cancelText: 'Cancel'
+        });
+        if (listName && listName.trim()) {
+          const newList = {
+            id: db.generateUUID(),
+            name: listName.trim(),
+            chatIds: [this.chatId]
+          };
+          await db.saveFilter(newList);
+          Toast.show(`Added to "${newList.name}"`);
+        }
+      }
+      return;
+    }
+
+    // Modal with checklist of custom lists
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay custom-dialog-overlay active';
+
+    let listRowsHtml = filters.map((f) => {
+      const isChecked = f.chatIds && f.chatIds.includes(this.chatId);
+      return `
+        <label class="list-select-item" style="display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.06); cursor:pointer;">
+          <input type="checkbox" class="wa-checkbox" data-filter-id="${f.id}" ${isChecked ? 'checked' : ''} />
+          <span style="font-size:15px; color:var(--wa-text-primary); font-weight:500;">${f.name}</span>
+        </label>
+      `;
+    }).join('');
+
+    overlay.innerHTML = `
+      <div class="custom-dialog-card" role="dialog" aria-modal="true">
+        <h3 class="custom-dialog-title">Manage Lists</h3>
+        <div class="custom-dialog-body" style="max-height:260px; overflow-y:auto; margin-top:8px;">
+          ${listRowsHtml}
+        </div>
+        <div class="custom-dialog-actions" style="margin-top:16px;">
+          <button type="button" class="dialog-btn dialog-btn-cancel">Cancel</button>
+          <button type="button" class="dialog-btn dialog-btn-confirm">Save</button>
+        </div>
+      </div>
+    `;
+
+    const cleanup = () => {
+      overlay.classList.remove('active');
+      overlay.style.opacity = '0';
+      setTimeout(() => overlay.remove(), 200);
+    };
+
+    overlay.querySelector('.dialog-btn-cancel').onclick = cleanup;
+    overlay.onclick = (e) => { if (e.target === overlay) cleanup(); };
+
+    overlay.querySelector('.dialog-btn-confirm').onclick = async () => {
+      const checkboxes = overlay.querySelectorAll('.wa-checkbox');
+      for (const cb of checkboxes) {
+        const filterId = cb.dataset.filterId;
+        const targetFilter = filters.find((f) => f.id === filterId);
+        if (targetFilter) {
+          if (!targetFilter.chatIds) targetFilter.chatIds = [];
+          if (cb.checked && !targetFilter.chatIds.includes(this.chatId)) {
+            targetFilter.chatIds.push(this.chatId);
+            await db.saveFilter(targetFilter);
+          } else if (!cb.checked && targetFilter.chatIds.includes(this.chatId)) {
+            targetFilter.chatIds = targetFilter.chatIds.filter((id) => id !== this.chatId);
+            await db.saveFilter(targetFilter);
+          }
+        }
+      }
+      cleanup();
+      Toast.show('Lists updated');
+    };
+
+    document.body.appendChild(overlay);
   }
 }

@@ -17,7 +17,7 @@ import { applyAppAccent, applyOutgoingBubbleColor } from './config/palette.js';
 import { assetUrl } from './config/base-path.js';
 
 // Application Version Constant
-window.APP_VERSION = '0.0.2';
+window.APP_VERSION = '0.0.3';
 
 // Global deferred PWA install prompt holder
 window.deferredInstallPrompt = null;
@@ -132,13 +132,23 @@ class Application {
             console.warn('[SW] Registration failed (expected on file:// or unsupported setups):', err);
           });
 
+        // Seamless SW Auto-Update: Listen for controllerchange and reload instantly
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (refreshing) return;
+          refreshing = true;
+          window.location.reload();
+        });
+
         // Listen for activation messages from sw.js
         navigator.serviceWorker.addEventListener('message', (event) => {
           if (event.data && event.data.type === 'UPDATE_ACTIVATED') {
+            if (refreshing) return;
+            refreshing = true;
             Toast.show('Update applied, refreshing...');
             setTimeout(() => {
               window.location.reload();
-            }, 1200);
+            }, 600);
           }
         });
       });

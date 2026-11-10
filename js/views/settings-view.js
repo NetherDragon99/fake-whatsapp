@@ -4,7 +4,7 @@ import { db } from '../db.js';
 import { PinDialog } from '../components/pin-dialog.js';
 import { Toast } from '../components/toast.js';
 import { openImageCropper } from '../components/image-cropper.js';
-import { showConfirm, showAlert } from '../components/custom-dialog.js';
+import { showConfirm, showAlert, showPrompt } from '../components/custom-dialog.js';
 
 export class SettingsView {
   constructor(router) {
@@ -14,10 +14,18 @@ export class SettingsView {
 
   async render(rootEl) {
     this.container = rootEl;
-    const ownerName = await db.getSetting('ownerName', 'You');
-    const userAvatarBlob = await db.getSetting('userProfileAvatar', null);
-    const storageStats = await db.getStorageUsage();
-    const appVersion = window.APP_VERSION || '0.0.2';
+    let ownerName = 'You';
+    let userAvatarBlob = null;
+    let storageStats = { formattedSize: '0 B', chatCount: 0, messageCount: 0 };
+    const appVersion = window.APP_VERSION || '0.0.3';
+
+    try {
+      ownerName = await db.getSetting('ownerName', 'You');
+      userAvatarBlob = await db.getSetting('userProfileAvatar', null);
+      storageStats = await db.getStorageUsage();
+    } catch (err) {
+      console.warn('[SettingsView] Error loading settings data:', err);
+    }
 
     // Standalone display mode check
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
@@ -150,7 +158,7 @@ export class SettingsView {
           <!-- App Version Footer -->
           <div class="settings-footer-version">
             <span>WhatsApp Clone for Android</span>
-            <span class="version-number">v0.0.2</span>
+            <span class="version-number">v0.0.3</span>
           </div>
         </div>
 
@@ -200,11 +208,18 @@ export class SettingsView {
       }
     });
 
-    // Edit Profile Name
+    // Edit Profile Name with Custom In-App Prompt
     this.container.querySelector('#btn-edit-name').addEventListener('click', async () => {
       const cur = await db.getSetting('ownerName', 'You');
-      const updated = prompt('Enter your name:', cur);
-      if (updated && updated.trim()) {
+      const updated = await showPrompt({
+        title: 'Enter your name',
+        message: 'This name will be visible as "You" in chats and settings.',
+        defaultValue: cur,
+        placeholder: 'Your name',
+        confirmText: 'Save',
+        cancelText: 'Cancel'
+      });
+      if (updated !== null && updated.trim()) {
         const trimmed = updated.trim();
         await db.setSetting('ownerName', trimmed);
         this.container.querySelector('#settings-owner-name').textContent = trimmed;
@@ -304,5 +319,33 @@ export class SettingsView {
         setTimeout(() => this.router.navigate('#/chats'), 400);
       }
     });
+
+    // Bottom Navigation explicit routing (Task 2)
+    this.container.querySelectorAll('.wa-bottom-nav .nav-tab').forEach((tab) => {
+      tab.addEventListener('click', (e) => {
+        e.preventDefault();
+        const href = tab.getAttribute('href');
+        if (href) this.router.navigate(href);
+      });
+    });
+
+    // Swipe navigation between main tabs (Task 11): Settings -> swipe right goes to Calls
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const screenEl = this.container.querySelector('.settings-screen');
+    if (screenEl) {
+      screenEl.addEventListener('touchstart', (e) => {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+      }, { passive: true });
+
+      screenEl.addEventListener('touchend', (e) => {
+        const deltaX = e.changedTouches[0].clientX - touchStartX;
+        const deltaY = e.changedTouches[0].clientY - touchStartY;
+        if (deltaX > 75 && Math.abs(deltaX) > 1.8 * Math.abs(deltaY)) {
+          this.router.navigate('#/calls');
+        }
+      }, { passive: true });
+    }
   }
 }

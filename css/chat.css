@@ -152,6 +152,7 @@
   position: relative;
   z-index: 2;
   scroll-behavior: auto;
+  overflow-anchor: auto;
 }
 
 /* Floating Scroll-To-Bottom Button */
@@ -775,13 +776,19 @@
   height: 100%;
   overflow: hidden;
   background-color: rgba(0, 0, 0, 0.2);
+  background-position: center;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .album-thumb-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center;
+  background-position: center;
   display: block;
   transition: transform 0.2s ease-in-out;
 }

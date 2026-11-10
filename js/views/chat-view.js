@@ -4,7 +4,7 @@ import { db } from '../db.js';
 import { VirtualMessageScroller } from '../virtual-scroller.js';
 import { mediaLightbox } from '../components/lightbox.js';
 import { Toast } from '../components/toast.js';
-import { showConfirm, showAlert } from '../components/custom-dialog.js';
+import { showConfirm, showAlert, showPrompt } from '../components/custom-dialog.js';
 import { WALLPAPER_PRESETS } from '../config/wallpapers.js';
 import { assetUrl } from '../config/base-path.js';
 
@@ -77,7 +77,8 @@ export class ChatView {
           </div>
           
           <div class="chat-header-actions">
-            <button type="button" class="app-bar-icon-btn" id="btn-chat-menu" aria-label="More options">${Icons.moreVert('', 22)}</button>
+            <button type="button" class="app-bar-icon-btn" id="btn-chat-video-call" aria-label="Video Call">${Icons.callVideo('', 22)}</button>
+            <button type="button" class="app-bar-icon-btn" id="btn-chat-voice-call" aria-label="Voice Call">${Icons.callVoice('', 22)}</button>
           </div>
         </header>
 
@@ -88,16 +89,6 @@ export class ChatView {
           <span class="search-match-counter" id="search-match-count">0/0</span>
           <button type="button" class="app-bar-icon-btn" id="btn-search-prev">${Icons.chevronDown('rotate-180', 20)}</button>
           <button type="button" class="app-bar-icon-btn" id="btn-search-next">${Icons.chevronDown('', 20)}</button>
-        </div>
-
-        <!-- 3-Dot Dropdown Menu (Material 3 with scale/fade transition) -->
-        <div class="wa-dropdown-menu" id="chat-menu-dropdown" style="display:none;">
-          <div class="dropdown-item" id="menu-search-chat">${Icons.search('', 18)}<span>Search in chat</span></div>
-          <div class="dropdown-item" id="menu-flip-perspective">${Icons.swap('', 18)}<span>Swap Sender / Receiver</span></div>
-          <div class="dropdown-item" id="menu-jump-date">${Icons.calendar('', 18)}<span>Jump to Date</span></div>
-          <div class="dropdown-item" id="menu-edit-chat">${Icons.userAvatar('', 18)}<span>Edit Chat Info</span></div>
-          <div class="dropdown-item" id="menu-wallpaper">${Icons.gallery('', 18)}<span>Wallpaper</span></div>
-          <div class="dropdown-item" id="menu-clear-chat">${Icons.trash('', 18)}<span class="danger-text">Clear chat</span></div>
         </div>
 
         <!-- Messages Area -->
@@ -171,6 +162,14 @@ export class ChatView {
 
     await this.scroller.loadInitial(targetMsgId);
 
+    // Auto-open search if navigated from Contact Info "Search in chat"
+    if (params.search === '1' || params.search === 'true') {
+      setTimeout(() => this.toggleSearchHeader(true), 100);
+    }
+    if (params.jumpDate) {
+      setTimeout(() => this.jumpToSelectedDate(params.jumpDate), 200);
+    }
+
     // Profile Picture Subtle Scroll Animation in Header (Step 6)
     let scrollRafTicking = false;
     const headerAvatar = this.container.querySelector('.chat-header-avatar');
@@ -198,77 +197,30 @@ export class ChatView {
       this.router.navigate(`#/chat/${this.chatId}/info`);
     });
 
-    // 3-Dot Menu Toggle
-    const menuBtn = this.container.querySelector('#btn-chat-menu');
-    const dropdown = this.container.querySelector('#chat-menu-dropdown');
-    menuBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
-      if (dropdown.style.display === 'block') dropdown.classList.add('active');
-    });
-
-    document.addEventListener('click', () => {
-      if (dropdown) {
-        dropdown.classList.remove('active');
-        dropdown.style.display = 'none';
-      }
-    });
-
-    // Menu Item: Search in Chat
-    this.container.querySelector('#menu-search-chat').addEventListener('click', () => {
-      dropdown.style.display = 'none';
-      this.toggleSearchHeader(true);
-    });
-
-    // Menu Item: Swap Sender / Receiver (Flip Perspective)
-    this.container.querySelector('#menu-flip-perspective').addEventListener('click', async () => {
-      dropdown.style.display = 'none';
-      await this.flipPerspective();
-    });
-
-    // Menu Item: Jump to Date
-    const datePicker = this.container.querySelector('#chat-hidden-date-picker');
-    this.container.querySelector('#menu-jump-date').addEventListener('click', () => {
-      dropdown.style.display = 'none';
-      datePicker.showPicker ? datePicker.showPicker() : datePicker.click();
-    });
-
-    datePicker.addEventListener('change', (e) => {
-      if (e.target.value) {
-        this.jumpToSelectedDate(e.target.value);
-      }
-    });
-
-    // Menu Item: Edit Chat Info
-    this.container.querySelector('#menu-edit-chat').addEventListener('click', () => {
-      dropdown.style.display = 'none';
-      this.openEditChatModal();
-    });
-
-    // Menu Item: Wallpaper (navigates to Stage 1 Wallpaper Picker)
-    this.container.querySelector('#menu-wallpaper').addEventListener('click', () => {
-      dropdown.style.display = 'none';
-      this.router.navigate(`#/wallpaper-picker?chatId=${this.chatId}`);
-    });
-
-    // Menu Item: Clear Chat (replaces native confirm with showConfirm)
-    this.container.querySelector('#menu-clear-chat').addEventListener('click', async () => {
-      dropdown.style.display = 'none';
-      const confirmed = await showConfirm({
-        title: 'Clear this chat?',
-        message: 'All messages in this chat will be removed. Media files will remain in your gallery.',
-        confirmText: 'Clear chat',
-        cancelText: 'Cancel',
-        isDanger: true
+    // Video & Voice Call Actions (Task 6)
+    const vidCallBtn = this.container.querySelector('#btn-chat-video-call');
+    if (vidCallBtn) {
+      vidCallBtn.addEventListener('click', () => {
+        Toast.show(`Video calling ${this.chat.name}...`);
       });
-      if (confirmed) {
-        const msgs = await db.getMessages(this.chatId);
-        for (const m of msgs) await db.deleteMessage(m.id);
-        await db.updateChat(this.chatId, { lastMessage: null, updatedAt: Date.now() });
-        Toast.show('Chat cleared');
-        this.scroller.loadInitial();
-      }
-    });
+    }
+
+    const voiceCallBtn = this.container.querySelector('#btn-chat-voice-call');
+    if (voiceCallBtn) {
+      voiceCallBtn.addEventListener('click', () => {
+        Toast.show(`Calling ${this.chat.name}...`);
+      });
+    }
+
+    // Hidden date picker for Jump to Date triggered from Contact Info
+    const datePicker = this.container.querySelector('#chat-hidden-date-picker');
+    if (datePicker) {
+      datePicker.addEventListener('change', (e) => {
+        if (e.target.value) {
+          this.jumpToSelectedDate(e.target.value);
+        }
+      });
+    }
 
     // Floating Scroll to Bottom
     this.container.querySelector('#chat-scroll-bottom-btn').addEventListener('click', () => {
@@ -568,14 +520,21 @@ export class ChatView {
     };
   }
 
-  openEditChatModal() {
-    const newName = prompt('Edit Chat Name:', this.chat.name);
+  async openEditChatModal() {
+    const newName = await showPrompt({
+      title: 'Edit Chat Name',
+      message: 'Enter new name for this contact or group:',
+      defaultValue: this.chat.name,
+      placeholder: 'Chat name',
+      confirmText: 'Save',
+      cancelText: 'Cancel'
+    });
     if (newName && newName.trim()) {
-      db.updateChat(this.chatId, { name: newName.trim() }).then(() => {
-        this.chat.name = newName.trim();
-        this.container.querySelector('.chat-header-title').textContent = newName.trim();
-        Toast.show('Chat name updated');
-      });
+      await db.updateChat(this.chatId, { name: newName.trim() });
+      this.chat.name = newName.trim();
+      const titleEl = this.container.querySelector('.chat-header-title');
+      if (titleEl) titleEl.textContent = newName.trim();
+      Toast.show('Chat name updated');
     }
   }
 

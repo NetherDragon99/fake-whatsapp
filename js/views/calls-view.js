@@ -136,5 +136,38 @@ export class CallsView {
 
       listWrap.appendChild(item);
     });
+
+    // Bottom Navigation explicit routing (Task 2)
+    this.container.querySelectorAll('.wa-bottom-nav .nav-tab').forEach((tab) => {
+      tab.addEventListener('click', (e) => {
+        e.preventDefault();
+        const href = tab.getAttribute('href');
+        if (href) this.router.navigate(href);
+      });
+    });
+
+    // Swipe navigation between main tabs (Task 11):
+    // Swiping left goes to #/settings, swiping right goes to #/chats
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const screenEl = this.container.querySelector('.calls-screen');
+    if (screenEl) {
+      screenEl.addEventListener('touchstart', (e) => {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+      }, { passive: true });
+
+      screenEl.addEventListener('touchend', (e) => {
+        const deltaX = e.changedTouches[0].clientX - touchStartX;
+        const deltaY = e.changedTouches[0].clientY - touchStartY;
+        if (Math.abs(deltaX) > 75 && Math.abs(deltaX) > 1.8 * Math.abs(deltaY)) {
+          if (deltaX < 0) {
+            this.router.navigate('#/settings');
+          } else {
+            this.router.navigate('#/chats');
+          }
+        }
+      }, { passive: true });
+    }
   }
 }

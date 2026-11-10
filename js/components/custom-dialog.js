@@ -116,6 +116,76 @@ export function showAlert({ title, message, okText = 'OK' }) {
   });
 }
 
+/**
+ * Shows an in-app prompt modal with a text input.
+ * @param {Object} options
+ * @param {string} options.title - Dialog heading
+ * @param {string} [options.message] - Optional explanation
+ * @param {string} [options.defaultValue=''] - Initial input value
+ * @param {string} [options.placeholder=''] - Input placeholder
+ * @param {string} [options.confirmText='Save'] - Positive button text
+ * @param {string} [options.cancelText='Cancel'] - Cancel button text
+ * @returns {Promise<string|null>} Resolves with string if confirmed, null if dismissed
+ */
+export function showPrompt({ title, message = '', defaultValue = '', placeholder = '', confirmText = 'Save', cancelText = 'Cancel' }) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay custom-dialog-overlay active';
+
+    overlay.innerHTML = `
+      <div class="custom-dialog-card" role="dialog" aria-modal="true" aria-labelledby="prompt-title">
+        ${title ? `<h3 class="custom-dialog-title" id="prompt-title">${escapeHtml(title)}</h3>` : ''}
+        ${message ? `<div class="custom-dialog-body">${escapeHtml(message)}</div>` : ''}
+        <div class="custom-dialog-input-wrap" style="margin: 16px 0 10px 0;">
+          <input type="text" class="custom-dialog-input" id="custom-dialog-input-field" value="${escapeHtml(defaultValue)}" placeholder="${escapeHtml(placeholder)}" style="width: 100%; box-sizing: border-box; background: var(--wa-input-bg, #202c33); color: var(--wa-text-primary, #e9edef); border: 1px solid var(--wa-border, #2a3942); border-radius: 8px; padding: 10px 14px; font-size: 15px; outline: none; font-family: inherit;" />
+        </div>
+        <div class="custom-dialog-actions">
+          <button type="button" class="dialog-btn dialog-btn-cancel">${escapeHtml(cancelText)}</button>
+          <button type="button" class="dialog-btn dialog-btn-confirm">${escapeHtml(confirmText)}</button>
+        </div>
+      </div>
+    `;
+
+    const inputField = overlay.querySelector('#custom-dialog-input-field');
+
+    function cleanup(result) {
+      document.removeEventListener('keydown', onKeyDown);
+      overlay.classList.remove('active');
+      overlay.style.opacity = '0';
+      setTimeout(() => {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      }, 200);
+      resolve(result);
+    }
+
+    function onKeyDown(e) {
+      if (e.key === 'Escape') {
+        cleanup(null);
+      } else if (e.key === 'Enter') {
+        cleanup(inputField.value);
+      }
+    }
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        cleanup(null);
+      }
+    });
+
+    const cancelBtn = overlay.querySelector('.dialog-btn-cancel');
+    const confirmBtn = overlay.querySelector('.dialog-btn-confirm');
+
+    cancelBtn.addEventListener('click', () => cleanup(null));
+    confirmBtn.addEventListener('click', () => cleanup(inputField.value));
+
+    document.addEventListener('keydown', onKeyDown);
+    document.body.appendChild(overlay);
+
+    inputField.focus();
+    inputField.select();
+  });
+}
+
 function escapeHtml(str) {
   if (!str) return '';
   return String(str)

@@ -2,6 +2,7 @@
 import { Icons } from './icons.js';
 import { db } from './db.js';
 import { audioManager } from './audio-player.js';
+import { mediaLightbox } from './components/lightbox.js';
 
 export class VirtualMessageScroller {
   constructor(container, options = {}) {
@@ -167,12 +168,17 @@ export class VirtualMessageScroller {
       this.cancelPendingLongPress();
 
       // Load older messages when scrolled near top
-      if (this.container.scrollTop < 200 && !this.isLoadingMore && this.visibleStartIndex > 0) {
+      if (this.container.scrollTop < 250 && !this.isLoadingMore && this.visibleStartIndex > 0) {
         this.loadOlder();
       }
 
-      // Check floating scroll-to-bottom button
+      // Load newer messages when scrolled near bottom (Task 3)
       const scrollBottomDist = this.container.scrollHeight - this.container.scrollTop - this.container.clientHeight;
+      if (scrollBottomDist < 350 && !this.isLoadingMore && this.visibleEndIndex < this.allMessages.length) {
+        this.loadNewer();
+      }
+
+      // Check floating scroll-to-bottom button
       const scrollBtn = document.getElementById('chat-scroll-bottom-btn');
       if (scrollBtn) {
         if (scrollBottomDist > 400) {
@@ -197,17 +203,53 @@ export class VirtualMessageScroller {
     await this.renderBatch(newStart, newEnd, 'prepend');
     this.visibleStartIndex = newStart;
 
+    // Prune excess from bottom if exceeding MAX_DOM_MESSAGES
     if (this.visibleEndIndex - this.visibleStartIndex > this.MAX_DOM_MESSAGES) {
       const pruneCount = (this.visibleEndIndex - this.visibleStartIndex) - this.MAX_DOM_MESSAGES;
       this.visibleEndIndex -= pruneCount;
-      const nodes = Array.from(this.container.querySelectorAll('.msg-row, .date-pill-row'));
-      for (let i = nodes.length - 1; i >= nodes.length - pruneCount; i--) {
+      const nodes = Array.from(this.container.querySelectorAll('.msg-row'));
+      for (let i = nodes.length - 1; i >= nodes.length - pruneCount && i >= 0; i--) {
         if (nodes[i]) nodes[i].remove();
       }
     }
 
+    // Scroll Anchoring: maintain exact relative scroll position after prepending
     const newScrollHeight = this.container.scrollHeight;
     this.container.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
+
+    this.isLoadingMore = false;
+  }
+
+  async loadNewer() {
+    if (this.isLoadingMore || this.visibleEndIndex >= this.allMessages.length) return;
+    this.isLoadingMore = true;
+
+    const newStart = this.visibleEndIndex;
+    const newEnd = Math.min(this.allMessages.length, this.visibleEndIndex + this.CHUNK_SIZE);
+
+    await this.renderBatch(newStart, newEnd, 'append');
+    this.visibleEndIndex = newEnd;
+
+    // Prune excess from top if exceeding MAX_DOM_MESSAGES
+    if (this.visibleEndIndex - this.visibleStartIndex > this.MAX_DOM_MESSAGES) {
+      const pruneCount = (this.visibleEndIndex - this.visibleStartIndex) - this.MAX_DOM_MESSAGES;
+      let removedHeight = 0;
+      let msgCountRemoved = 0;
+      const children = Array.from(this.container.children);
+
+      for (let i = 0; i < children.length && msgCountRemoved < pruneCount; i++) {
+        const node = children[i];
+        removedHeight += node.offsetHeight || node.getBoundingClientRect().height;
+        if (node.classList.contains('msg-row')) {
+          msgCountRemoved++;
+        }
+        node.remove();
+      }
+
+      this.visibleStartIndex += msgCountRemoved;
+      // Scroll Anchoring: adjust scrollTop by removedHeight to avoid scroll jump
+      this.container.scrollTop = Math.max(0, this.container.scrollTop - removedHeight);
+    }
 
     this.isLoadingMore = false;
   }
@@ -341,7 +383,9 @@ export class VirtualMessageScroller {
         img.className = 'album-thumb-img';
         img.addEventListener('click', (e) => {
           e.stopPropagation();
-          this.onMediaClick(mediaItem, itemMsg);
+          mediaLightbox.showAlbum(albumMsgs, idx, (chatId, msgId) => {
+            this.scrollToMessage(msgId);
+          });
         });
         thumbWrap.appendChild(img);
       } else {
@@ -355,7 +399,9 @@ export class VirtualMessageScroller {
         plusOverlay.textContent = `+${albumMsgs.length - 4}`;
         plusOverlay.addEventListener('click', (e) => {
           e.stopPropagation();
-          this.onMediaClick(mediaItem, itemMsg);
+          mediaLightbox.showAlbum(albumMsgs, 3, (chatId, msgId) => {
+            this.scrollToMessage(msgId);
+          });
         });
         thumbWrap.appendChild(plusOverlay);
       }
@@ -633,8 +679,21 @@ export class VirtualMessageScroller {
     }
   }
 
-  scrollToMessage(messageId) {
-    const el = this.container.querySelector(`[data-msg-id="${messageId}"]`);
+  async scrollToMessage(messageId) {
+    let el = this.container.querySelector(`[data-msg-id="${messageId}"]`) ||
+             this.container.querySelector(`#msg-${messageId}`);
+
+    if (!el) {
+      const foundIdx = this.allMessages.findIndex((m) => m.id === messageId);
+      if (foundIdx !== -1) {
+        this.visibleStartIndex = Math.max(0, foundIdx - Math.floor(this.CHUNK_SIZE / 2));
+        this.visibleEndIndex = Math.min(this.allMessages.length, this.visibleStartIndex + this.CHUNK_SIZE);
+        await this.renderBatch(this.visibleStartIndex, this.visibleEndIndex, 'replace');
+        el = this.container.querySelector(`[data-msg-id="${messageId}"]`) ||
+             this.container.querySelector(`#msg-${messageId}`);
+      }
+    }
+
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       el.classList.add('highlight-flash');

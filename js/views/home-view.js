@@ -150,6 +150,36 @@ export class HomeView {
     this.container.querySelector('#btn-archive-selected').addEventListener('click', () => this.toggleArchiveSelected());
     this.container.querySelector('#btn-mark-unread').addEventListener('click', () => this.markSelectedUnread());
     this.container.querySelector('#btn-fav-selected').addEventListener('click', () => this.toggleFavSelected());
+
+    // Bottom Navigation explicit routing (Task 2)
+    this.container.querySelectorAll('.wa-bottom-nav .nav-tab').forEach((tab) => {
+      tab.addEventListener('click', (e) => {
+        e.preventDefault();
+        const href = tab.getAttribute('href');
+        if (href) this.router.navigate(href);
+      });
+    });
+
+    // Swipe navigation between main tabs (Task 11): Chats -> swipe left goes to Calls
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const screenEl = this.container.querySelector('.home-screen');
+    if (screenEl) {
+      screenEl.addEventListener('touchstart', (e) => {
+        if (e.target.closest('#filter-chips-bar')) return;
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+      }, { passive: true });
+
+      screenEl.addEventListener('touchend', (e) => {
+        if (e.target.closest('#filter-chips-bar')) return;
+        const deltaX = e.changedTouches[0].clientX - touchStartX;
+        const deltaY = e.changedTouches[0].clientY - touchStartY;
+        if (deltaX < -75 && Math.abs(deltaX) > 1.8 * Math.abs(deltaY)) {
+          this.router.navigate('#/calls');
+        }
+      }, { passive: true });
+    }
   }
 
   async loadFilterChips() {
@@ -368,6 +398,19 @@ export class HomeView {
       this.enterSelectionMode(chat.id);
     });
 
+    // Avatar click -> floating profile preview modal (Task 8)
+    const avatarWrap = item.querySelector('.chat-avatar-wrap');
+    if (avatarWrap) {
+      avatarWrap.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (this.isSelectionMode) {
+          this.toggleItemSelection(chat.id);
+        } else {
+          this.showProfileModal(chat);
+        }
+      });
+    }
+
     // Item click
     item.addEventListener('click', () => {
       if (this.isSelectionMode) {
@@ -378,6 +421,81 @@ export class HomeView {
     });
 
     return item;
+  }
+
+  // Floating Profile Photo Preview Modal (Task 8)
+  showProfileModal(chat) {
+    const existing = document.querySelector('.floating-profile-modal-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay floating-profile-modal-overlay active';
+
+    const avatarUrl = chat.avatarBlob ? URL.createObjectURL(chat.avatarBlob) : null;
+
+    overlay.innerHTML = `
+      <div class="floating-profile-card">
+        <div class="floating-profile-header">
+          <span class="floating-profile-name" dir="auto">${chat.name}</span>
+        </div>
+        <div class="floating-profile-img-wrap" id="btn-open-profile-photo" title="Open contact info">
+          ${avatarUrl
+            ? `<img src="${avatarUrl}" class="floating-profile-img" alt="${chat.name}" />`
+            : (chat.isGroup ? Icons.groupAvatar('', 140) : Icons.userAvatar('', 140))}
+        </div>
+        <div class="floating-profile-actions">
+          <button type="button" class="floating-action-btn" id="fp-btn-msg" title="Message">
+            ${Icons.chatsTab('', 22)}
+          </button>
+          <button type="button" class="floating-action-btn" id="fp-btn-call" title="Voice Call">
+            ${Icons.callVoice('', 22)}
+          </button>
+          <button type="button" class="floating-action-btn" id="fp-btn-video" title="Video Call">
+            ${Icons.callVideo('', 22)}
+          </button>
+          <button type="button" class="floating-action-btn" id="fp-btn-info" title="Info">
+            ${Icons.userAvatar('', 22)}
+          </button>
+        </div>
+      </div>
+    `;
+
+    const close = () => {
+      overlay.classList.remove('active');
+      overlay.style.opacity = '0';
+      setTimeout(() => overlay.remove(), 200);
+    };
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+
+    overlay.querySelector('#fp-btn-msg').addEventListener('click', () => {
+      close();
+      this.router.navigate(`#/chat/${chat.id}`);
+    });
+
+    overlay.querySelector('#fp-btn-call').addEventListener('click', () => {
+      close();
+      Toast.show(`Calling ${chat.name}...`);
+    });
+
+    overlay.querySelector('#fp-btn-video').addEventListener('click', () => {
+      close();
+      Toast.show(`Video calling ${chat.name}...`);
+    });
+
+    overlay.querySelector('#fp-btn-info').addEventListener('click', () => {
+      close();
+      this.router.navigate(`#/chat/${chat.id}/info`);
+    });
+
+    overlay.querySelector('#btn-open-profile-photo').addEventListener('click', () => {
+      close();
+      this.router.navigate(`#/chat/${chat.id}/info`);
+    });
+
+    document.body.appendChild(overlay);
   }
 
   formatChatDate(timestamp) {

@@ -13,8 +13,11 @@ export class GalleryView {
     this.allMessages = [];
   }
 
-  async render(rootEl) {
+  async render(rootEl, params = {}) {
     this.container = rootEl;
+    if (params.chatId) {
+      this.filterChatId = params.chatId;
+    }
     const chats = await db.getChats();
 
     rootEl.innerHTML = `
@@ -30,10 +33,11 @@ export class GalleryView {
             <button class="filter-chip ${this.activeType === 'all' ? 'active' : ''}" data-type="all">All</button>
             <button class="filter-chip ${this.activeType === 'image' ? 'active' : ''}" data-type="image">Photos</button>
             <button class="filter-chip ${this.activeType === 'video' ? 'active' : ''}" data-type="video">Videos</button>
+            <button class="filter-chip ${this.activeType === 'sticker' ? 'active' : ''}" data-type="sticker">Stickers</button>
           </div>
           <select id="gallery-chat-select" class="wa-select">
-            <option value="all">All Chats</option>
-            ${chats.map((c) => `<option value="${c.id}">${c.name}</option>`).join('')}
+            <option value="all" ${this.filterChatId === 'all' ? 'selected' : ''}>All Chats</option>
+            ${chats.map((c) => `<option value="${c.id}" ${this.filterChatId === c.id ? 'selected' : ''}>${c.name}</option>`).join('')}
           </select>
         </div>
 
@@ -82,14 +86,22 @@ export class GalleryView {
     const gridContainer = this.container.querySelector('#gallery-grid-container');
     gridContainer.innerHTML = '';
 
-    // Filter media by type and chat
+    // Filter media by type and chat with strict sticker separation (Task 5)
     let filtered = this.allMediaItems.filter((m) => {
-      const isImg = m.mimeType.startsWith('image/');
+      const isSticker = m.type === 'sticker' || m.mediaType === 'sticker' || (m.filename && /\.webp$/i.test(m.filename));
+      const isImg = m.mimeType.startsWith('image/') && !isSticker;
       const isVid = m.mimeType.startsWith('video/');
-      if (!isImg && !isVid) return false;
 
-      if (this.activeType === 'image' && !isImg) return false;
-      if (this.activeType === 'video' && !isVid) return false;
+      if (this.activeType === 'all') {
+        if (!isImg && !isVid) return false;
+      } else if (this.activeType === 'image') {
+        if (!isImg) return false;
+      } else if (this.activeType === 'video') {
+        if (!isVid) return false;
+      } else if (this.activeType === 'sticker') {
+        if (!isSticker) return false;
+      }
+
       if (this.filterChatId !== 'all' && m.chatId !== this.filterChatId) return false;
 
       return true;
