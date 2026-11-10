@@ -1500,9 +1500,8 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  max-height: 85vh;
-  min-height: 20vh;
-  touch-action: none;
+  max-height: 100vh;
+  min-height: 40px;
   transform: translateY(100%);
   transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1), height 0.2s cubic-bezier(0.2, 0, 0, 1);
 }

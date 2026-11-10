@@ -5,6 +5,7 @@ import { WALLPAPER_PRESETS, getWallpaperPreset } from '../config/wallpapers.js';
 import { APP_COLOR_PALETTE, applyOutgoingBubbleColor } from '../config/palette.js';
 import { assetUrl } from '../config/base-path.js';
 import { Toast } from '../components/toast.js';
+import { DrawerResizer } from '../utils/drawer-resizer.js';
 
 export class ThemePreviewView {
   constructor(router) {
@@ -118,21 +119,36 @@ export class ThemePreviewView {
           </div>
         </div>
 
-        <!-- Bubble Color Bottom Sheet (Collapsible) -->
+        <!-- Backdrop for Color Bottom Sheet -->
+        <div class="preview-color-sheet-backdrop" id="preview-color-backdrop"></div>
+
+        <!-- Bubble Color Bottom Sheet (Draggable, Resizable & Collapsible) -->
         <div class="preview-color-bottom-sheet" id="preview-color-sheet">
-          <div class="bottom-sheet-handle-bar">
+          <div class="bottom-sheet-handle-bar" id="preview-color-handle-bar">
             <div class="sheet-drag-handle"></div>
           </div>
-          <div class="sheet-swatch-grid">
-            ${APP_COLOR_PALETTE.map((hex) => `
-              <button type="button" class="sheet-colour-swatch ${hex.toLowerCase() === this.bubbleColor.toLowerCase() ? 'active' : ''}" data-color="${hex}" style="background-color: ${hex};" aria-label="Color ${hex}">
-                ${hex.toLowerCase() === this.bubbleColor.toLowerCase() ? `
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="#ffffff">
-                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                  </svg>
-                ` : ''}
-              </button>
-            `).join('')}
+          <!-- Fullscreen Header (active when dragged > 90%) -->
+          <div class="sheet-fullscreen-header" id="preview-color-fullscreen-header" style="display:none;">
+            <button type="button" class="sheet-fullscreen-back-btn" id="btn-color-fullscreen-back" aria-label="Exit fullscreen">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+              </svg>
+            </button>
+            <div class="sheet-fullscreen-title">Chat bubble color</div>
+          </div>
+          <!-- Scrollable Swatches -->
+          <div class="sheet-content-scroll">
+            <div class="sheet-swatch-grid">
+              ${APP_COLOR_PALETTE.map((hex) => `
+                <button type="button" class="sheet-colour-swatch ${hex.toLowerCase() === this.bubbleColor.toLowerCase() ? 'active' : ''}" data-color="${hex}" style="background-color: ${hex};" aria-label="Color ${hex}">
+                  ${hex.toLowerCase() === this.bubbleColor.toLowerCase() ? `
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="#ffffff">
+                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                    </svg>
+                  ` : ''}
+                </button>
+              `).join('')}
+            </div>
           </div>
         </div>
       </div>
@@ -216,12 +232,38 @@ export class ThemePreviewView {
       this.updateDisplay();
     });
 
-    // Color picker sheet toggle
-    const colorBtn = this.container.querySelector('#btn-open-palette');
+    // Initialize Universal Resizable Drawer for Bubble Color Bottom Sheet
     const colorSheet = this.container.querySelector('#preview-color-sheet');
+    const colorHandle = this.container.querySelector('#preview-color-handle-bar');
+    const colorBackdrop = this.container.querySelector('#preview-color-backdrop');
+    const fullscreenHeader = this.container.querySelector('#preview-color-fullscreen-header');
 
+    this.colorDrawerResizer = new DrawerResizer({
+      sheet: colorSheet,
+      handle: colorHandle,
+      backdrop: colorBackdrop,
+      fullscreenHeader: fullscreenHeader,
+      overlayId: 'preview-color-sheet',
+      defaultHeightVh: 48,
+      minVh: 20,
+      maxVh: 90
+    });
+
+    // Color picker sheet toggle button
+    const colorBtn = this.container.querySelector('#btn-open-palette');
     colorBtn.addEventListener('click', () => {
-      colorSheet.classList.toggle('open');
+      if (this.colorDrawerResizer.isOpen) {
+        this.colorDrawerResizer.close();
+      } else {
+        this.colorDrawerResizer.open();
+      }
+    });
+
+    // Close sheet when tapping outside on chat body
+    this.container.querySelector('#preview-chat-body').addEventListener('click', () => {
+      if (this.colorDrawerResizer.isOpen) {
+        this.colorDrawerResizer.close();
+      }
     });
 
     // Color swatch clicks in sheet
@@ -244,11 +286,6 @@ export class ThemePreviewView {
 
         this.updateDisplay();
       });
-    });
-
-    // Close sheet when tapping outside
-    this.container.querySelector('#preview-chat-body').addEventListener('click', () => {
-      colorSheet.classList.remove('open');
     });
 
     // Swipe left/right gesture to switch wallpapers

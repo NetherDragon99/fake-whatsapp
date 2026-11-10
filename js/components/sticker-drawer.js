@@ -1,6 +1,7 @@
-// Component: Resizable 40% Bottom Sticker Drawer with Drag Handle & Reusable Chat Stickers
+// Component: Resizable Bottom Sticker Drawer with Drag Handle & Reusable Chat Stickers
 import { db } from '../db.js';
 import { assetUrl } from '../config/base-path.js';
+import { DrawerResizer } from '../utils/drawer-resizer.js';
 
 export class StickerDrawer {
   constructor(options = {}) {
@@ -8,9 +9,7 @@ export class StickerDrawer {
     this.container = null;
     this.isOpen = false;
     this.currentHeightVh = 40; // Default 40%
-    this.isDragging = false;
-    this.startY = 0;
-    this.startHeight = 0;
+    this.resizer = null;
   }
 
   async open() {
@@ -100,6 +99,16 @@ export class StickerDrawer {
         <div class="drawer-header-title">Stickers</div>
       </div>
 
+      <!-- Fullscreen Header (active when dragged > 90%) -->
+      <div class="sheet-fullscreen-header" id="sticker-fullscreen-header" style="display:none;">
+        <button type="button" class="sheet-fullscreen-back-btn" id="btn-sticker-fullscreen-back" aria-label="Exit fullscreen">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+          </svg>
+        </button>
+        <div class="sheet-fullscreen-title">Stickers</div>
+      </div>
+
       <!-- Sticker Grid Body -->
       <div class="drawer-stickers-scroll">
         <div class="stickers-grid">
@@ -121,15 +130,28 @@ export class StickerDrawer {
       overlay.classList.add('active');
     });
 
+    // Initialize Universal Drawer Resizer
+    this.resizer = new DrawerResizer({
+      sheet: drawer,
+      handle: drawer.querySelector('#drawer-drag-header'),
+      backdrop: overlay,
+      fullscreenHeader: drawer.querySelector('#sticker-fullscreen-header'),
+      overlayId: 'sticker-drawer',
+      defaultHeightVh: this.currentHeightVh || 40,
+      minVh: 20,
+      maxVh: 90,
+      onClose: () => this.close(false),
+      onResize: (px, vh) => {
+        this.currentHeightVh = Math.round(vh);
+      }
+    });
+
     // Close when tapping outside the sheet
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) {
         this.close();
       }
     });
-
-    // Bind Drag Handle resize events
-    this.bindDragResize(drawer);
 
     // Bind Sticker selection
     const tiles = drawer.querySelectorAll('.sticker-grid-tile');
@@ -153,54 +175,6 @@ export class StickerDrawer {
         }
       });
     });
-  }
-
-  bindDragResize(drawer) {
-    const handle = drawer.querySelector('#drawer-drag-header');
-    if (!handle) return;
-
-    const onPointerDown = (e) => {
-      this.isDragging = true;
-      this.startY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
-      this.startHeight = drawer.getBoundingClientRect().height;
-      drawer.style.transition = 'none';
-
-      document.addEventListener('pointermove', onPointerMove);
-      document.addEventListener('pointerup', onPointerUp);
-      document.addEventListener('touchmove', onPointerMove, { passive: false });
-      document.addEventListener('touchend', onPointerUp);
-    };
-
-    const onPointerMove = (e) => {
-      if (!this.isDragging) return;
-      if (e.cancelable) e.preventDefault();
-
-      const currentY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
-      const deltaY = this.startY - currentY; // Moving up increases height
-      const newHeight = this.startHeight + deltaY;
-
-      const vh = window.innerHeight;
-      const minHeight = vh * 0.20; // 20%
-      const maxHeight = vh * 0.85; // 85%
-
-      const clampedHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
-      drawer.style.height = `${clampedHeight}px`;
-      this.currentHeightVh = Math.round((clampedHeight / vh) * 100);
-    };
-
-    const onPointerUp = (e) => {
-      if (!this.isDragging) return;
-      this.isDragging = false;
-      drawer.style.transition = 'height 0.2s cubic-bezier(0.2, 0, 0, 1)';
-
-      document.removeEventListener('pointermove', onPointerMove);
-      document.removeEventListener('pointerup', onPointerUp);
-      document.removeEventListener('touchmove', onPointerMove);
-      document.removeEventListener('touchend', onPointerUp);
-    };
-
-    handle.addEventListener('pointerdown', onPointerDown);
-    handle.addEventListener('touchstart', onPointerDown, { passive: true });
   }
 }
 

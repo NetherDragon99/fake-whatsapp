@@ -1151,7 +1151,7 @@ input:checked + .switch-slider::before {
   background-color: var(--wa-surface);
   border-top-left-radius: 18px;
   border-top-right-radius: 18px;
-  max-height: 85vh;
+  max-height: 100vh;
   display: flex;
   flex-direction: column;
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.6);
@@ -2255,6 +2255,112 @@ input:checked + .switch-slider::before {
   color: #ffffff;
 }
 
+/* Universal Resizable Drawer Styles */
+.drawer-resizing {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+.drawer-drag-handle-area,
+.bottom-sheet-handle-bar,
+.sheet-drag-handle-bar {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 10px 0;
+  cursor: grab;
+  touch-action: none !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+.drawer-drag-handle-area:active,
+.bottom-sheet-handle-bar:active,
+.sheet-drag-handle-bar:active {
+  cursor: grabbing;
+}
+
+.sheet-drag-handle {
+  width: 42px;
+  height: 4.5px;
+  border-radius: 3px;
+  background-color: var(--wa-text-secondary, #8696a0);
+  opacity: 0.5;
+  transition: opacity 0.2s, background-color 0.2s;
+  pointer-events: none;
+}
+
+.bottom-sheet-handle-bar:hover .sheet-drag-handle,
+.bottom-sheet-handle-bar:active .sheet-drag-handle,
+.drawer-drag-header:hover .drawer-drag-handle-bar,
+.drawer-drag-header:active .drawer-drag-handle-bar {
+  opacity: 0.9;
+  background-color: var(--wa-text-primary, #ffffff);
+}
+
+/* Fullscreen Mode for Resizable Drawers */
+.is-fullscreen {
+  height: 100vh !important;
+  max-height: 100vh !important;
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  z-index: 60 !important;
+}
+
+.sheet-fullscreen-header {
+  display: none;
+  align-items: center;
+  height: 56px;
+  min-height: 56px;
+  padding: 0 16px;
+  background-color: var(--wa-surface, #202c33);
+  border-bottom: 1px solid var(--wa-border, rgba(255, 255, 255, 0.08));
+  color: var(--wa-text-primary, #e9edef);
+  gap: 12px;
+  box-sizing: border-box;
+}
+
+.sheet-fullscreen-back-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  padding: 8px;
+  margin-left: -8px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.sheet-fullscreen-back-btn:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.sheet-fullscreen-title {
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
+.preview-color-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 18;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.preview-color-sheet-backdrop.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .preview-color-bottom-sheet {
   position: absolute;
   bottom: 0;
@@ -2263,36 +2369,34 @@ input:checked + .switch-slider::before {
   background-color: var(--wa-surface);
   border-top-left-radius: 24px;
   border-top-right-radius: 24px;
-  padding: 16px 20px 32px 20px;
+  padding: 0 20px 24px 20px;
   z-index: 20;
+  display: none;
+  flex-direction: column;
   transform: translateY(100%);
-  transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1);
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+  transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1), height 0.25s cubic-bezier(0.2, 0, 0, 1);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.6);
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .preview-color-bottom-sheet.open {
+  display: flex;
   transform: translateY(0);
 }
 
-.bottom-sheet-handle-bar {
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  margin-bottom: 16px;
-}
-
-.sheet-drag-handle {
-  width: 40px;
-  height: 4px;
-  border-radius: 2px;
-  background-color: var(--wa-text-secondary);
-  opacity: 0.5;
+.sheet-content-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 0 20px 0;
+  -webkit-overflow-scrolling: touch;
 }
 
 .sheet-swatch-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
-  gap: 12px;
+  gap: 14px;
+  padding: 4px;
 }
 
 .sheet-colour-swatch {

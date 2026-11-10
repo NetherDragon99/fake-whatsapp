@@ -215,6 +215,19 @@ export class Router {
       return true;
     }
 
+    // Color Bottom Sheet (Theme Preview)
+    const colorSheet = document.querySelector('.preview-color-bottom-sheet.open');
+    if (colorSheet) {
+      const backdrop = document.querySelector('.preview-color-sheet-backdrop.active');
+      if (backdrop) backdrop.click();
+      else {
+        colorSheet.classList.remove('open');
+        colorSheet.classList.remove('active');
+        colorSheet.style.display = 'none';
+      }
+      return true;
+    }
+
     return false;
   }
 

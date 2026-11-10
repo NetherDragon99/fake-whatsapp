@@ -6,6 +6,7 @@ import { Toast } from './toast.js';
 import { showAlert } from './custom-dialog.js';
 import { openImageCropper } from './image-cropper.js';
 import { assetUrl } from '../config/base-path.js';
+import { DrawerResizer } from '../utils/drawer-resizer.js';
 
 export class ImportModal {
   constructor(options = {}) {
@@ -23,7 +24,9 @@ export class ImportModal {
 
     this.overlay.innerHTML = `
       <div class="wa-modal-sheet" id="import-sheet">
-        <div class="sheet-drag-handle"></div>
+        <div class="sheet-drag-handle-bar" id="import-sheet-handle">
+          <div class="sheet-drag-handle"></div>
+        </div>
         <div class="sheet-header">
           <button class="sheet-close-btn">${Icons.close('', 22)}</button>
           <h2 class="sheet-title">Import WhatsApp Archive</h2>
@@ -130,6 +133,18 @@ export class ImportModal {
     `;
 
     document.body.appendChild(this.overlay);
+
+    // Initialize Universal Resizable Drawer
+    this.resizer = new DrawerResizer({
+      sheet: this.overlay.querySelector('#import-sheet'),
+      handle: this.overlay.querySelector('#import-sheet-handle'),
+      backdrop: this.overlay,
+      overlayId: 'import-sheet',
+      defaultHeightVh: 75,
+      minVh: 20,
+      maxVh: 90,
+      onClose: () => this.close()
+    });
 
     // Close button
     this.overlay.querySelector('.sheet-close-btn').addEventListener('click', () => this.close());
