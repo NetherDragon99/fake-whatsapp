@@ -84,22 +84,28 @@ export class ChatThemeView {
         </header>
 
         <div class="chat-theme-body">
-          <!-- Top Two Action Buttons: Chat Bubble & Wallpaper -->
+          <!-- Top Two Sleek Action Card Pills: Chat Bubble & Wallpaper -->
           <div class="theme-top-actions">
-            <button type="button" class="theme-action-item" id="btn-top-chat-bubble">
-              <div class="theme-action-circle bubble-circle">
-                <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor">
+            <button type="button" class="theme-action-pill" id="btn-top-chat-bubble" aria-label="Customize chat bubble color">
+              <div class="theme-pill-icon bubble-pill-icon">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
                   <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
                 </svg>
               </div>
-              <span class="theme-action-label">Chat bubble</span>
+              <div class="theme-pill-text">
+                <span class="theme-pill-title">Chat bubble</span>
+                <span class="theme-pill-subtitle">Color palette</span>
+              </div>
             </button>
 
-            <button type="button" class="theme-action-item" id="btn-top-wallpaper">
-              <div class="theme-action-circle wallpaper-circle">
-                ${Icons.gallery('', 26)}
+            <button type="button" class="theme-action-pill" id="btn-top-wallpaper" aria-label="Change wallpaper">
+              <div class="theme-pill-icon wallpaper-pill-icon">
+                ${Icons.gallery('', 22)}
               </div>
-              <span class="theme-action-label">Wallpaper</span>
+              <div class="theme-pill-text">
+                <span class="theme-pill-title">Wallpaper</span>
+                <span class="theme-pill-subtitle">Photos & styles</span>
+              </div>
             </button>
           </div>
 

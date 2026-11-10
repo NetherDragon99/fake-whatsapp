@@ -2916,53 +2916,98 @@ input:checked + .switch-slider::before {
   gap: 20px;
 }
 
-/* Top Action Buttons (Chat bubble & Wallpaper) */
-.theme-top-actions {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 4px 0 8px 0;
+/* Top Action Sleek Card Pills (Chat bubble & Wallpaper) */
+.theme-top-actions,
+.wp-top-action-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 4px 0 16px 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.theme-action-item {
+.theme-action-pill {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  background: transparent;
-  border: none;
+  gap: 12px;
+  background-color: var(--wa-surface, #202c33);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 12px 14px;
   cursor: pointer;
-  padding: 0;
+  text-align: left;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  transition: background-color 0.15s ease, transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  box-sizing: border-box;
+  text-decoration: none;
 }
 
-.theme-action-circle {
-  width: 56px;
-  height: 56px;
+.theme-action-pill:hover {
+  background-color: var(--wa-surface-hover, #2a3942);
+  border-color: rgba(255, 255, 255, 0.16);
+  transform: translateY(-1.5px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.theme-action-pill:active {
+  transform: scale(0.97);
+  background-color: var(--wa-surface-hover, #2a3942);
+}
+
+.theme-pill-icon {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #ffffff;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
-  transition: transform 0.15s ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
 }
 
-.theme-action-circle:active {
-  transform: scale(0.92);
-}
-
-.theme-action-circle.bubble-circle {
+.bubble-pill-icon {
   background: linear-gradient(135deg, #1fa2ff, #12d8fa);
 }
 
-.theme-action-circle.wallpaper-circle {
+.wallpaper-pill-icon {
   background: linear-gradient(135deg, #11998e, #38ef7d);
 }
 
-.theme-action-label {
-  font-size: 13px;
-  font-weight: 500;
+.gallery-pill-icon {
+  background: linear-gradient(135deg, #1fa2ff, #12d8fa);
+}
+
+.colours-pill-icon {
+  background: linear-gradient(135deg, #f12711, #f5af19);
+}
+
+.theme-pill-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  overflow: hidden;
+  gap: 2px;
+}
+
+.theme-pill-title {
+  font-size: 14.5px;
+  font-weight: 600;
   color: var(--wa-text-primary, #e9edef);
+  letter-spacing: 0.1px;
+  white-space: nowrap;
+}
+
+.theme-pill-subtitle {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--wa-text-secondary, #8696a0);
+  white-space: nowrap;
 }
 
 /* Theme Category Section */

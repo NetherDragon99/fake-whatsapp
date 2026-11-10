@@ -23,7 +23,7 @@ import { applyAppIcon } from './config/app-icons.js';
 import { assetUrl } from './config/base-path.js';
 
 // Application Version Constant
-window.APP_VERSION = '0.0.23';
+window.APP_VERSION = '0.0.24';
 
 // Global deferred PWA install prompt holder
 window.deferredInstallPrompt = null;

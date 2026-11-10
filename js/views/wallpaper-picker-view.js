@@ -51,23 +51,29 @@ export class WallpaperPickerView {
         </header>
 
         <div class="wallpaper-picker-body">
-          <!-- Section 1 (Top): Action Buttons (Gallery & Colour) -->
+          <!-- Section 1 (Top): Sleek Action Card Pills (Gallery & Colour) -->
           <div class="wp-top-action-buttons">
-            <label class="wp-round-action-btn" id="btn-wp-gallery" title="Gallery">
+            <label class="theme-action-pill" id="btn-wp-gallery" title="Gallery" aria-label="Upload photo from gallery">
               <input type="file" id="wp-gallery-file-input" accept="image/*" style="display:none;" />
-              <div class="wp-round-icon-circle bg-gallery-icon">
-                ${Icons.gallery('', 26)}
+              <div class="theme-pill-icon gallery-pill-icon">
+                ${Icons.gallery('', 22)}
               </div>
-              <span class="wp-round-action-label">Gallery</span>
+              <div class="theme-pill-text">
+                <span class="theme-pill-title">Gallery</span>
+                <span class="theme-pill-subtitle">Custom photo</span>
+              </div>
             </label>
 
-            <button type="button" class="wp-round-action-btn" id="btn-wp-solid-colours" title="Colour">
-              <div class="wp-round-icon-circle bg-colour-icon">
-                <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor">
+            <button type="button" class="theme-action-pill" id="btn-wp-solid-colours" title="Solid colours" aria-label="Pick solid colour">
+              <div class="theme-pill-icon colours-pill-icon">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
                   <path d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 19.4c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l1.9-1.9C9.28 19.64 10.59 20 12 20c4.97 0 9-4.03 9-9s-4.03-9-9-9zm0 15c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/>
                 </svg>
               </div>
-              <span class="wp-round-action-label">Colour</span>
+              <div class="theme-pill-text">
+                <span class="theme-pill-title">Colour</span>
+                <span class="theme-pill-subtitle">Solid tints</span>
+              </div>
             </button>
           </div>
 
