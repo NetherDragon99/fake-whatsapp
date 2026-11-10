@@ -80,7 +80,7 @@ export class AppearanceView {
               <div class="appearance-row-subtitle">Choose how WhatsApp looks on your home screen</div>
             </div>
             <div class="appearance-row-right">
-              <img src="${assetUrl('assets/icons/icon-192.png')}" class="app-icon-mini-thumb" alt="Icon" />
+              <img src="${assetUrl('assets/icons/icon.svg')}" class="app-icon-mini-thumb" alt="Icon" />
             </div>
           </div>
 
@@ -245,7 +245,7 @@ export class AppearanceView {
         <div class="app-icon-options-list">
           <label class="app-icon-option-row">
             <input type="radio" name="app-icon-choice" value="official" checked />
-            <img src="${assetUrl('assets/icons/icon-192.png')}" class="icon-option-img" alt="Official Green" />
+            <img src="${assetUrl('assets/icons/icon.svg')}" class="icon-option-img" alt="Official Green" />
             <div class="icon-option-info">
               <div class="icon-option-name">Official Green</div>
               <div class="icon-option-desc">Original WhatsApp Android icon</div>
@@ -303,10 +303,12 @@ export class AppearanceView {
       const selected = overlay.querySelector('input[name="app-icon-choice"]:checked')?.value || 'official';
       await db.setSetting('appIconChoice', selected);
 
-      // If user selected official, ensure link tag points to assets/icons/icon-192.png
-      const iconLink = document.querySelector('link[rel="icon"]');
-      if (iconLink) {
-        iconLink.href = assetUrl('assets/icons/icon-192.png');
+      // If user selected official, ensure link tags point to assets/icons/icon.svg
+      if (selected === 'official') {
+        const svgIconLink = document.querySelector('link[type="image/svg+xml"]');
+        if (svgIconLink) svgIconLink.href = assetUrl('assets/icons/icon.svg');
+        const touchIconLink = document.querySelector('link[rel="apple-touch-icon"]');
+        if (touchIconLink) touchIconLink.href = assetUrl('assets/icons/icon.svg');
       }
       cleanup();
       Toast.show('App icon preference saved');
