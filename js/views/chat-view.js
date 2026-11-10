@@ -170,10 +170,10 @@ export class ChatView {
       </div>
     `;
 
-    await this.bindEvents(outgoingTheme, targetMsgId);
+    await this.bindEvents(outgoingTheme, targetMsgId, params);
   }
 
-  async bindEvents(outgoingTheme, targetMsgId) {
+  async bindEvents(outgoingTheme, targetMsgId, params = {}) {
     const messagesWrap = this.container.querySelector('#chat-messages-wrap');
 
     // Initialize Virtual Message Scroller

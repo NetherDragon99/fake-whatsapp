@@ -274,6 +274,22 @@ export class WhatsAppParser {
           text = text.replace(/<This message was edited>|<تم تعديل هذه الرسالة>/gi, '').trim();
         }
 
+        const isForwarded = content.includes('<Forwarded>') ||
+                            content.includes('[Forwarded]') ||
+                            content.includes('<محولة>') ||
+                            content.includes('[محولة]');
+        if (isForwarded) {
+          text = text.replace(/<Forwarded>|\[Forwarded\]|<محولة>|\[محولة\]/gi, '').trim();
+        }
+
+        let reaction = null;
+        const reactMatch = text.match(/<(?:Reaction|تفاعل):\s*([^>]+)>/i) ||
+                           text.match(/\[(?:Reaction|تفاعل):\s*([^\]]+)\]/i);
+        if (reactMatch) {
+          reaction = reactMatch[1].trim();
+          text = text.replace(reactMatch[0], '').trim();
+        }
+
         currentMsg = {
           id: 'msg_' + timestamp + '_' + Math.random().toString(36).substr(2, 6),
           timestamp,
@@ -286,8 +302,8 @@ export class WhatsAppParser {
           isDeleted,
           isEdited,
           isOmitted,
-          isForwarded: false,
-          reaction: null,
+          isForwarded,
+          reaction,
           callInfo: callInfo.isCall ? callInfo : null
         };
 
@@ -319,8 +335,8 @@ export class WhatsAppParser {
           currentMsg = {
             id: 'sys_' + timestamp + '_' + Math.random().toString(36).substr(2, 6),
             timestamp,
-            sender: 'System',
-            isSystem: true,
+            sender: callInfo.isCall ? 'Call' : 'System',
+            isSystem: !callInfo.isCall,
             isOutgoing: false,
             text: sysText,
             mediaName: null,

@@ -65,6 +65,36 @@ export class VirtualMessageScroller {
     return colors[Math.abs(hash) % colors.length];
   }
 
+  formatMessageText(text) {
+    if (!text) return '';
+    let escaped = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+    // Code blocks: ```code```
+    escaped = escaped.replace(/```([\s\S]+?)```/g, '<pre class="chat-code-block"><code>$1</code></pre>');
+
+    // Inline code: `code`
+    escaped = escaped.replace(/`([^`\n]+?)`/g, '<code class="chat-inline-code">$1</code>');
+
+    // Bold: *text*
+    escaped = escaped.replace(/(^|[\s\(\[\{.,!?:;])\*([^*\n]+?)\*($|[\s\)\]}.,!?:;])/g, '$1<strong>$2</strong>$3');
+
+    // Italic: _text_
+    escaped = escaped.replace(/(^|[\s\(\[\{.,!?:;])_([^_\n]+?)_($|[\s\)\]}.,!?:;])/g, '$1<em>$2</em>$3');
+
+    // Strikethrough: ~text~
+    escaped = escaped.replace(/(^|[\s\(\[\{.,!?:;])~([^~\n]+?)~($|[\s\)\]}.,!?:;])/g, '$1<del>$2</del>$3');
+
+    // URLs: https?://...
+    escaped = escaped.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="chat-link">$1</a>');
+
+    return escaped;
+  }
+
   isSticker(msg) {
     return msg.mediaType === 'sticker' || (msg.mediaName && (/\.webp$/i.test(msg.mediaName) || /stk-/i.test(msg.mediaName) || /sticker/i.test(msg.mediaName)));
   }
@@ -561,7 +591,7 @@ export class VirtualMessageScroller {
         textDiv.className += ' is-deleted';
         textDiv.innerHTML = `${Icons.lock('', 13)} <i>This message was deleted</i>`;
       } else {
-        textDiv.textContent = msg.text;
+        textDiv.innerHTML = this.formatMessageText(msg.text);
       }
       bubble.appendChild(textDiv);
     }
@@ -613,20 +643,22 @@ export class VirtualMessageScroller {
       }
     }
 
-    // Photo / Image
-    if (type === 'image') {
+    // Photo / Image / Sticker
+    if (type === 'image' || type === 'sticker') {
       const wrap = document.createElement('div');
       wrap.className = 'media-image-wrap';
       if (mediaUrl) {
         const img = document.createElement('img');
         img.src = mediaUrl;
-        img.alt = msg.mediaName || 'Photo';
+        img.alt = msg.mediaName || (type === 'sticker' ? 'Sticker' : 'Photo');
         img.loading = 'lazy';
         img.className = 'bubble-photo';
-        img.addEventListener('click', () => this.onMediaClick(mediaItem, msg));
+        if (type !== 'sticker') {
+          img.addEventListener('click', () => this.onMediaClick(mediaItem, msg));
+        }
         wrap.appendChild(img);
       } else {
-        wrap.innerHTML = `<div class="media-placeholder">${Icons.gallery('', 32)}<span>${msg.mediaName || 'Image'}</span></div>`;
+        wrap.innerHTML = `<div class="media-placeholder">${type === 'sticker' ? Icons.emoji('', 32) : Icons.gallery('', 32)}<span>${msg.mediaName || (type === 'sticker' ? 'Sticker' : 'Image')}</span></div>`;
       }
       return wrap;
     }
