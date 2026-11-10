@@ -6,6 +6,7 @@ import { mediaLightbox } from '../components/lightbox.js';
 import { Toast } from '../components/toast.js';
 import { showConfirm, showAlert, showPrompt } from '../components/custom-dialog.js';
 import { openImageCropper } from '../components/image-cropper.js';
+import { ChatExporter } from '../components/chat-exporter.js';
 
 export class ContactInfoView {
   constructor(router) {
@@ -150,6 +151,15 @@ export class ContactInfoView {
 
           <!-- Options & Toggles -->
           <div class="info-options-group">
+            <!-- Row: Export chat (right on top of Manage storage) -->
+            <div class="option-row clickable" id="row-export-chat">
+              <span class="option-icon">${Icons.exportChat('', 20)}</span>
+              <div class="option-texts">
+                <div class="option-title">Export chat</div>
+                <div class="option-subtitle">Save messages and media as WhatsApp archive</div>
+              </div>
+            </div>
+
             <div class="option-row">
               <span class="option-icon">${Icons.download('', 20)}</span>
               <div class="option-texts">
@@ -370,6 +380,21 @@ export class ContactInfoView {
     this.container.querySelector('#row-edit-chat-info').addEventListener('click', () => {
       this.openEditChatModal();
     });
+
+    // Export Chat (Prompt: Without media vs Include media)
+    const exportRow = this.container.querySelector('#row-export-chat');
+    if (exportRow) {
+      exportRow.addEventListener('click', () => {
+        ChatExporter.showExportPrompt(this.chatId);
+      });
+    }
+
+    const moreBtn = this.container.querySelector('#btn-info-more');
+    if (moreBtn) {
+      moreBtn.addEventListener('click', () => {
+        ChatExporter.showExportPrompt(this.chatId);
+      });
+    }
 
     // Wallpaper
     this.container.querySelector('#row-chat-wallpaper').addEventListener('click', () => {
