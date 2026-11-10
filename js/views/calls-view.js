@@ -79,11 +79,20 @@ export class CallsView {
     if (calls.length === 0) {
       listWrap.innerHTML = `
         <div class="empty-calls-state">
-          ${Icons.callVoice('', 48)}
+          <div class="empty-icon-circle">${Icons.callVoice('', 34)}</div>
           <h3>No call records</h3>
           <p>Calls found inside imported WhatsApp exports will automatically populate here.</p>
+          <button type="button" class="empty-state-cta-btn secondary" id="empty-btn-open-import">
+            ${Icons.download('', 18)}
+            <span>Import Chat Archive</span>
+          </button>
         </div>
       `;
+      listWrap.querySelector('#empty-btn-open-import')?.addEventListener('click', () => {
+        if (window.app && window.app.showImportModal) {
+          window.app.showImportModal();
+        }
+      });
       return;
     }
 

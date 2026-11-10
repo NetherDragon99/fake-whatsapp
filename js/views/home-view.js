@@ -320,13 +320,31 @@ export class HomeView {
     }
 
     if (filteredChats.length === 0) {
+      const isFiltered = this.activeFilter !== 'All';
       const emptyDiv = document.createElement('div');
       emptyDiv.className = 'empty-chats-state';
-      emptyDiv.innerHTML = `
-        <div class="empty-icon">${Icons.chatsTab('', 48)}</div>
-        <h3>No conversations yet</h3>
-        <p>Tap the green chat button below to restore your WhatsApp chat archives.</p>
-      `;
+      if (isFiltered) {
+        emptyDiv.innerHTML = `
+          <div class="empty-icon-circle">${Icons.search('', 32)}</div>
+          <h3>No chats in ${this.activeFilter}</h3>
+          <p>No conversations match the selected filter chip.</p>
+        `;
+      } else {
+        emptyDiv.innerHTML = `
+          <div class="empty-icon-circle">${Icons.chatsTab('', 34)}</div>
+          <h3>No conversations yet</h3>
+          <p>Tap below or use the green chat button to restore your WhatsApp chat archives.</p>
+          <button type="button" class="empty-state-cta-btn" id="empty-btn-start-import">
+            ${Icons.download('', 18)}
+            <span>Restore Chats</span>
+          </button>
+        `;
+        emptyDiv.querySelector('#empty-btn-start-import')?.addEventListener('click', () => {
+          if (window.app && window.app.showImportModal) {
+            window.app.showImportModal();
+          }
+        });
+      }
       listEl.appendChild(emptyDiv);
       return;
     }

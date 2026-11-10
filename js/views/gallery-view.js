@@ -110,8 +110,9 @@ export class GalleryView {
     if (filtered.length === 0) {
       gridContainer.innerHTML = `
         <div class="empty-gallery-state">
-          ${Icons.gallery('', 48)}
-          <p>No photos or videos found.</p>
+          <div class="empty-icon-circle">${Icons.gallery('', 34)}</div>
+          <h3>No media items</h3>
+          <p>Photos, videos, and stickers from imported chats will appear here.</p>
         </div>
       `;
       return;
