@@ -4,6 +4,7 @@ import { db } from '../db.js';
 import { WhatsAppParser } from '../parser.js';
 import { Toast } from './toast.js';
 import { showAlert } from './custom-dialog.js';
+import { openImageCropper } from './image-cropper.js';
 import { assetUrl } from '../config/base-path.js';
 
 export class ImportModal {
@@ -11,6 +12,7 @@ export class ImportModal {
     this.onComplete = options.onComplete || (() => {});
     this.overlay = null;
     this.parser = new WhatsAppParser();
+    this.chatAvatarBlob = null;
   }
 
   show() {
@@ -77,6 +79,23 @@ export class ImportModal {
                   <span>Group conversation</span>
                   <input type="checkbox" id="toggle-group-chat" />
                 </label>
+              </div>
+
+              <!-- Chat Profile Photo Picker -->
+              <div class="setup-avatar-section">
+                <div class="setup-avatar-wrap" id="setup-chat-avatar-wrap" title="Change profile photo">
+                  <div class="setup-avatar-circle" id="setup-avatar-preview">
+                    ${Icons.userAvatar('', 36)}
+                  </div>
+                  <div class="setup-avatar-badge" title="Upload photo">
+                    ${Icons.camera('', 14)}
+                  </div>
+                  <input type="file" id="setup-avatar-file-input" accept="image/*" style="display:none;" />
+                </div>
+                <div class="setup-avatar-info">
+                  <span class="setup-avatar-label">Chat Profile Photo</span>
+                  <span class="setup-avatar-sub">Tap to customize the contact or group picture</span>
+                </div>
               </div>
 
               <div class="input-group">
@@ -238,6 +257,30 @@ export class ImportModal {
         throw new Error('No valid WhatsApp messages found in the selected file.');
       }
 
+      // Auto-detect avatar/profile picture from archive media files
+      let detectedAvatar = null;
+      for (const [cleanName, fileItem] of mediaFiles.entries()) {
+        const lower = cleanName.toLowerCase();
+        if (/\.(jpg|jpeg|png|webp)$/i.test(lower)) {
+          if (lower.includes('profile') || lower.includes('avatar') || lower.includes('contact') || lower.includes('user')) {
+            detectedAvatar = fileItem;
+            break;
+          }
+          if (!detectedAvatar && (lower === 'photo.jpg' || lower === 'photo.png' || lower === 'photo.webp')) {
+            detectedAvatar = fileItem;
+          }
+        }
+      }
+
+      if (detectedAvatar) {
+        let mime = 'image/jpeg';
+        if (detectedAvatar.cleanName.endsWith('.png')) mime = 'image/png';
+        if (detectedAvatar.cleanName.endsWith('.webp')) mime = 'image/webp';
+        this.chatAvatarBlob = new Blob([detectedAvatar.data], { type: mime });
+      } else {
+        this.chatAvatarBlob = null;
+      }
+
       this.rawParseResult = parseResult;
       this.extractedMediaFiles = mediaFiles;
       this.archiveFileName = file.name;
@@ -256,21 +299,25 @@ export class ImportModal {
     participantsList.innerHTML = '';
 
     const participants = parseResult.participants;
-    let defaultMe = participants[0] || 'Me';
 
-    // Auto-detect chat name from archive or participants
-    let autoChatName = '';
-    if (participants.length === 1) {
-      autoChatName = `${participants[0]} (You)`;
-    } else if (participants.length === 2) {
-      autoChatName = participants[1]; // default other person
-    } else {
-      autoChatName = 'Group Chat';
+    // Detect if any participant is named "Me", "You", or "أنا" or matches current user profile name
+    let defaultMeIndex = 0;
+    try {
+      const savedOwnerName = await db.getSetting('userProfileName', '');
+      if (participants.length === 2) {
+        const meIdx = participants.findIndex((p) => {
+          const lower = p.trim().toLowerCase();
+          return lower === 'me' || lower === 'you' || lower === 'أنا' || (savedOwnerName && lower === savedOwnerName.toLowerCase());
+        });
+        if (meIdx !== -1) {
+          defaultMeIndex = meIdx;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed reading userProfileName setting:', e);
     }
 
     const nameInput = this.overlay.querySelector('#chat-display-name');
-    nameInput.value = autoChatName;
-
     const selfChatToggle = this.overlay.querySelector('#toggle-self-chat');
     const groupChatToggle = this.overlay.querySelector('#toggle-group-chat');
 
@@ -281,30 +328,104 @@ export class ImportModal {
       groupChatToggle.checked = true;
     }
 
-    // Render participant radio buttons
+    // Determine chat name: for 1-on-1, it is the OTHER participant
+    const getChatNameForMeIndex = (meIdx) => {
+      if (participants.length === 1) {
+        return `${participants[0]} (You)`;
+      } else if (participants.length === 2) {
+        const otherIdx = meIdx === 0 ? 1 : 0;
+        return participants[otherIdx];
+      } else {
+        return 'Group Chat';
+      }
+    };
+
+    nameInput.value = getChatNameForMeIndex(defaultMeIndex);
+
+    // Render participant radio buttons with defaultMeIndex checked
     participants.forEach((name, idx) => {
       const option = document.createElement('div');
       option.className = 'participant-radio-item';
       option.innerHTML = `
         <label>
-          <input type="radio" name="me-selector" value="${name}" ${idx === 0 ? 'checked' : ''} />
+          <input type="radio" name="me-selector" value="${name}" ${idx === defaultMeIndex ? 'checked' : ''} />
           <span class="participant-name">${name}</span>
         </label>
       `;
       participantsList.appendChild(option);
     });
 
-    // Check if a chat with this name already exists in db
-    const existingChats = await db.getChats();
-    const matchingChat = existingChats.find((c) => c.name.toLowerCase() === autoChatName.toLowerCase());
-    const overlapBox = this.overlay.querySelector('#overlap-merge-box');
-    if (matchingChat) {
-      overlapBox.style.display = 'block';
-      this.existingChatId = matchingChat.id;
-    } else {
-      overlapBox.style.display = 'none';
-      this.existingChatId = null;
-    }
+    const checkOverlap = async (chatNameToTest) => {
+      const existingChats = await db.getChats();
+      const matchingChat = existingChats.find((c) => c.name.toLowerCase() === chatNameToTest.toLowerCase());
+      const overlapBox = this.overlay.querySelector('#overlap-merge-box');
+      if (matchingChat) {
+        overlapBox.style.display = 'block';
+        this.existingChatId = matchingChat.id;
+      } else {
+        overlapBox.style.display = 'none';
+        this.existingChatId = null;
+      }
+    };
+
+    await checkOverlap(nameInput.value);
+
+    // When user changes who "Me" is in a 1-on-1 conversation, dynamically set chat name to the OTHER participant
+    const radios = participantsList.querySelectorAll('input[name="me-selector"]');
+    radios.forEach((r) => {
+      r.addEventListener('change', async () => {
+        if (participants.length === 2 && !groupChatToggle.checked) {
+          const selectedIdx = participants.indexOf(r.value);
+          if (selectedIdx !== -1) {
+            const otherIdx = selectedIdx === 0 ? 1 : 0;
+            nameInput.value = participants[otherIdx];
+            await checkOverlap(nameInput.value);
+          }
+        }
+      });
+    });
+
+    // Avatar preview management
+    const updateAvatarPreview = () => {
+      const preview = this.overlay.querySelector('#setup-avatar-preview');
+      if (!preview) return;
+      if (this.chatAvatarBlob) {
+        preview.innerHTML = `<img src="${URL.createObjectURL(this.chatAvatarBlob)}" class="setup-avatar-img" alt="Avatar" />`;
+      } else {
+        preview.innerHTML = groupChatToggle.checked ? Icons.groupAvatar('', 36) : Icons.userAvatar('', 36);
+      }
+    };
+
+    updateAvatarPreview();
+
+    const avatarWrap = this.overlay.querySelector('#setup-chat-avatar-wrap');
+    const avatarInput = this.overlay.querySelector('#setup-avatar-file-input');
+
+    avatarWrap.onclick = () => {
+      avatarInput.click();
+    };
+
+    avatarInput.onchange = async (e) => {
+      if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        try {
+          const cropped = await openImageCropper(file);
+          if (cropped) {
+            this.chatAvatarBlob = cropped;
+            updateAvatarPreview();
+          }
+        } catch (cropErr) {
+          console.warn('Avatar cropping failed or cancelled:', cropErr);
+        }
+        avatarInput.value = '';
+      }
+    };
+
+    groupChatToggle.addEventListener('change', () => {
+      if (!this.chatAvatarBlob) {
+        updateAvatarPreview();
+      }
+    });
 
     // Wire Finish Button
     const finishBtn = this.overlay.querySelector('#btn-finish-import');
@@ -428,7 +549,7 @@ export class ImportModal {
     const chatRecord = {
       id: chatId,
       name: chatName,
-      avatarBlob: null,
+      avatarBlob: this.chatAvatarBlob || null,
       participantNames: this.rawParseResult.participants,
       meParticipant: meName,
       isGroup,
@@ -461,6 +582,7 @@ export class ImportModal {
   }
 
   close() {
+    this.chatAvatarBlob = null;
     if (this.overlay) {
       this.overlay.remove();
       this.overlay = null;
