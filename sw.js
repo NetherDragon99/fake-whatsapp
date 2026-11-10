@@ -1,5 +1,23 @@
-// WhatsApp Android Clone Service Worker v0.0.15
-const CACHE_NAME = 'wa-clone-v0.0.15';
+// WhatsApp Android Clone Service Worker v0.0.16
+const CACHE_NAME = 'wa-clone-v0.0.16';
+
+const APP_ICON_FILES = [
+  './assets/icons/app-icon-1.png',
+  './assets/icons/app-icon-2.png',
+  './assets/icons/app-icon-3.png',
+  './assets/icons/app-icon-4.png',
+  './assets/icons/app-icon-5.png',
+  './assets/icons/app-icon-6.png',
+  './assets/icons/app-icon-7.png',
+  './assets/icons/app-icon-8.png',
+  './assets/icons/app-icon-9.png',
+  './assets/icons/app-icon-10.png',
+  './assets/icons/app-icon-11.png',
+  './assets/icons/app-icon-12.png',
+  './assets/icons/app-icon-13.png',
+  './assets/icons/app-icon-14.png',
+  './assets/icons/app-icon-15.png'
+];
 
 const WALLPAPER_FILES = [
   './assets/wallpapers/nature-1.webp',
@@ -50,6 +68,7 @@ const PRECACHE_ASSETS = [
   './js/config/base-path.js',
   './js/config/palette.js',
   './js/config/wallpapers.js',
+  './js/config/app-icons.js',
   './js/components/custom-dialog.js',
   './js/components/image-cropper.js',
   './js/components/modal-import.js',
@@ -64,6 +83,7 @@ const PRECACHE_ASSETS = [
   './js/views/calls-view.js',
   './js/views/settings-view.js',
   './js/views/appearance-view.js',
+  './js/views/app-icon-view.js',
   './js/views/wallpaper-picker-view.js',
   './js/views/theme-preview-view.js',
   './js/views/chat-theme-view.js',
@@ -76,7 +96,8 @@ const PRECACHE_ASSETS = [
   './assets/icons/icon-maskable-512.png',
   './assets/icons/icon.svg',
   './assets/demo_whatsapp_archive.zip',
-  ...WALLPAPER_FILES
+  ...WALLPAPER_FILES,
+  ...APP_ICON_FILES
 ];
 
 // Install: Resilient pre-caching using Promise.allSettled

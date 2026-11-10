@@ -3,6 +3,7 @@ import { Icons } from '../icons.js';
 import { db } from '../db.js';
 import { APP_COLOR_PALETTE, applyAppAccent } from '../config/palette.js';
 import { WALLPAPER_PRESETS } from '../config/wallpapers.js';
+import { getAppIcon } from '../config/app-icons.js';
 import { assetUrl } from '../config/base-path.js';
 import { Toast } from '../components/toast.js';
 
@@ -29,6 +30,8 @@ export class AppearanceView {
     const defaultWp = await db.getSetting('defaultWallpaper', 'default');
     const currentAccent = await db.getSetting('appAccentColor', '#25d366');
     const defaultDimming = await db.getSetting('defaultDimming', 0);
+    const currentAppIconId = await db.getSetting('app_icon_id', 'icon-1');
+    const currentAppIcon = getAppIcon(currentAppIconId);
 
     // Find thumbnail for default wallpaper
     let thumbHtml = `<div class="theme-mini-thumb default-thumb"></div>`;
@@ -80,7 +83,7 @@ export class AppearanceView {
               <div class="appearance-row-subtitle">Choose how WhatsApp looks on your home screen</div>
             </div>
             <div class="appearance-row-right">
-              <img src="${assetUrl('assets/icons/icon.svg')}" class="app-icon-mini-thumb" alt="Icon" />
+              <img src="${assetUrl(currentAppIcon.file)}" class="app-icon-mini-thumb" alt="Icon" />
             </div>
           </div>
 
@@ -113,9 +116,9 @@ export class AppearanceView {
       this.router.navigate('#/chat-theme');
     });
 
-    // App icon click -> Open App Icon Dialog
+    // App icon click -> Go to App Icon Screen
     rootEl.querySelector('#row-app-icon').addEventListener('click', () => {
-      this.openAppIconDialog();
+      this.router.navigate('#/settings/appearance/app-icon');
     });
 
     // App theme click -> Go to App Theme sub-screen

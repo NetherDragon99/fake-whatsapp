@@ -15,13 +15,15 @@ import { ChatThemeView } from './views/chat-theme-view.js';
 import { ChatBubblePickerView } from './views/chat-bubble-picker-view.js';
 import { SolidColoursPickerView } from './views/solid-colours-picker-view.js';
 import { WallpaperSectionView } from './views/wallpaper-section-view.js';
+import { AppIconView } from './views/app-icon-view.js';
 import { ImportModal } from './components/modal-import.js';
 import { Toast } from './components/toast.js';
 import { applyAppAccent, applyOutgoingBubbleColor } from './config/palette.js';
+import { applyAppIcon } from './config/app-icons.js';
 import { assetUrl } from './config/base-path.js';
 
 // Application Version Constant
-window.APP_VERSION = '0.0.15';
+window.APP_VERSION = '0.0.16';
 
 // Global deferred PWA install prompt holder
 window.deferredInstallPrompt = null;
@@ -72,6 +74,9 @@ class Application {
       const dbBubbleColor = await db.getSetting('defaultBubbleColor', null);
       if (dbBubbleColor) applyOutgoingBubbleColor(dbBubbleColor);
 
+      const dbAppIcon = await db.getSetting('app_icon_id', localStorage.getItem('wa_app_icon_id') || 'icon-1');
+      if (dbAppIcon) applyAppIcon(dbAppIcon);
+
       console.log('[DB] IndexedDB initialized successfully');
     } catch (err) {
       console.error('[DB] Failed to initialize database:', err);
@@ -87,7 +92,9 @@ class Application {
       { pattern: '/calls', viewClass: CallsView },
       { pattern: '/settings', viewClass: SettingsView },
       { pattern: '/settings/appearance/theme', viewClass: AppearanceView, defaultParams: { subRoute: 'theme' } },
+      { pattern: '/settings/appearance/app-icon', viewClass: AppIconView },
       { pattern: '/settings/appearance', viewClass: AppearanceView, defaultParams: { subRoute: '' } },
+      { pattern: '/app-icon', viewClass: AppIconView },
       { pattern: '/chat-theme', viewClass: ChatThemeView },
       { pattern: '/chat-bubble-picker', viewClass: ChatBubblePickerView },
       { pattern: '/wallpaper-picker', viewClass: WallpaperPickerView },
