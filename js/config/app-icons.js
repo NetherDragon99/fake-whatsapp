@@ -1,80 +1,80 @@
-// 15 Custom App Icons extracted from WhatsApp reference
+// 15 High-Quality Vector App Icons on Perfect Circles
 import { assetUrl } from './base-path.js';
 
 export const APP_ICONS = [
   {
     "id": "icon-1",
-    "file": "assets/icons/app-icon-1.png",
+    "file": "assets/icons/app-icon-1.svg",
     "name": "Classic WhatsApp"
   },
   {
     "id": "icon-2",
-    "file": "assets/icons/app-icon-2.png",
+    "file": "assets/icons/app-icon-2.svg",
     "name": "Solid Green"
   },
   {
     "id": "icon-3",
-    "file": "assets/icons/app-icon-3.png",
+    "file": "assets/icons/app-icon-3.svg",
     "name": "Sparkle Teal"
   },
   {
     "id": "icon-4",
-    "file": "assets/icons/app-icon-4.png",
+    "file": "assets/icons/app-icon-4.svg",
     "name": "Origami Emerald"
   },
   {
     "id": "icon-5",
-    "file": "assets/icons/app-icon-5.png",
+    "file": "assets/icons/app-icon-5.svg",
     "name": "Electric Blue"
   },
   {
     "id": "icon-6",
-    "file": "assets/icons/app-icon-6.png",
+    "file": "assets/icons/app-icon-6.svg",
     "name": "Neon Magma"
   },
   {
     "id": "icon-7",
-    "file": "assets/icons/app-icon-7.png",
+    "file": "assets/icons/app-icon-7.svg",
     "name": "Bubblegum Pink"
   },
   {
     "id": "icon-8",
-    "file": "assets/icons/app-icon-8.png",
+    "file": "assets/icons/app-icon-8.svg",
     "name": "Violet Fur"
   },
   {
     "id": "icon-9",
-    "file": "assets/icons/app-icon-9.png",
+    "file": "assets/icons/app-icon-9.svg",
     "name": "Sunset Glow"
   },
   {
     "id": "icon-10",
-    "file": "assets/icons/app-icon-10.png",
+    "file": "assets/icons/app-icon-10.svg",
     "name": "Soft Lilac"
   },
   {
     "id": "icon-11",
-    "file": "assets/icons/app-icon-11.png",
+    "file": "assets/icons/app-icon-11.svg",
     "name": "Sky Pastel"
   },
   {
     "id": "icon-12",
-    "file": "assets/icons/app-icon-12.png",
+    "file": "assets/icons/app-icon-12.svg",
     "name": "Peach Cream"
   },
   {
     "id": "icon-13",
-    "file": "assets/icons/app-icon-13.png",
+    "file": "assets/icons/app-icon-13.svg",
     "name": "Mint Matcha"
   },
   {
     "id": "icon-14",
-    "file": "assets/icons/app-icon-14.png",
+    "file": "assets/icons/app-icon-14.svg",
     "name": "Fresh White"
   },
   {
     "id": "icon-15",
-    "file": "assets/icons/app-icon-15.png",
+    "file": "assets/icons/app-icon-15.svg",
     "name": "Monochrome Dark"
   }
 ];

@@ -3414,9 +3414,8 @@ input:checked + .switch-slider::before {
   width: 66px;
   height: 66px;
   border-radius: 50%;
-  object-fit: cover;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
-  background-color: var(--wa-surface-elevated);
+  object-fit: contain;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   display: block;
 }
 
