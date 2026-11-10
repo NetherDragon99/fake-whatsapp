@@ -461,13 +461,10 @@ export class ContactInfoView {
     });
     if (!confirmed) return;
 
-    for (const m of msgs) {
-      m.isOutgoing = !m.isOutgoing;
-      await db.saveMessage(m);
-    }
-    this.chat.isOutgoingDefault = !this.chat.isOutgoingDefault;
-    await db.updateChat(this.chatId, { isOutgoingDefault: this.chat.isOutgoingDefault });
-    Toast.show('Perspective swapped!');
+    const updatedChat = await db.swapChatPerspective(this.chatId);
+    if (!updatedChat) return;
+
+    Toast.show(`Perspective swapped with ${updatedChat.name}!`);
     this.router.navigate(`#/chat/${this.chatId}`);
   }
 

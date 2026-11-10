@@ -428,22 +428,30 @@ export class ChatView {
   }
 
   async flipPerspective() {
-    const currentPerspective = this.chat.isOutgoingDefault ?? true;
-    const newPerspective = !currentPerspective;
+    const updatedChat = await db.swapChatPerspective(this.chatId);
+    if (!updatedChat) return;
 
-    const msgs = await db.getMessages(this.chatId);
-    for (const m of msgs) {
-      if (!m.isSystem) {
-        m.isOutgoing = !m.isOutgoing;
-        await db.updateMessage(m.id, { isOutgoing: m.isOutgoing });
-      }
+    this.chat = updatedChat;
+
+    // Update Header Name
+    const titleEl = this.container.querySelector('.chat-header-title');
+    if (titleEl) {
+      titleEl.textContent = this.chat.name;
     }
 
-    await db.updateChat(this.chatId, { isOutgoingDefault: newPerspective });
-    this.chat.isOutgoingDefault = newPerspective;
+    // Update Header Avatar
+    const avatarWrap = this.container.querySelector('.chat-header-avatar');
+    if (avatarWrap) {
+      avatarWrap.innerHTML = this.chat.avatarBlob
+        ? `<img src="${URL.createObjectURL(this.chat.avatarBlob)}" class="chat-avatar-img" alt="Avatar" />`
+        : (this.chat.isGroup ? Icons.groupAvatar('', 38) : Icons.userAvatar('', 38));
+    }
 
-    Toast.show('Perspective flipped: ' + (newPerspective ? 'You are Sender' : 'You are Receiver'));
+    // Refresh Virtual Scroller with updated chat
+    this.scroller.chat = this.chat;
     await this.scroller.loadInitial();
+
+    Toast.show(`Perspective swapped with ${this.chat.name}`);
   }
 
   async jumpToSelectedDate(dateString) {

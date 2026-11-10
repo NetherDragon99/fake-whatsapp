@@ -119,6 +119,81 @@ class Database {
     return this.saveChat(updated);
   }
 
+  async swapChatPerspective(chatId) {
+    await this.init();
+    const chat = await this.getChat(chatId);
+    if (!chat) return null;
+
+    const ownerName = await this.getSetting('ownerName', 'You');
+    const userProfileAvatar = await this.getSetting('userProfileAvatar', null);
+
+    const currentChatName = chat.name || 'Contact';
+    const currentChatAvatar = chat.avatarBlob || null;
+    let currentMeName = chat.meParticipant || ownerName || 'Me';
+
+    let newChatName = currentMeName;
+    let newMeName = currentChatName;
+
+    if (chat.participantNames && chat.participantNames.length === 2) {
+      const p1 = chat.participantNames[0];
+      const p2 = chat.participantNames[1];
+      if (currentChatName.trim().toLowerCase() === p1.trim().toLowerCase()) {
+        newChatName = p2;
+        newMeName = p1;
+      } else if (currentChatName.trim().toLowerCase() === p2.trim().toLowerCase()) {
+        newChatName = p1;
+        newMeName = p2;
+      }
+    }
+
+    // Avatar swap between chat contact and user profile
+    const newChatAvatar = userProfileAvatar;
+    const newUserAvatar = currentChatAvatar;
+
+    // Flip all messages
+    const msgs = await this.getMessages(chatId);
+    for (const m of msgs) {
+      if (!m.isSystem) {
+        m.isOutgoing = !m.isOutgoing;
+        if (m.sender === currentChatName) {
+          m.sender = newChatName;
+        } else if (m.sender === currentMeName) {
+          m.sender = newMeName;
+        }
+      }
+    }
+    await this.saveMessages(msgs);
+
+    // Flip calls
+    try {
+      const calls = await this.getCallsByChat(chatId);
+      if (calls && calls.length > 0) {
+        for (const c of calls) {
+          c.contactName = newChatName;
+        }
+        await this.saveCallsBatch(calls);
+      }
+    } catch (callErr) {
+      console.warn('[DB] Error updating calls during perspective swap:', callErr);
+    }
+
+    // Update chat metadata
+    chat.name = newChatName;
+    chat.avatarBlob = newChatAvatar;
+    chat.meParticipant = newMeName;
+    chat.isOutgoingDefault = !(chat.isOutgoingDefault ?? true);
+    if (chat.lastMessage) {
+      chat.lastMessage.isOutgoing = !chat.lastMessage.isOutgoing;
+    }
+    await this.saveChat(chat);
+
+    // Update owner settings
+    await this.setSetting('ownerName', newMeName);
+    await this.setSetting('userProfileAvatar', newUserAvatar);
+
+    return chat;
+  }
+
   async deleteChat(id) {
     await this.init();
     return new Promise((resolve, reject) => {
@@ -397,6 +472,18 @@ class Database {
         calls.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         resolve(calls);
       };
+      req.onerror = () => reject(tx.error);
+    });
+  }
+
+  async getCallsByChat(chatId) {
+    await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction('calls', 'readonly');
+      const store = tx.objectStore('calls');
+      const index = store.index('chatId');
+      const req = index.getAll(IDBKeyRange.only(chatId));
+      req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => reject(tx.error);
     });
   }
