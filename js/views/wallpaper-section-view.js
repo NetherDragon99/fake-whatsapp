@@ -77,7 +77,7 @@ export class WallpaperSectionView {
 
   bindEvents() {
     this.container.querySelector('#btn-section-back').addEventListener('click', () => {
-      this.router.navigate('#/wallpaper-picker');
+      this.router.back();
     });
 
     const cards = this.container.querySelectorAll('.section-grid-card');

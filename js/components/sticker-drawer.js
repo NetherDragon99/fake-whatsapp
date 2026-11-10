@@ -19,10 +19,16 @@ export class StickerDrawer {
       return;
     }
     this.isOpen = true;
+    if (window.router) {
+      window.router.pushOverlay('sticker-drawer', () => this.close(false));
+    }
     await this.render();
   }
 
-  close() {
+  close(notifyRouter = true) {
+    if (notifyRouter && window.router) {
+      window.router.removeOverlay('sticker-drawer');
+    }
     if (this.container) {
       this.container.classList.remove('active');
       setTimeout(() => {

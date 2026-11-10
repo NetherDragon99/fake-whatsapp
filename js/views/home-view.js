@@ -551,6 +551,9 @@ export class HomeView {
     this.isSelectionMode = true;
     this.selectedChatIds.clear();
     this.selectedChatIds.add(chatId);
+    if (window.router) {
+      window.router.pushOverlay('selection-mode', () => this.exitSelectionMode(false));
+    }
     this.updateSelectionBar();
   }
 
@@ -612,7 +615,10 @@ export class HomeView {
     }
   }
 
-  exitSelectionMode() {
+  exitSelectionMode(notifyRouter = true) {
+    if (notifyRouter && window.router) {
+      window.router.removeOverlay('selection-mode');
+    }
     this.isSelectionMode = false;
     this.selectedChatIds.clear();
 

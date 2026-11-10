@@ -24,6 +24,10 @@ export class MediaEditorModal {
     this.activeIndex = 0;
     this.isHd = false;
 
+    if (window.router) {
+      window.router.pushOverlay('media-editor-modal', () => this.close(false));
+    }
+
     this.render();
   }
 
@@ -234,7 +238,10 @@ export class MediaEditorModal {
     }
   }
 
-  close() {
+  close(notifyRouter = true) {
+    if (notifyRouter && window.router) {
+      window.router.removeOverlay('media-editor-modal');
+    }
     if (this.container) {
       this.items.forEach((item) => {
         try {

@@ -54,11 +54,7 @@ export class GalleryView {
 
     // Back button navigation
     this.container.querySelector('#btn-gallery-back').addEventListener('click', () => {
-      if (this.filterChatId && this.filterChatId !== 'all') {
-        this.router.navigate(`#/chat/${this.filterChatId}/info`);
-      } else {
-        this.router.navigate('#/chats');
-      }
+      this.router.back();
     });
 
     // Multi-Toggle Filter Chips (active on press, deactivated on second press)

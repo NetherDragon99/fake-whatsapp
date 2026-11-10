@@ -40,7 +40,7 @@ export class SolidColoursPickerView {
 
   bindEvents() {
     this.container.querySelector('#btn-solid-colours-back').addEventListener('click', () => {
-      this.router.navigate('#/wallpaper-picker');
+      this.router.back();
     });
 
     const cards = this.container.querySelectorAll('.solid-color-card');

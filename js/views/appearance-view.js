@@ -108,7 +108,7 @@ export class AppearanceView {
 
     // Back button
     rootEl.querySelector('#btn-appearance-back').addEventListener('click', () => {
-      this.router.navigate('#/settings');
+      this.router.back();
     });
 
     // Chat theme click -> Go to Main Chat Theme View
@@ -187,7 +187,7 @@ export class AppearanceView {
 
     // Back button
     rootEl.querySelector('#btn-theme-back').addEventListener('click', () => {
-      this.router.navigate('#/settings/appearance');
+      this.router.back();
     });
 
     // Dark mode toggle

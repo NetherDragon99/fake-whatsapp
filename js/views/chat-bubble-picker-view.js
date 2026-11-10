@@ -48,7 +48,7 @@ export class ChatBubblePickerView {
 
   bindEvents() {
     this.container.querySelector('#btn-bubble-picker-back').addEventListener('click', () => {
-      this.router.navigate('#/chat-theme');
+      this.router.back();
     });
 
     const buttons = this.container.querySelectorAll('.bubble-swatch-item');

@@ -113,7 +113,7 @@ export class NewListView {
 
     // Bind Close & Save
     this.container.querySelector('#btn-close-list').addEventListener('click', () => {
-      this.router.navigate('#/chats');
+      this.router.back();
     });
 
     this.container.querySelector('#btn-save-list').addEventListener('click', async () => {

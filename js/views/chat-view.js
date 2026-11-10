@@ -259,7 +259,7 @@ export class ChatView {
 
     // Header Back
     this.container.querySelector('#btn-chat-back').addEventListener('click', () => {
-      this.router.navigate('#/chats');
+      this.router.back();
     });
 
     // Profile Click -> Contact Info Screen 5

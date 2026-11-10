@@ -216,7 +216,7 @@ export class ContactInfoView {
   bindEvents(chatMedia, msgs) {
     // Back button
     this.container.querySelector('#btn-info-back').addEventListener('click', () => {
-      this.router.navigate(`#/chat/${this.chatId}`);
+      this.router.back();
     });
 
     // Profile Picture Scroll Animation (Header) - Sequence 1, 2, 3 (Step 6 / Reference 6,7,8)

@@ -127,7 +127,7 @@ export class WallpaperPickerView {
 
   bindEvents() {
     this.container.querySelector('#btn-wp-back').addEventListener('click', () => {
-      this.router.navigate('#/chat-theme');
+      this.router.back();
     });
 
     // Gallery File Picker

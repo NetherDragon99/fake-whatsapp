@@ -206,7 +206,7 @@ export class ThemePreviewView {
   bindEvents() {
     // Back button
     this.container.querySelector('#btn-preview-back').addEventListener('click', () => {
-      window.history.back();
+      this.router.back();
     });
 
     // Dimming slider

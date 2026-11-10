@@ -149,7 +149,7 @@ export class ChatThemeView {
 
   bindEvents() {
     this.container.querySelector('#btn-chat-theme-back').addEventListener('click', () => {
-      this.router.navigate('#/settings/appearance');
+      this.router.back();
     });
 
     this.container.querySelector('#btn-top-chat-bubble').addEventListener('click', () => {

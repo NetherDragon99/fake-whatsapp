@@ -71,7 +71,7 @@ export class AppIconView {
   bindEvents() {
     // Back navigation
     this.container.querySelector('#btn-app-icon-back').addEventListener('click', () => {
-      this.router.navigate('#/settings/appearance');
+      this.router.back();
     });
 
     // Overflow menu (simple toast or info)
