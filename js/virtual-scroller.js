@@ -14,7 +14,7 @@ export class VirtualMessageScroller {
     this.outgoingTheme = options.outgoingTheme || 'slate';
 
     this.CHUNK_SIZE = 50;
-    this.MAX_DOM_MESSAGES = 150;
+    this.MAX_DOM_MESSAGES = 250;
     this.allMessages = [];
     this.visibleStartIndex = 0;
     this.visibleEndIndex = 0;
@@ -197,21 +197,29 @@ export class VirtualMessageScroller {
       // Scrolling ALWAYS cancels any pending long-press timer
       this.cancelPendingLongPress();
 
-      // Load older messages when scrolled near top
-      if (this.container.scrollTop < 250 && !this.isLoadingMore && this.visibleStartIndex > 0) {
+      const scrollHeight = this.container.scrollHeight;
+      const scrollTop = this.container.scrollTop;
+      const clientHeight = this.container.clientHeight;
+      const scrollBottomDist = scrollHeight - scrollTop - clientHeight;
+
+      // Dynamic 25% boundary threshold of total rendered height (min 600px buffer)
+      const threshold = Math.max(600, scrollHeight * 0.25);
+
+      // Pre-load older messages when user enters the top 25% of loaded content
+      if (scrollTop < threshold && !this.isLoadingMore && this.visibleStartIndex > 0) {
         this.loadOlder();
       }
 
-      // Load newer messages when scrolled near bottom (Task 3)
-      const scrollBottomDist = this.container.scrollHeight - this.container.scrollTop - this.container.clientHeight;
-      if (scrollBottomDist < 350 && !this.isLoadingMore && this.visibleEndIndex < this.allMessages.length) {
+      // Pre-load newer messages when user enters the bottom 25% of loaded content
+      if (scrollBottomDist < threshold && !this.isLoadingMore && this.visibleEndIndex < this.allMessages.length) {
         this.loadNewer();
       }
 
-      // Check floating scroll-to-bottom button
+      // Check floating scroll-to-bottom button visibility
       const scrollBtn = document.getElementById('chat-scroll-bottom-btn');
       if (scrollBtn) {
-        if (scrollBottomDist > 400) {
+        const isAwayFromBottom = scrollBottomDist > 350 || this.visibleEndIndex < this.allMessages.length;
+        if (isAwayFromBottom) {
           scrollBtn.classList.add('visible');
         } else {
           scrollBtn.classList.remove('visible');
@@ -224,21 +232,6 @@ export class VirtualMessageScroller {
     if (this.isLoadingMore || this.visibleStartIndex <= 0) return;
     this.isLoadingMore = true;
 
-    // Anchor detection to eliminate scroll jumping
-    const containerRect = this.container.getBoundingClientRect();
-    let anchorNode = null;
-    let anchorOffset = 0;
-    for (const child of this.container.children) {
-      if (child.classList.contains('msg-row') || child.classList.contains('album-msg-row')) {
-        const r = child.getBoundingClientRect();
-        if (r.bottom > containerRect.top + 5) {
-          anchorNode = child;
-          anchorOffset = r.top - containerRect.top;
-          break;
-        }
-      }
-    }
-
     const prevScrollHeight = this.container.scrollHeight;
     const prevScrollTop = this.container.scrollTop;
 
@@ -248,11 +241,16 @@ export class VirtualMessageScroller {
     await this.renderBatch(newStart, newEnd, 'prepend');
     this.visibleStartIndex = newStart;
 
+    // Zero-drift mathematical scroll compensation for prepended content
+    const newScrollHeight = this.container.scrollHeight;
+    const heightDelta = newScrollHeight - prevScrollHeight;
+    this.container.scrollTop = prevScrollTop + heightDelta;
+
     // Prune excess from bottom if exceeding MAX_DOM_MESSAGES
     if (this.visibleEndIndex - this.visibleStartIndex > this.MAX_DOM_MESSAGES) {
       const pruneCount = (this.visibleEndIndex - this.visibleStartIndex) - this.MAX_DOM_MESSAGES;
       this.visibleEndIndex -= pruneCount;
-      const nodes = Array.from(this.container.querySelectorAll('.msg-row'));
+      const nodes = Array.from(this.container.querySelectorAll('.msg-row, .album-msg-row'));
       for (let i = nodes.length - 1; i >= nodes.length - pruneCount && i >= 0; i--) {
         if (nodes[i]) nodes[i].remove();
       }
@@ -262,19 +260,7 @@ export class VirtualMessageScroller {
         lastChild.remove();
         lastChild = this.container.lastElementChild;
       }
-    }
-
-    // Scroll Anchoring: compensate exact drift mathematically
-    if (anchorNode && anchorNode.isConnected) {
-      const newRect = anchorNode.getBoundingClientRect();
-      const currentOffset = newRect.top - containerRect.top;
-      const drift = currentOffset - anchorOffset;
-      if (Math.abs(drift) > 0.5) {
-        this.container.scrollTop += drift;
-      }
-    } else {
-      const newScrollHeight = this.container.scrollHeight;
-      this.container.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
+      // Note: Pruning from bottom has zero effect on viewport scroll position
     }
 
     this.isLoadingMore = false;
@@ -284,37 +270,26 @@ export class VirtualMessageScroller {
     if (this.isLoadingMore || this.visibleEndIndex >= this.allMessages.length) return;
     this.isLoadingMore = true;
 
-    // Pick a landmark anchor node visible near bottom/center that will not be pruned from top
-    const containerRect = this.container.getBoundingClientRect();
-    let anchorNode = null;
-    let anchorOffset = 0;
-    const msgNodes = Array.from(this.container.querySelectorAll('.msg-row'));
-    for (let i = msgNodes.length - 1; i >= 0; i--) {
-      const node = msgNodes[i];
-      const r = node.getBoundingClientRect();
-      if (r.top < containerRect.bottom - 20) {
-        anchorNode = node;
-        anchorOffset = r.top - containerRect.top;
-        break;
-      }
-    }
-
-    const prevScrollTop = this.container.scrollTop;
     const newStart = this.visibleEndIndex;
     const newEnd = Math.min(this.allMessages.length, this.visibleEndIndex + this.CHUNK_SIZE);
 
+    // Appending content at bottom has zero effect on viewport scroll position above
     await this.renderBatch(newStart, newEnd, 'append');
     this.visibleEndIndex = newEnd;
 
     // Prune excess from top if exceeding MAX_DOM_MESSAGES
     if (this.visibleEndIndex - this.visibleStartIndex > this.MAX_DOM_MESSAGES) {
       const pruneCount = (this.visibleEndIndex - this.visibleStartIndex) - this.MAX_DOM_MESSAGES;
+      
+      const prevScrollHeight = this.container.scrollHeight;
+      const prevScrollTop = this.container.scrollTop;
+
       let msgCountRemoved = 0;
       const children = Array.from(this.container.children);
 
       for (let i = 0; i < children.length && msgCountRemoved < pruneCount; i++) {
         const node = children[i];
-        if (node.classList.contains('msg-row')) {
+        if (node.classList.contains('msg-row') || node.classList.contains('album-msg-row')) {
           msgCountRemoved++;
         }
         node.remove();
@@ -333,15 +308,12 @@ export class VirtualMessageScroller {
       }
 
       this.visibleStartIndex += msgCountRemoved;
-    }
 
-    // Scroll Anchoring: compensate exact drift mathematically
-    if (anchorNode && anchorNode.isConnected) {
-      const newRect = anchorNode.getBoundingClientRect();
-      const currentOffset = newRect.top - containerRect.top;
-      const drift = currentOffset - anchorOffset;
-      if (Math.abs(drift) > 0.5) {
-        this.container.scrollTop += drift;
+      // Mathematical offset adjustment for elements removed from top
+      const afterScrollHeight = this.container.scrollHeight;
+      const removedHeight = prevScrollHeight - afterScrollHeight;
+      if (removedHeight > 0) {
+        this.container.scrollTop = Math.max(0, prevScrollTop - removedHeight);
       }
     }
 
@@ -773,15 +745,36 @@ export class VirtualMessageScroller {
   }
 
   async scrollToBottom(smooth = true) {
-    if (this.visibleEndIndex < this.allMessages.length) {
+    const isUnloadedHistory = this.visibleEndIndex < this.allMessages.length;
+
+    if (isUnloadedHistory) {
+      // User is viewing older/unloaded history: load the latest window
       this.visibleStartIndex = Math.max(0, this.allMessages.length - this.CHUNK_SIZE);
       this.visibleEndIndex = this.allMessages.length;
       await this.renderBatch(this.visibleStartIndex, this.visibleEndIndex, 'replace');
-    }
-    if (smooth) {
-      this.container.scrollTo({ top: this.container.scrollHeight, behavior: 'smooth' });
+
+      if (smooth) {
+        // Swift, fluid glide transition (~250ms): position temporarily near the bottom
+        const glideStart = Math.max(0, this.container.scrollHeight - this.container.clientHeight - 650);
+        this.container.scrollTop = glideStart;
+        requestAnimationFrame(() => {
+          this.container.scrollTo({ top: this.container.scrollHeight, behavior: 'smooth' });
+        });
+      } else {
+        this.container.scrollTop = this.container.scrollHeight;
+      }
     } else {
-      this.container.scrollTop = this.container.scrollHeight;
+      if (smooth) {
+        this.container.scrollTo({ top: this.container.scrollHeight, behavior: 'smooth' });
+      } else {
+        this.container.scrollTop = this.container.scrollHeight;
+      }
+    }
+
+    // Hide arrow button once returned to bottom
+    const scrollBtn = document.getElementById('chat-scroll-bottom-btn');
+    if (scrollBtn) {
+      scrollBtn.classList.remove('visible');
     }
   }
 
