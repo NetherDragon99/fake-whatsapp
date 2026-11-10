@@ -2,6 +2,7 @@
 import { Icons } from '../icons.js';
 import { db } from '../db.js';
 import { Toast } from '../components/toast.js';
+import { showAlert } from '../components/custom-dialog.js';
 
 export class NewListView {
   constructor(router) {
@@ -118,7 +119,7 @@ export class NewListView {
     this.container.querySelector('#btn-save-list').addEventListener('click', async () => {
       const name = this.container.querySelector('#list-name-input').value.trim();
       if (!name) {
-        alert('Please enter a name for this list.');
+        await showAlert({ title: 'Name Required', message: 'Please enter a name for this list.' });
         return;
       }
 

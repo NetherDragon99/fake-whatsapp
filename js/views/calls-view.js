@@ -2,6 +2,7 @@
 import { Icons } from '../icons.js';
 import { db } from '../db.js';
 import { Toast } from '../components/toast.js';
+import { showConfirm } from '../components/custom-dialog.js';
 
 export class CallsView {
   constructor(router) {
@@ -35,7 +36,10 @@ export class CallsView {
             <span class="tab-label">Chats</span>
           </a>
           <a href="#/calls" class="nav-tab active">
-            <div class="tab-icon-wrap">${Icons.callsTab('', 22)}</div>
+            <div class="tab-icon-wrap">
+              <span class="tab-pill-indicator"></span>
+              ${Icons.callsTab('', 22)}
+            </div>
             <span class="tab-label">Calls</span>
           </a>
           <a href="#/settings" class="nav-tab">
@@ -55,7 +59,14 @@ export class CallsView {
     // Clear calls
     this.container.querySelector('#btn-clear-calls').addEventListener('click', async () => {
       if (calls.length === 0) return;
-      if (confirm('Clear entire call history?')) {
+      const confirmed = await showConfirm({
+        title: 'Clear call log?',
+        message: 'Do you want to clear your entire call history?',
+        confirmText: 'Clear',
+        cancelText: 'Cancel',
+        isDanger: true
+      });
+      if (confirmed) {
         const tx = db.db.transaction('calls', 'readwrite');
         tx.objectStore('calls').clear();
         tx.oncomplete = () => {

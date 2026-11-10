@@ -8,11 +8,16 @@ import { ChatView } from './views/chat-view.js';
 import { ContactInfoView } from './views/contact-info-view.js';
 import { CallsView } from './views/calls-view.js';
 import { SettingsView } from './views/settings-view.js';
+import { AppearanceView } from './views/appearance-view.js';
+import { WallpaperPickerView } from './views/wallpaper-picker-view.js';
+import { ThemePreviewView } from './views/theme-preview-view.js';
 import { ImportModal } from './components/modal-import.js';
 import { Toast } from './components/toast.js';
+import { applyAppAccent, applyOutgoingBubbleColor } from './config/palette.js';
+import { assetUrl } from './config/base-path.js';
 
 // Application Version Constant
-window.APP_VERSION = '0.0.1';
+window.APP_VERSION = '0.0.2';
 
 // Global deferred PWA install prompt holder
 window.deferredInstallPrompt = null;
@@ -29,13 +34,19 @@ class Application {
   }
 
   async init() {
-    // 0. Apply Saved Theme Mode (Light / Dark)
+    // 0. Apply Saved Theme Mode (Light / Dark) & Accent Colors
     const savedTheme = localStorage.getItem('wa_theme_mode') || 'dark';
     if (savedTheme === 'light') {
       document.documentElement.setAttribute('data-theme', 'light');
       const meta = document.querySelector('meta[name="theme-color"]');
       if (meta) meta.setAttribute('content', '#ffffff');
     }
+
+    const savedAccent = localStorage.getItem('wa_app_accent');
+    if (savedAccent) applyAppAccent(savedAccent);
+
+    const savedBubbleColor = localStorage.getItem('wa_outgoing_bubble_color');
+    if (savedBubbleColor) applyOutgoingBubbleColor(savedBubbleColor);
 
     // 1. Initialize IndexedDB
     try {
@@ -50,6 +61,13 @@ class Application {
         const meta = document.querySelector('meta[name="theme-color"]');
         if (meta) meta.setAttribute('content', '#0b141a');
       }
+
+      const dbAccent = await db.getSetting('appAccentColor', null);
+      if (dbAccent) applyAppAccent(dbAccent);
+
+      const dbBubbleColor = await db.getSetting('defaultBubbleColor', null);
+      if (dbBubbleColor) applyOutgoingBubbleColor(dbBubbleColor);
+
       console.log('[DB] IndexedDB initialized successfully');
     } catch (err) {
       console.error('[DB] Failed to initialize database:', err);
@@ -63,7 +81,11 @@ class Application {
       { pattern: '/chat/:id/info', viewClass: ContactInfoView },
       { pattern: '/chat/:id', viewClass: ChatView },
       { pattern: '/calls', viewClass: CallsView },
-      { pattern: '/settings', viewClass: SettingsView }
+      { pattern: '/settings', viewClass: SettingsView },
+      { pattern: '/settings/appearance/theme', viewClass: AppearanceView, defaultParams: { subRoute: 'theme' } },
+      { pattern: '/settings/appearance', viewClass: AppearanceView, defaultParams: { subRoute: '' } },
+      { pattern: '/wallpaper-picker', viewClass: WallpaperPickerView },
+      { pattern: '/theme-preview', viewClass: ThemePreviewView }
     ];
 
     const appRoot = document.getElementById('app-root');

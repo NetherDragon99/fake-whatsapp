@@ -1,5 +1,34 @@
-// WhatsApp Android Clone Service Worker
-const CACHE_NAME = 'wa-clone-v0.0.1';
+// WhatsApp Android Clone Service Worker v0.0.2
+const CACHE_NAME = 'wa-clone-v0.0.2';
+
+const WALLPAPER_FILES = [
+  './assets/wallpapers/nature-1.webp',
+  './assets/wallpapers/nature-2.webp',
+  './assets/wallpapers/nature-3.webp',
+  './assets/wallpapers/nature-4.webp',
+  './assets/wallpapers/nature-5.webp',
+  './assets/wallpapers/nature-6.webp',
+  './assets/wallpapers/nature-7.webp',
+  './assets/wallpapers/nature-8.webp',
+  './assets/wallpapers/nature-9.webp',
+  './assets/wallpapers/nature-10.webp',
+  './assets/wallpapers/nature-11.webp',
+  './assets/wallpapers/nature-12.webp',
+  './assets/wallpapers/vibrant-1.webp',
+  './assets/wallpapers/vibrant-2.webp',
+  './assets/wallpapers/vibrant-3.webp',
+  './assets/wallpapers/vibrant-4.webp',
+  './assets/wallpapers/vibrant-5.webp',
+  './assets/wallpapers/vibrant-6.webp',
+  './assets/wallpapers/vibrant-7.webp',
+  './assets/wallpapers/vibrant-8.webp',
+  './assets/wallpapers/vibrant-9.webp',
+  './assets/wallpapers/vibrant-10.webp',
+  './assets/wallpapers/vibrant-11.webp',
+  './assets/wallpapers/vibrant-12.webp',
+  './assets/wallpapers/vibrant-13.webp',
+  './assets/wallpapers/vibrant-14.webp'
+];
 
 const PRECACHE_ASSETS = [
   './',
@@ -18,6 +47,11 @@ const PRECACHE_ASSETS = [
   './js/audio-player.js',
   './js/virtual-scroller.js',
   './js/icons.js',
+  './js/config/base-path.js',
+  './js/config/palette.js',
+  './js/config/wallpapers.js',
+  './js/components/custom-dialog.js',
+  './js/components/image-cropper.js',
   './js/components/modal-import.js',
   './js/components/pin-dialog.js',
   './js/components/lightbox.js',
@@ -29,20 +63,28 @@ const PRECACHE_ASSETS = [
   './js/views/contact-info-view.js',
   './js/views/calls-view.js',
   './js/views/settings-view.js',
+  './js/views/appearance-view.js',
+  './js/views/wallpaper-picker-view.js',
+  './js/views/theme-preview-view.js',
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png',
   './assets/icons/icon.svg',
-  './assets/demo_whatsapp_archive.zip'
+  './assets/demo_whatsapp_archive.zip',
+  ...WALLPAPER_FILES
 ];
 
-// Install: Cache essential core UI assets
+// Install: Resilient pre-caching using Promise.allSettled
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(PRECACHE_ASSETS).catch((err) => {
-        console.warn('[SW] Precache partial error (assets will be cached on first request):', err);
-      });
+      return Promise.allSettled(
+        PRECACHE_ASSETS.map((url) =>
+          cache.add(url).catch((err) => {
+            console.warn('[SW] Precache partial item skipped:', url, err);
+          })
+        )
+      );
     })
   );
 });
@@ -70,7 +112,7 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch: Stale-While-Revalidate for local assets, cache-first for vendor/icons
+// Fetch: Cache-first for wallpapers & icons, Stale-While-Revalidate for app code
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   if (request.method !== 'GET') return;
@@ -90,6 +132,30 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Cache-first for wallpapers, static icons, and archives
+  const isStaticMedia = url.pathname.includes('/assets/wallpapers/') ||
+                        url.pathname.includes('/assets/icons/') ||
+                        url.pathname.includes('.zip');
+
+  if (isStaticMedia) {
+    event.respondWith(
+      caches.match(request).then((cachedResponse) => {
+        if (cachedResponse) return cachedResponse;
+        return fetch(request).then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(request, responseToCache);
+            });
+          }
+          return networkResponse;
+        });
+      })
+    );
+    return;
+  }
+
+  // Stale-While-Revalidate for application code and stylesheets
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
       const fetchPromise = fetch(request).then((networkResponse) => {

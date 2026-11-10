@@ -10,7 +10,7 @@ export class VirtualMessageScroller {
     this.chat = options.chat || {};
     this.onMediaClick = options.onMediaClick || (() => {});
     this.onMessageAction = options.onMessageAction || (() => {});
-    this.outgoingTheme = options.outgoingTheme || 'slate'; // 'slate' or 'green'
+    this.outgoingTheme = options.outgoingTheme || 'slate';
 
     this.CHUNK_SIZE = 50;
     this.MAX_DOM_MESSAGES = 150;
@@ -19,6 +19,7 @@ export class VirtualMessageScroller {
     this.visibleEndIndex = 0;
     this.isLoadingMore = false;
     this.mediaCache = new Map(); // id -> objectURL
+    this.activeLongPressTimer = null;
 
     this.initScrollListener();
   }
@@ -63,6 +64,63 @@ export class VirtualMessageScroller {
     return colors[Math.abs(hash) % colors.length];
   }
 
+  isSticker(msg) {
+    return msg.mediaType === 'sticker' || (msg.mediaName && /\.webp$/i.test(msg.mediaName) && (!msg.text || !msg.text.trim()));
+  }
+
+  cancelPendingLongPress() {
+    if (this.activeLongPressTimer) {
+      clearTimeout(this.activeLongPressTimer);
+      this.activeLongPressTimer = null;
+    }
+  }
+
+  attachLongPress(element, onAction) {
+    let startX = 0;
+    let startY = 0;
+
+    const onPointerDown = (e) => {
+      this.cancelPendingLongPress();
+      startX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+      startY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+
+      this.activeLongPressTimer = setTimeout(() => {
+        onAction(e);
+        this.activeLongPressTimer = null;
+      }, 450);
+    };
+
+    const onPointerMove = (e) => {
+      if (!this.activeLongPressTimer) return;
+      const curX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+      const curY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+      // Cancel long-press if moved more than 10px
+      if (Math.hypot(curX - startX, curY - startY) > 10) {
+        this.cancelPendingLongPress();
+      }
+    };
+
+    const onPointerUp = () => {
+      this.cancelPendingLongPress();
+    };
+
+    element.addEventListener('touchstart', onPointerDown, { passive: true });
+    element.addEventListener('touchmove', onPointerMove, { passive: true });
+    element.addEventListener('touchend', onPointerUp, { passive: true });
+    element.addEventListener('touchcancel', onPointerUp, { passive: true });
+
+    element.addEventListener('mousedown', onPointerDown);
+    element.addEventListener('mousemove', onPointerMove);
+    element.addEventListener('mouseup', onPointerUp);
+    element.addEventListener('mouseleave', onPointerUp);
+
+    element.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      this.cancelPendingLongPress();
+      onAction(e);
+    });
+  }
+
   async loadInitial(targetMessageId = null) {
     this.container.innerHTML = '';
     this.allMessages = await db.getMessages(this.chatId);
@@ -84,7 +142,6 @@ export class VirtualMessageScroller {
       this.visibleStartIndex = Math.max(0, targetIdx - Math.floor(this.CHUNK_SIZE / 2));
       this.visibleEndIndex = Math.min(this.allMessages.length, this.visibleStartIndex + this.CHUNK_SIZE);
     } else {
-      // Default: Initialize with the LAST chunk of the messages array (the bottom)
       this.visibleStartIndex = Math.max(0, this.allMessages.length - this.CHUNK_SIZE);
       this.visibleEndIndex = this.allMessages.length;
     }
@@ -94,7 +151,6 @@ export class VirtualMessageScroller {
     if (targetMessageId) {
       this.scrollToMessage(targetMessageId);
     } else {
-      // Immediately force scroll to the very bottom
       this.container.scrollTop = this.container.scrollHeight;
       requestAnimationFrame(() => {
         this.container.scrollTop = this.container.scrollHeight;
@@ -107,6 +163,9 @@ export class VirtualMessageScroller {
 
   initScrollListener() {
     this.container.addEventListener('scroll', () => {
+      // Scrolling ALWAYS cancels any pending long-press timer
+      this.cancelPendingLongPress();
+
       // Load older messages when scrolled near top
       if (this.container.scrollTop < 200 && !this.isLoadingMore && this.visibleStartIndex > 0) {
         this.loadOlder();
@@ -122,7 +181,7 @@ export class VirtualMessageScroller {
           scrollBtn.classList.remove('visible');
         }
       }
-    });
+    }, { passive: true });
   }
 
   async loadOlder() {
@@ -138,7 +197,6 @@ export class VirtualMessageScroller {
     await this.renderBatch(newStart, newEnd, 'prepend');
     this.visibleStartIndex = newStart;
 
-    // Prune excess bottom messages if DOM exceeds MAX_DOM_MESSAGES
     if (this.visibleEndIndex - this.visibleStartIndex > this.MAX_DOM_MESSAGES) {
       const pruneCount = (this.visibleEndIndex - this.visibleStartIndex) - this.MAX_DOM_MESSAGES;
       this.visibleEndIndex -= pruneCount;
@@ -148,7 +206,6 @@ export class VirtualMessageScroller {
       }
     }
 
-    // Preserve scroll position seamlessly without jumping
     const newScrollHeight = this.container.scrollHeight;
     this.container.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
 
@@ -177,6 +234,43 @@ export class VirtualMessageScroller {
         lastDateStr = dateStr;
       }
 
+      // Check if message is an image eligible for album grouping (Step 4)
+      const isImageMsg = (msg.mediaType === 'image' || (!msg.mediaType && msg.mediaName && /\.(jpg|jpeg|png|webp|gif)$/i.test(msg.mediaName))) &&
+                         !msg.isSystem &&
+                         !this.isSticker(msg) &&
+                         (!msg.text || !msg.text.trim());
+
+      if (isImageMsg) {
+        // Look ahead for consecutive same-minute same-sender image messages
+        const albumMsgs = [msg];
+        let nextIdx = i + 1;
+        while (nextIdx < endIndex) {
+          const nextMsg = this.allMessages[nextIdx];
+          if (!nextMsg) break;
+          const isNextImage = (nextMsg.mediaType === 'image' || (!nextMsg.mediaType && nextMsg.mediaName && /\.(jpg|jpeg|png|webp|gif)$/i.test(nextMsg.mediaName))) &&
+                              !nextMsg.isSystem &&
+                              !this.isSticker(nextMsg) &&
+                              (!nextMsg.text || !nextMsg.text.trim());
+          const isSameSender = nextMsg.sender === msg.sender && nextMsg.isOutgoing === msg.isOutgoing;
+          const isSameMinute = Math.abs(nextMsg.timestamp - msg.timestamp) < 60000;
+
+          if (isNextImage && isSameSender && isSameMinute) {
+            albumMsgs.push(nextMsg);
+            nextIdx++;
+          } else {
+            break;
+          }
+        }
+
+        if (albumMsgs.length > 1) {
+          // Render grouped Media Album Bubble
+          const albumRow = await this.createAlbumElement(albumMsgs);
+          fragment.appendChild(albumRow);
+          i = nextIdx - 1; // Advance loop to skip grouped messages
+          continue;
+        }
+      }
+
       const msgRow = await this.createMessageElement(msg);
       fragment.appendChild(msgRow);
     }
@@ -191,6 +285,105 @@ export class VirtualMessageScroller {
     }
   }
 
+  // --- Multi-Image Album Grid inside Chat Bubbles (Step 4) ---
+  async createAlbumElement(albumMsgs) {
+    const firstMsg = albumMsgs[0];
+    const lastMsg = albumMsgs[albumMsgs.length - 1];
+
+    const row = document.createElement('div');
+    row.className = `msg-row ${firstMsg.isOutgoing ? 'outgoing' : 'incoming'} album-msg-row`;
+    row.id = `msg-${firstMsg.id}`;
+    row.dataset.msgId = firstMsg.id;
+
+    const bubble = document.createElement('div');
+    bubble.className = `msg-bubble ${firstMsg.isOutgoing ? 'bubble-outgoing' : 'bubble-incoming'} ${this.outgoingTheme === 'green' && firstMsg.isOutgoing ? 'theme-green' : ''} media-album-bubble`;
+
+    // Group sender title if group
+    if (this.chat.isGroup && !firstMsg.isOutgoing && firstMsg.sender) {
+      const senderHeader = document.createElement('div');
+      senderHeader.className = 'group-sender-title';
+      senderHeader.style.color = this.getParticipantColor(firstMsg.sender);
+      senderHeader.style.padding = '4px 8px 2px 8px';
+      senderHeader.textContent = firstMsg.sender;
+      bubble.appendChild(senderHeader);
+    }
+
+    // Grid container
+    const displayCount = Math.min(4, albumMsgs.length);
+    const gridContainer = document.createElement('div');
+    gridContainer.className = `album-grid-container count-${displayCount}`;
+
+    for (let idx = 0; idx < displayCount; idx++) {
+      const itemMsg = albumMsgs[idx];
+      let mediaItem = null;
+      if (itemMsg.mediaId) {
+        mediaItem = await db.getMedia(itemMsg.mediaId);
+      }
+
+      let mediaUrl = null;
+      if (mediaItem && mediaItem.blob) {
+        if (this.mediaCache.has(mediaItem.id)) {
+          mediaUrl = this.mediaCache.get(mediaItem.id);
+        } else {
+          mediaUrl = URL.createObjectURL(mediaItem.blob);
+          this.mediaCache.set(mediaItem.id, mediaUrl);
+        }
+      }
+
+      const thumbWrap = document.createElement('div');
+      thumbWrap.className = 'album-thumb-wrap';
+
+      if (mediaUrl) {
+        const img = document.createElement('img');
+        img.src = mediaUrl;
+        img.alt = itemMsg.mediaName || 'Photo';
+        img.loading = 'lazy';
+        img.className = 'album-thumb-img';
+        img.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.onMediaClick(mediaItem, itemMsg);
+        });
+        thumbWrap.appendChild(img);
+      } else {
+        thumbWrap.innerHTML = `<div class="media-placeholder">${Icons.gallery('', 24)}</div>`;
+      }
+
+      // 4th item +N overlay if more than 4 items
+      if (idx === 3 && albumMsgs.length > 4) {
+        const plusOverlay = document.createElement('div');
+        plusOverlay.className = 'album-plus-overlay';
+        plusOverlay.textContent = `+${albumMsgs.length - 4}`;
+        plusOverlay.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.onMediaClick(mediaItem, itemMsg);
+        });
+        thumbWrap.appendChild(plusOverlay);
+      }
+
+      gridContainer.appendChild(thumbWrap);
+    }
+
+    // Overlaid Timestamp & Read Receipts at bottom right of the entire grid
+    const metaPill = document.createElement('div');
+    metaPill.className = 'album-meta-pill';
+    let checksHtml = '';
+    if (firstMsg.isOutgoing) {
+      checksHtml = Icons.checks(true, 'receipt-check-white', 15);
+    }
+    metaPill.innerHTML = `<span>${this.formatTime(lastMsg.timestamp)}</span>${checksHtml}`;
+    gridContainer.appendChild(metaPill);
+
+    bubble.appendChild(gridContainer);
+    row.appendChild(bubble);
+
+    // Attach touch & long-press handler
+    this.attachLongPress(row, (e) => {
+      this.onMessageAction(firstMsg, row, e);
+    });
+
+    return row;
+  }
+
   async createMessageElement(msg) {
     const row = document.createElement('div');
     row.className = `msg-row ${msg.isOutgoing ? 'outgoing' : 'incoming'}`;
@@ -203,13 +396,13 @@ export class VirtualMessageScroller {
       return row;
     }
 
-    const isSticker = msg.mediaType === 'sticker' || (msg.mediaName && /\.webp$/i.test(msg.mediaName) && (!msg.text || !msg.text.trim()));
+    const isSticker = this.isSticker(msg);
 
     const bubble = document.createElement('div');
     bubble.className = `msg-bubble ${msg.isOutgoing ? 'bubble-outgoing' : 'bubble-incoming'} ${this.outgoingTheme === 'green' && msg.isOutgoing ? 'theme-green' : ''} ${isSticker ? 'sticker-bubble' : ''}`;
     bubble.setAttribute('dir', 'auto');
 
-    // Group sender label (for incoming messages in group chats)
+    // Group sender label
     if (this.chat.isGroup && !msg.isOutgoing && msg.sender) {
       const senderHeader = document.createElement('div');
       senderHeader.className = 'group-sender-title';
@@ -279,20 +472,8 @@ export class VirtualMessageScroller {
 
     row.appendChild(bubble);
 
-    // Long press / Context menu handling
-    let touchTimer = null;
-    row.addEventListener('touchstart', (e) => {
-      touchTimer = setTimeout(() => {
-        this.onMessageAction(msg, row, e);
-      }, 500);
-    }, { passive: true });
-
-    row.addEventListener('touchend', () => {
-      if (touchTimer) clearTimeout(touchTimer);
-    });
-
-    row.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
+    // Attach reliable long-press gesture (cancels on pointer move > 10px and scroll)
+    this.attachLongPress(row, (e) => {
       this.onMessageAction(msg, row, e);
     });
 
@@ -396,7 +577,7 @@ export class VirtualMessageScroller {
           <div class="pdf-filename" title="${msg.mediaName}">${msg.mediaName || 'Document.pdf'}</div>
           <div class="pdf-submeta">${pageCountStr}${sizeStr} • PDF</div>
         </div>
-        <button class="pdf-download-btn" title="Download Document">
+        <button type="button" class="pdf-download-btn" title="Download Document">
           ${Icons.download('', 18)}
         </button>
       `;
@@ -428,7 +609,7 @@ export class VirtualMessageScroller {
         <div class="doc-filename">${msg.mediaName || 'Document'}</div>
         <div class="doc-filesize">${sizeStr}</div>
       </div>
-      <button class="doc-download-btn">${Icons.download('', 18)}</button>
+      <button type="button" class="doc-download-btn">${Icons.download('', 18)}</button>
     `;
 
     if (mediaUrl) {
@@ -486,6 +667,7 @@ export class VirtualMessageScroller {
   }
 
   cleanup() {
+    this.cancelPendingLongPress();
     audioManager.stopCurrent();
     for (const url of this.mediaCache.values()) {
       URL.revokeObjectURL(url);

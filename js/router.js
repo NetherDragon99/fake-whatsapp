@@ -45,7 +45,7 @@ export class Router {
       const match = this.matchPattern(route.pattern, pathPart);
       if (match) {
         matchedRoute = route;
-        routeParams = { ...match, ...queryParams };
+        routeParams = { ...(route.defaultParams || {}), ...match, ...queryParams };
         break;
       }
     }

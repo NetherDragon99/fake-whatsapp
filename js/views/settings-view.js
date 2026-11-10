@@ -1,8 +1,10 @@
-// Screen 7: Settings View with PWA Install App Action
+// Screen 7: Settings View with Material 3 UI, Appearance Navigation & Profile Cropper
 import { Icons } from '../icons.js';
 import { db } from '../db.js';
 import { PinDialog } from '../components/pin-dialog.js';
 import { Toast } from '../components/toast.js';
+import { openImageCropper } from '../components/image-cropper.js';
+import { showConfirm, showAlert } from '../components/custom-dialog.js';
 
 export class SettingsView {
   constructor(router) {
@@ -12,30 +14,49 @@ export class SettingsView {
 
   async render(rootEl) {
     this.container = rootEl;
-    const currentTheme = await db.getSetting('theme', 'slate');
-    const currentThemeMode = localStorage.getItem('wa_theme_mode') || await db.getSetting('themeMode', 'dark');
     const ownerName = await db.getSetting('ownerName', 'You');
+    const userAvatarBlob = await db.getSetting('userProfileAvatar', null);
     const storageStats = await db.getStorageUsage();
-    const appVersion = window.APP_VERSION || '0.0.1';
+    const appVersion = window.APP_VERSION || '0.0.2';
 
     // Standalone display mode check
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
                          window.navigator.standalone === true;
 
+    const avatarHtml = userAvatarBlob
+      ? `<img src="${URL.createObjectURL(userAvatarBlob)}" class="profile-avatar-img" alt="Profile" />`
+      : Icons.userAvatar('', 64);
+
     rootEl.innerHTML = `
       <div class="screen-view settings-screen">
-        <header class="wa-app-bar">
+        <header class="wa-app-bar flat-app-bar">
           <div class="app-title">Settings</div>
         </header>
 
         <div class="settings-scroll-body">
-          <!-- Profile Card -->
-          <div class="settings-profile-card" id="btn-edit-profile">
-            <div class="settings-avatar-wrap">
-              ${Icons.userAvatar('', 64)}
+          <!-- Profile Card with Crop & Edit -->
+          <div class="settings-profile-card">
+            <div class="settings-avatar-wrap" id="btn-change-avatar" title="Change profile photo">
+              <div class="avatar-circle-wrap" id="settings-avatar-container">
+                ${avatarHtml}
+              </div>
+              <div class="avatar-camera-badge">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="#ffffff">
+                  <path d="M12 12c1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3 1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-1.5c0-2.33-4.67-3.5-7-3.5zM20 4h-3.17L15 2H9L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-8 13c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
+                </svg>
+              </div>
+              <input type="file" id="profile-file-input" accept="image/*" style="display:none;" />
             </div>
-            <div class="settings-profile-texts">
-              <div class="profile-name" id="settings-owner-name">${ownerName}</div>
+            
+            <div class="settings-profile-texts" id="btn-edit-name" title="Click to edit name">
+              <div class="profile-name-row">
+                <span class="profile-name" id="settings-owner-name" dir="auto">${ownerName}</span>
+                <span class="edit-pencil-icon">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                  </svg>
+                </span>
+              </div>
               <div class="profile-status">Available</div>
             </div>
           </div>
@@ -47,31 +68,26 @@ export class SettingsView {
               <div class="install-title">Install App</div>
               <div class="install-sub">Add to Home screen for quick offline access</div>
             </div>
-            <button class="install-action-pill" id="btn-trigger-pwa-install">Install</button>
+            <button type="button" class="install-action-pill" id="btn-trigger-pwa-install">Install</button>
           </div>
 
           <div class="thick-section-divider"></div>
 
-          <!-- Appearance & Bubble Theme -->
+          <!-- Appearance Row (Material 3 Re-architected) -->
           <div class="settings-section">
-            <div class="settings-section-header">Appearance</div>
-            <div class="settings-option-row clickable" id="row-theme-mode">
-              <span class="settings-icon">${Icons.star('', 20)}</span>
+            <div class="settings-option-row clickable" id="row-appearance">
+              <span class="settings-icon">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                  <path d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 19.4c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l1.9-1.9C9.28 19.64 10.59 20 12 20c4.97 0 9-4.03 9-9s-4.03-9-9-9zm0 15c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/>
+                </svg>
+              </span>
               <div class="settings-texts">
-                <div class="setting-title">Theme Mode</div>
-                <div class="setting-sub" id="theme-mode-sub">${currentThemeMode === 'light' ? 'Light Mode' : 'Dark Mode'}</div>
+                <div class="setting-title">Appearance</div>
+                <div class="setting-sub">Chat theme, app icon, app theme</div>
               </div>
-              <button class="settings-action-btn" id="btn-toggle-theme-mode">
-                ${currentThemeMode === 'light' ? 'Dark Mode' : 'Light Mode'}
-              </button>
-            </div>
-            <div class="settings-option-row" id="row-bubble-theme">
-              <span class="settings-icon">${Icons.star('', 20)}</span>
-              <div class="settings-texts">
-                <div class="setting-title">Outgoing Bubble Color</div>
-                <div class="setting-sub" id="theme-sub-text">${currentTheme === 'green' ? 'Classic Green (#005c4b)' : 'Slate-Blue (#1d3c4e)'}</div>
+              <div class="settings-chevron">
+                ${Icons.chevronRight('', 18)}
               </div>
-              <button class="settings-action-btn" id="btn-switch-theme">Switch</button>
             </div>
           </div>
 
@@ -80,11 +96,14 @@ export class SettingsView {
           <!-- Chat Lock Security -->
           <div class="settings-section">
             <div class="settings-section-header">Privacy & Security</div>
-            <div class="settings-option-row" id="row-manage-pin">
+            <div class="settings-option-row clickable" id="row-manage-pin">
               <span class="settings-icon">${Icons.lock('', 20)}</span>
               <div class="settings-texts">
                 <div class="setting-title">Chat Lock PIN</div>
                 <div class="setting-sub">Set or reset 4-digit security PIN</div>
+              </div>
+              <div class="settings-chevron">
+                ${Icons.chevronRight('', 18)}
               </div>
             </div>
           </div>
@@ -131,11 +150,11 @@ export class SettingsView {
           <!-- App Version Footer -->
           <div class="settings-footer-version">
             <span>WhatsApp Clone for Android</span>
-            <span class="version-number">Version ${appVersion}</span>
+            <span class="version-number">v0.0.2</span>
           </div>
         </div>
 
-        <!-- Bottom Navigation Bar -->
+        <!-- Bottom Navigation Bar (Material 3 with active pill indicator) -->
         <nav class="wa-bottom-nav">
           <a href="#/chats" class="nav-tab">
             <div class="tab-icon-wrap">${Icons.chatsTab('', 22)}</div>
@@ -146,22 +165,58 @@ export class SettingsView {
             <span class="tab-label">Calls</span>
           </a>
           <a href="#/settings" class="nav-tab active">
-            <div class="tab-icon-wrap">${Icons.settingsTab('', 22)}</div>
+            <div class="tab-icon-wrap">
+              <span class="tab-pill-indicator"></span>
+              ${Icons.settingsTab('', 22)}
+            </div>
             <span class="tab-label">Settings</span>
           </a>
         </nav>
       </div>
     `;
 
-    this.bindEvents(currentTheme, isStandalone);
+    this.bindEvents(isStandalone);
   }
 
-  bindEvents(currentTheme, isStandalone) {
+  bindEvents(isStandalone) {
+    // Profile Picture Crop & Edit
+    const avatarContainer = this.container.querySelector('#btn-change-avatar');
+    const profileFileInput = this.container.querySelector('#profile-file-input');
+
+    avatarContainer.addEventListener('click', () => {
+      profileFileInput.click();
+    });
+
+    profileFileInput.addEventListener('change', async (e) => {
+      if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        const croppedBlob = await openImageCropper(file);
+        if (croppedBlob) {
+          await db.setSetting('userProfileAvatar', croppedBlob);
+          const avatarWrap = this.container.querySelector('#settings-avatar-container');
+          avatarWrap.innerHTML = `<img src="${URL.createObjectURL(croppedBlob)}" class="profile-avatar-img" alt="Profile" />`;
+          Toast.show('Profile photo updated');
+        }
+      }
+    });
+
+    // Edit Profile Name
+    this.container.querySelector('#btn-edit-name').addEventListener('click', async () => {
+      const cur = await db.getSetting('ownerName', 'You');
+      const updated = prompt('Enter your name:', cur);
+      if (updated && updated.trim()) {
+        const trimmed = updated.trim();
+        await db.setSetting('ownerName', trimmed);
+        this.container.querySelector('#settings-owner-name').textContent = trimmed;
+        Toast.show('Name updated');
+      }
+    });
+
     // PWA Native Install Action
     const installRow = this.container.querySelector('#row-pwa-install');
     const installBtn = this.container.querySelector('#btn-trigger-pwa-install');
 
-    if (!isStandalone) {
+    if (!isStandalone && installBtn) {
       installBtn.addEventListener('click', async () => {
         if (window.deferredInstallPrompt) {
           window.deferredInstallPrompt.prompt();
@@ -177,54 +232,9 @@ export class SettingsView {
       });
     }
 
-    // Toggle Light / Dark Mode
-    const toggleThemeModeBtn = this.container.querySelector('#btn-toggle-theme-mode');
-    const themeModeSub = this.container.querySelector('#theme-mode-sub');
-
-    toggleThemeModeBtn.addEventListener('click', async () => {
-      const isCurrentlyLight = document.documentElement.getAttribute('data-theme') === 'light';
-      const newMode = isCurrentlyLight ? 'dark' : 'light';
-
-      if (newMode === 'light') {
-        document.documentElement.setAttribute('data-theme', 'light');
-      } else {
-        document.documentElement.removeAttribute('data-theme');
-      }
-
-      localStorage.setItem('wa_theme_mode', newMode);
-      await db.setSetting('themeMode', newMode);
-
-      const metaThemeColor = document.querySelector('meta[name="theme-color"]');
-      if (metaThemeColor) {
-        metaThemeColor.setAttribute('content', newMode === 'light' ? '#ffffff' : '#0b141a');
-      }
-
-      themeModeSub.textContent = newMode === 'light' ? 'Light Mode' : 'Dark Mode';
-      toggleThemeModeBtn.textContent = newMode === 'light' ? 'Dark Mode' : 'Light Mode';
-      Toast.show(`Switched to ${newMode === 'light' ? 'Light' : 'Dark'} Mode`);
-    });
-
-    // Switch Outgoing Bubble Theme
-    const switchThemeBtn = this.container.querySelector('#btn-switch-theme');
-    const themeSub = this.container.querySelector('#theme-sub-text');
-    let themeState = currentTheme;
-
-    switchThemeBtn.addEventListener('click', async () => {
-      themeState = themeState === 'slate' ? 'green' : 'slate';
-      await db.setSetting('theme', themeState);
-      themeSub.textContent = themeState === 'green' ? 'Classic Green (#005c4b)' : 'Slate-Blue (#1d3c4e)';
-      Toast.show(`Theme updated: ${themeState === 'green' ? 'Green' : 'Slate-Blue'}`);
-    });
-
-    // Edit Profile Name
-    this.container.querySelector('#btn-edit-profile').addEventListener('click', async () => {
-      const cur = await db.getSetting('ownerName', 'You');
-      const updated = prompt('Enter your display name:', cur);
-      if (updated && updated.trim()) {
-        await db.setSetting('ownerName', updated.trim());
-        this.container.querySelector('#settings-owner-name').textContent = updated.trim();
-        Toast.show('Name updated');
-      }
+    // Appearance Navigation
+    this.container.querySelector('#row-appearance').addEventListener('click', () => {
+      this.router.navigate('#/settings/appearance');
     });
 
     // Chat Lock PIN Setup / Reset
@@ -236,9 +246,8 @@ export class SettingsView {
     // Export Full Backup
     this.container.querySelector('#row-export-backup').addEventListener('click', async () => {
       Toast.show('Packaging backup archive...');
-      const data = await db.exportFullBackup();
-
       try {
+        const data = await db.exportFullBackup();
         const jsonStr = JSON.stringify(data);
         const blob = new Blob([jsonStr], { type: 'application/json' });
         const a = document.createElement('a');
@@ -247,7 +256,7 @@ export class SettingsView {
         a.click();
         Toast.show('Backup exported successfully');
       } catch (err) {
-        alert('Export failed: ' + err.message);
+        await showAlert({ title: 'Export Failed', message: err.message || 'Could not export backup.' });
       }
     });
 
@@ -263,20 +272,32 @@ export class SettingsView {
         try {
           const text = await file.text();
           const json = JSON.parse(text);
-          if (confirm('Restore this backup? This will replace current chats.')) {
+          const confirmed = await showConfirm({
+            title: 'Restore Backup',
+            message: 'Restore this backup? This will replace current chats.',
+            confirmText: 'Restore',
+            cancelText: 'Cancel'
+          });
+          if (confirmed) {
             await db.restoreFullBackup(json);
             Toast.show('Backup restored successfully!');
             setTimeout(() => this.router.navigate('#/chats'), 500);
           }
         } catch (err) {
-          alert('Invalid backup file: ' + err.message);
+          await showAlert({ title: 'Invalid Backup', message: err.message || 'Failed to read backup file.' });
         }
       }
     });
 
     // Clear All Data
     this.container.querySelector('#row-reset-database').addEventListener('click', async () => {
-      const confirmed = confirm('DANGER: Permanently delete all restored chats, media, and settings?');
+      const confirmed = await showConfirm({
+        title: 'Clear All Restored Data',
+        message: 'DANGER: This will permanently delete all restored chats, media, and settings from this device.',
+        confirmText: 'Delete All',
+        cancelText: 'Cancel',
+        isDanger: true
+      });
       if (confirmed) {
         await db.clearAllData();
         Toast.show('All data cleared');

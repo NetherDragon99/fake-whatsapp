@@ -1,9 +1,12 @@
-// Screen 4: Inside Chat View
+// Screen 4: Inside Chat View with Touch Fix, Scroll Animation & Material 3 Styling
 import { Icons } from '../icons.js';
 import { db } from '../db.js';
 import { VirtualMessageScroller } from '../virtual-scroller.js';
 import { mediaLightbox } from '../components/lightbox.js';
 import { Toast } from '../components/toast.js';
+import { showConfirm, showAlert } from '../components/custom-dialog.js';
+import { WALLPAPER_PRESETS } from '../config/wallpapers.js';
+import { assetUrl } from '../config/base-path.js';
 
 export class ChatView {
   constructor(router) {
@@ -26,6 +29,8 @@ export class ChatView {
       return;
     }
 
+    const defaultWp = await db.getSetting('defaultWallpaper', 'default');
+    const defaultDimming = await db.getSetting('defaultDimming', 0);
     const outgoingTheme = await db.getSetting('theme', 'slate');
     const targetMsgId = params.msgId || null;
 
@@ -33,16 +38,36 @@ export class ChatView {
     if (this.chat.isSelfChat) subtitle = 'Message yourself';
     else if (this.chat.isGroup) subtitle = `${this.chat.participantNames?.length || 3} participants`;
 
+    // Resolve wallpaper & dimming
+    const wpSelection = this.chat.wallpaper || defaultWp;
+    const dimmingVal = this.chat.wallpaperDimming !== undefined ? this.chat.wallpaperDimming : defaultDimming;
+    let wpBgStyle = '';
+
+    if (wpSelection && typeof wpSelection === 'string') {
+      if (wpSelection.startsWith('color:')) {
+        wpBgStyle = `background-color: ${wpSelection.replace('color:', '')}; background-image: none;`;
+      } else if (wpSelection !== 'default') {
+        const preset = WALLPAPER_PRESETS.find((p) => p.id === wpSelection);
+        if (preset && preset.file) {
+          wpBgStyle = `background-image: url(${assetUrl(preset.file)});`;
+        }
+      }
+    } else if (wpSelection instanceof Blob) {
+      wpBgStyle = `background-image: url(${URL.createObjectURL(wpSelection)});`;
+    }
+
     rootEl.innerHTML = `
-      <div class="screen-view chat-screen ${this.chat.wallpaper ? 'has-custom-wallpaper' : ''}" style="${this.chat.wallpaper ? `background-image: url(${this.chat.wallpaper});` : ''}">
-        
-        <!-- Standard Chat App Bar -->
-        <header class="wa-app-bar chat-header" id="chat-default-header">
+      <div class="screen-view chat-screen ${wpBgStyle ? 'has-custom-wallpaper' : ''}" style="${wpBgStyle}">
+        <!-- Wallpaper Dimming Layer -->
+        <div class="chat-dimming-layer" style="background-color: rgba(0, 0, 0, ${dimmingVal / 100});"></div>
+
+        <!-- Standard Chat App Bar (Material 3 flat) -->
+        <header class="wa-app-bar chat-header flat-app-bar" id="chat-default-header">
           <div class="chat-header-left">
-            <button class="app-bar-icon-btn" id="btn-chat-back">${Icons.arrowBack('', 24)}</button>
+            <button type="button" class="app-bar-icon-btn" id="btn-chat-back" aria-label="Go back">${Icons.arrowBack('', 24)}</button>
             <div class="chat-header-info" id="chat-header-profile-btn">
               <div class="chat-header-avatar">
-                ${this.chat.avatarBlob ? `<img src="${URL.createObjectURL(this.chat.avatarBlob)}" class="chat-avatar-img" />` : (this.chat.isGroup ? Icons.groupAvatar('', 38) : Icons.userAvatar('', 38))}
+                ${this.chat.avatarBlob ? `<img src="${URL.createObjectURL(this.chat.avatarBlob)}" class="chat-avatar-img" alt="Avatar" />` : (this.chat.isGroup ? Icons.groupAvatar('', 38) : Icons.userAvatar('', 38))}
               </div>
               <div class="chat-header-text">
                 <div class="chat-header-title" dir="auto">${this.chat.name}</div>
@@ -52,20 +77,20 @@ export class ChatView {
           </div>
           
           <div class="chat-header-actions">
-            <button class="app-bar-icon-btn" id="btn-chat-menu">${Icons.moreVert('', 22)}</button>
+            <button type="button" class="app-bar-icon-btn" id="btn-chat-menu" aria-label="More options">${Icons.moreVert('', 22)}</button>
           </div>
         </header>
 
         <!-- In-Chat Search Bar (Hidden by default) -->
         <div class="chat-search-bar" id="chat-search-header" style="display:none;">
-          <button class="app-bar-icon-btn" id="btn-close-chat-search">${Icons.arrowBack('', 24)}</button>
+          <button type="button" class="app-bar-icon-btn" id="btn-close-chat-search">${Icons.arrowBack('', 24)}</button>
           <input type="text" id="chat-search-query" placeholder="Search in chat..." />
           <span class="search-match-counter" id="search-match-count">0/0</span>
-          <button class="app-bar-icon-btn" id="btn-search-prev">${Icons.chevronDown('rotate-180', 20)}</button>
-          <button class="app-bar-icon-btn" id="btn-search-next">${Icons.chevronDown('', 20)}</button>
+          <button type="button" class="app-bar-icon-btn" id="btn-search-prev">${Icons.chevronDown('rotate-180', 20)}</button>
+          <button type="button" class="app-bar-icon-btn" id="btn-search-next">${Icons.chevronDown('', 20)}</button>
         </div>
 
-        <!-- 3-Dot Dropdown Menu -->
+        <!-- 3-Dot Dropdown Menu (Material 3 with scale/fade transition) -->
         <div class="wa-dropdown-menu" id="chat-menu-dropdown" style="display:none;">
           <div class="dropdown-item" id="menu-search-chat">${Icons.search('', 18)}<span>Search in chat</span></div>
           <div class="dropdown-item" id="menu-flip-perspective">${Icons.swap('', 18)}<span>Swap Sender / Receiver</span></div>
@@ -79,22 +104,22 @@ export class ChatView {
         <div class="chat-messages-container" id="chat-messages-wrap"></div>
 
         <!-- Floating Scroll-To-Bottom Button -->
-        <button class="chat-scroll-bottom" id="chat-scroll-bottom-btn" title="Scroll to bottom">
+        <button type="button" class="chat-scroll-bottom" id="chat-scroll-bottom-btn" title="Scroll to bottom">
           ${Icons.chevronDown('', 22)}
         </button>
 
         <!-- Bottom Input Bar -->
         <footer class="chat-input-bar">
           <div class="input-pill">
-            <button class="input-icon-btn">${Icons.emoji('', 22)}</button>
+            <button type="button" class="input-icon-btn" aria-label="Emoji">${Icons.emoji('', 22)}</button>
             <textarea id="chat-input-textarea" placeholder="Message" rows="1" dir="auto"></textarea>
             <label class="input-icon-btn" title="Attach file">
               ${Icons.paperclip('', 22)}
               <input type="file" id="chat-attach-input" style="display:none;" />
             </label>
-            <button class="input-icon-btn" id="btn-camera-snap">${Icons.camera('', 22)}</button>
+            <button type="button" class="input-icon-btn" id="btn-camera-snap" aria-label="Camera">${Icons.camera('', 22)}</button>
           </div>
-          <button class="mic-send-btn" id="btn-mic-send">
+          <button type="button" class="mic-send-btn" id="btn-mic-send" aria-label="Send or record audio">
             ${Icons.mic('mic-icon', 22)}
           </button>
         </footer>
@@ -114,9 +139,9 @@ export class ChatView {
               <span class="react-btn" data-emoji="🙏">🙏</span>
             </div>
             <div class="context-action-list">
-              <button class="context-item" id="ctx-copy-text">Copy text</button>
-              <button class="context-item" id="ctx-toggle-forward">Toggle "Forwarded"</button>
-              <button class="context-item danger-text" id="ctx-delete-msg">Delete message</button>
+              <button type="button" class="context-item" id="ctx-copy-text">Copy text</button>
+              <button type="button" class="context-item" id="ctx-toggle-forward">Toggle "Forwarded"</button>
+              <button type="button" class="context-item danger-text" id="ctx-delete-msg">Delete message</button>
             </div>
           </div>
         </div>
@@ -146,6 +171,23 @@ export class ChatView {
 
     await this.scroller.loadInitial(targetMsgId);
 
+    // Profile Picture Subtle Scroll Animation in Header (Step 6)
+    let scrollRafTicking = false;
+    const headerAvatar = this.container.querySelector('.chat-header-avatar');
+    messagesWrap.addEventListener('scroll', () => {
+      if (!scrollRafTicking) {
+        window.requestAnimationFrame(() => {
+          const scrollTop = messagesWrap.scrollTop;
+          const factor = Math.min(1, Math.max(0, scrollTop / 300));
+          if (headerAvatar) {
+            headerAvatar.style.transform = `scale(${1 - factor * 0.12})`;
+          }
+          scrollRafTicking = false;
+        });
+        scrollRafTicking = true;
+      }
+    }, { passive: true });
+
     // Header Back
     this.container.querySelector('#btn-chat-back').addEventListener('click', () => {
       this.router.navigate('#/chats');
@@ -162,10 +204,14 @@ export class ChatView {
     menuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+      if (dropdown.style.display === 'block') dropdown.classList.add('active');
     });
 
     document.addEventListener('click', () => {
-      if (dropdown) dropdown.style.display = 'none';
+      if (dropdown) {
+        dropdown.classList.remove('active');
+        dropdown.style.display = 'none';
+      }
     });
 
     // Menu Item: Search in Chat
@@ -199,16 +245,23 @@ export class ChatView {
       this.openEditChatModal();
     });
 
-    // Menu Item: Wallpaper
+    // Menu Item: Wallpaper (navigates to Stage 1 Wallpaper Picker)
     this.container.querySelector('#menu-wallpaper').addEventListener('click', () => {
       dropdown.style.display = 'none';
-      this.promptWallpaper();
+      this.router.navigate(`#/wallpaper-picker?chatId=${this.chatId}`);
     });
 
-    // Menu Item: Clear Chat
+    // Menu Item: Clear Chat (replaces native confirm with showConfirm)
     this.container.querySelector('#menu-clear-chat').addEventListener('click', async () => {
       dropdown.style.display = 'none';
-      if (confirm('Clear all messages in this chat?')) {
+      const confirmed = await showConfirm({
+        title: 'Clear this chat?',
+        message: 'All messages in this chat will be removed. Media files will remain in your gallery.',
+        confirmText: 'Clear chat',
+        cancelText: 'Cancel',
+        isDanger: true
+      });
+      if (confirmed) {
         const msgs = await db.getMessages(this.chatId);
         for (const m of msgs) await db.deleteMessage(m.id);
         await db.updateChat(this.chatId, { lastMessage: null, updatedAt: Date.now() });
@@ -251,235 +304,229 @@ export class ChatView {
       }
     });
 
-    // Attachment input
+    // File Attachment
     const attachInput = this.container.querySelector('#chat-attach-input');
     attachInput.addEventListener('change', async (e) => {
       if (e.target.files && e.target.files[0]) {
-        await this.handleLocalAttachment(e.target.files[0]);
+        const file = e.target.files[0];
+        await this.handleFileAttachment(file);
+        attachInput.value = '';
       }
+    });
+
+    // Camera snap simulation
+    this.container.querySelector('#btn-camera-snap').addEventListener('click', () => {
+      attachInput.click();
     });
   }
 
-  // Swap Sender / Receiver perspective on the fly!
-  async flipPerspective() {
-    const msgs = await db.getMessages(this.chatId);
-    if (msgs.length === 0) return;
+  async sendNewMessage(text) {
+    const newMsg = {
+      id: db.generateUUID(),
+      chatId: this.chatId,
+      timestamp: Date.now(),
+      sender: this.chat.isOutgoingDefault ? (this.chat.customMeName || 'Me') : this.chat.name,
+      isOutgoing: true,
+      text: text,
+      mediaId: null,
+      mediaName: null,
+      mediaType: null
+    };
 
-    // Flip outgoing status for all messages
+    await db.saveMessage(newMsg);
+    await db.updateChat(this.chatId, {
+      lastMessage: text,
+      updatedAt: Date.now()
+    });
+
+    this.scroller.allMessages.push(newMsg);
+    const msgEl = await this.scroller.createMessageElement(newMsg);
+    this.container.querySelector('#chat-messages-wrap').appendChild(msgEl);
+    this.scroller.scrollToBottom(true);
+  }
+
+  async handleFileAttachment(file) {
+    let type = 'document';
+    if (file.type.startsWith('image/')) type = 'image';
+    else if (file.type.startsWith('video/')) type = 'video';
+    else if (file.type.startsWith('audio/')) type = 'audio';
+    else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) type = 'pdf';
+
+    const mediaId = db.generateUUID();
+    const mediaItem = {
+      id: mediaId,
+      chatId: this.chatId,
+      filename: file.name,
+      type: type,
+      size: file.size,
+      blob: file,
+      thumbnailBlob: null,
+      timestamp: Date.now()
+    };
+
+    await db.saveMedia(mediaItem);
+
+    const newMsg = {
+      id: db.generateUUID(),
+      chatId: this.chatId,
+      timestamp: Date.now(),
+      sender: this.chat.customMeName || 'Me',
+      isOutgoing: true,
+      text: '',
+      mediaId: mediaId,
+      mediaName: file.name,
+      mediaType: type
+    };
+
+    await db.saveMessage(newMsg);
+    await db.updateChat(this.chatId, {
+      lastMessage: `📷 ${file.name}`,
+      updatedAt: Date.now()
+    });
+
+    this.scroller.allMessages.push(newMsg);
+    const msgEl = await this.scroller.createMessageElement(newMsg);
+    this.container.querySelector('#chat-messages-wrap').appendChild(msgEl);
+    this.scroller.scrollToBottom(true);
+    Toast.show('File attached');
+  }
+
+  async flipPerspective() {
+    const currentPerspective = this.chat.isOutgoingDefault ?? true;
+    const newPerspective = !currentPerspective;
+
+    const msgs = await db.getMessages(this.chatId);
     for (const m of msgs) {
       if (!m.isSystem) {
         m.isOutgoing = !m.isOutgoing;
+        await db.updateMessage(m.id, { isOutgoing: m.isOutgoing });
       }
     }
-    await db.saveMessages(msgs);
 
-    // Update last message metadata
-    const last = msgs[msgs.length - 1];
-    if (last) {
-      await db.updateChat(this.chatId, {
-        lastMessage: {
-          text: last.text,
-          timestamp: last.timestamp,
-          isOutgoing: last.isOutgoing,
-          mediaType: last.mediaType
-        }
-      });
-    }
+    await db.updateChat(this.chatId, { isOutgoingDefault: newPerspective });
+    this.chat.isOutgoingDefault = newPerspective;
 
-    Toast.show('Perspective flipped: Outgoing / Incoming reversed!');
-    this.scroller.loadInitial();
+    Toast.show('Perspective flipped: ' + (newPerspective ? 'You are Sender' : 'You are Receiver'));
+    await this.scroller.loadInitial();
   }
 
   async jumpToSelectedDate(dateString) {
-    // dateString format YYYY-MM-DD
-    const targetDate = new Date(dateString);
-    const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()).getTime();
-    const endOfDay = startOfDay + 86400000;
+    const selectedDate = new Date(dateString);
+    selectedDate.setHours(0, 0, 0, 0);
 
-    const msgs = await db.getMessages(this.chatId);
-    const found = msgs.find((m) => m.timestamp >= startOfDay && m.timestamp <= endOfDay);
+    const msgs = this.scroller.allMessages;
+    let targetMsg = null;
 
-    if (found) {
-      this.scroller.loadInitial(found.id);
-    } else {
-      Toast.show('No messages found on this date.');
+    for (const m of msgs) {
+      const msgDate = new Date(m.timestamp);
+      msgDate.setHours(0, 0, 0, 0);
+      if (msgDate.getTime() >= selectedDate.getTime()) {
+        targetMsg = m;
+        break;
+      }
     }
-  }
 
-  toggleSearchHeader(show) {
-    const searchHeader = this.container.querySelector('#chat-search-header');
-    const defaultHeader = this.container.querySelector('#chat-default-header');
-    if (show) {
-      searchHeader.style.display = 'flex';
-      defaultHeader.style.display = 'none';
-      const input = this.container.querySelector('#chat-search-query');
-      input.focus();
+    if (targetMsg) {
+      await this.scroller.loadInitial(targetMsg.id);
+      Toast.show(`Jumped to ${dateString}`);
     } else {
-      searchHeader.style.display = 'none';
-      defaultHeader.style.display = 'flex';
-      this.clearSearchHighlights();
+      Toast.show('No messages found around this date');
     }
   }
 
   bindSearchEvents() {
     const searchHeader = this.container.querySelector('#chat-search-header');
-    const closeBtn = this.container.querySelector('#btn-close-chat-search');
+    const defaultHeader = this.container.querySelector('#chat-default-header');
     const searchInput = this.container.querySelector('#chat-search-query');
+    const matchCountEl = this.container.querySelector('#search-match-count');
+    const closeBtn = this.container.querySelector('#btn-close-chat-search');
     const prevBtn = this.container.querySelector('#btn-search-prev');
     const nextBtn = this.container.querySelector('#btn-search-next');
-    const counter = this.container.querySelector('#search-match-count');
 
-    closeBtn.addEventListener('click', () => this.toggleSearchHeader(false));
+    closeBtn.addEventListener('click', () => {
+      this.toggleSearchHeader(false);
+    });
 
-    searchInput.addEventListener('input', async (e) => {
-      const q = e.target.value.trim();
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.trim().toLowerCase();
       if (!q) {
-        counter.textContent = '0/0';
         this.searchMatches = [];
         this.currentSearchMatchIndex = -1;
-        this.clearSearchHighlights();
+        matchCountEl.textContent = '0/0';
         return;
       }
 
-      this.searchMatches = await db.searchMessages(q, this.chatId);
+      this.searchMatches = this.scroller.allMessages.filter((m) => {
+        return (m.text && m.text.toLowerCase().includes(q)) ||
+               (m.mediaName && m.mediaName.toLowerCase().includes(q));
+      });
+
       if (this.searchMatches.length > 0) {
-        this.currentSearchMatchIndex = this.searchMatches.length - 1; // latest match
-        counter.textContent = `${this.currentSearchMatchIndex + 1}/${this.searchMatches.length}`;
-        this.jumpToSearchMatch();
+        this.currentSearchMatchIndex = this.searchMatches.length - 1;
+        matchCountEl.textContent = `${this.currentSearchMatchIndex + 1}/${this.searchMatches.length}`;
+        this.scroller.scrollToMessage(this.searchMatches[this.currentSearchMatchIndex].id);
       } else {
-        counter.textContent = '0/0';
-        this.clearSearchHighlights();
+        this.currentSearchMatchIndex = -1;
+        matchCountEl.textContent = '0/0';
       }
     });
 
     nextBtn.addEventListener('click', () => {
       if (this.searchMatches.length === 0) return;
       this.currentSearchMatchIndex = (this.currentSearchMatchIndex + 1) % this.searchMatches.length;
-      counter.textContent = `${this.currentSearchMatchIndex + 1}/${this.searchMatches.length}`;
-      this.jumpToSearchMatch();
+      matchCountEl.textContent = `${this.currentSearchMatchIndex + 1}/${this.searchMatches.length}`;
+      this.scroller.scrollToMessage(this.searchMatches[this.currentSearchMatchIndex].id);
     });
 
     prevBtn.addEventListener('click', () => {
       if (this.searchMatches.length === 0) return;
       this.currentSearchMatchIndex = (this.currentSearchMatchIndex - 1 + this.searchMatches.length) % this.searchMatches.length;
-      counter.textContent = `${this.currentSearchMatchIndex + 1}/${this.searchMatches.length}`;
-      this.jumpToSearchMatch();
+      matchCountEl.textContent = `${this.currentSearchMatchIndex + 1}/${this.searchMatches.length}`;
+      this.scroller.scrollToMessage(this.searchMatches[this.currentSearchMatchIndex].id);
     });
   }
 
-  jumpToSearchMatch() {
-    const match = this.searchMatches[this.currentSearchMatchIndex];
-    if (match) {
-      this.scroller.loadInitial(match.id);
+  toggleSearchHeader(show) {
+    const searchHeader = this.container.querySelector('#chat-search-header');
+    const defaultHeader = this.container.querySelector('#chat-default-header');
+    const searchInput = this.container.querySelector('#chat-search-query');
+
+    if (show) {
+      defaultHeader.style.display = 'none';
+      searchHeader.style.display = 'flex';
+      searchInput.focus();
+    } else {
+      searchHeader.style.display = 'none';
+      defaultHeader.style.display = 'flex';
+      searchInput.value = '';
+      this.searchMatches = [];
+      this.currentSearchMatchIndex = -1;
     }
-  }
-
-  clearSearchHighlights() {
-    this.container.querySelectorAll('.highlight-flash').forEach((el) => el.classList.remove('highlight-flash'));
-  }
-
-  async sendNewMessage(text) {
-    const newMsg = {
-      id: 'msg_' + Date.now(),
-      chatId: this.chatId,
-      timestamp: Date.now(),
-      sender: this.chat.meParticipant || 'Me',
-      isOutgoing: true,
-      text,
-      mediaName: null,
-      mediaType: null,
-      mediaId: null,
-      isDeleted: false,
-      isEdited: false,
-      reaction: null
-    };
-
-    await db.saveMessages([newMsg]);
-    await db.updateChat(this.chatId, {
-      lastMessage: {
-        text: newMsg.text,
-        timestamp: newMsg.timestamp,
-        isOutgoing: true,
-        mediaType: null
-      },
-      updatedAt: Date.now()
-    });
-
-    this.scroller.loadInitial();
-  }
-
-  async handleLocalAttachment(file) {
-    const mediaId = 'media_' + Date.now();
-    let mediaType = 'document';
-    if (file.type.startsWith('image/')) mediaType = 'image';
-    else if (file.type.startsWith('video/')) mediaType = 'video';
-    else if (file.type.startsWith('audio/')) mediaType = 'audio';
-    else if (file.type.includes('pdf')) mediaType = 'pdf';
-
-    const mediaRecord = {
-      id: mediaId,
-      chatId: this.chatId,
-      filename: file.name,
-      mimeType: file.type || 'application/octet-stream',
-      blob: file,
-      thumbnailBlob: null,
-      size: file.size,
-      pageCount: 0
-    };
-
-    await db.saveMedia(mediaRecord);
-
-    const newMsg = {
-      id: 'msg_' + Date.now(),
-      chatId: this.chatId,
-      timestamp: Date.now(),
-      sender: this.chat.meParticipant || 'Me',
-      isOutgoing: true,
-      text: '',
-      mediaName: file.name,
-      mediaType,
-      mediaId,
-      isDeleted: false,
-      isEdited: false
-    };
-
-    await db.saveMessages([newMsg]);
-    await db.updateChat(this.chatId, {
-      lastMessage: {
-        text: file.name,
-        timestamp: newMsg.timestamp,
-        isOutgoing: true,
-        mediaType
-      },
-      updatedAt: Date.now()
-    });
-
-    this.scroller.loadInitial();
-    Toast.show('Attachment added');
   }
 
   openMessageContextMenu(msg, rowEl) {
     const overlay = this.container.querySelector('#msg-context-overlay');
     overlay.style.display = 'flex';
 
-    // Reactions: Highlight active reaction and toggle without re-rendering
-    const currentReaction = msg.reaction || null;
-    overlay.querySelectorAll('.react-btn').forEach((btn) => {
+    // Highlight active reaction
+    const reactButtons = overlay.querySelectorAll('.react-btn');
+    reactButtons.forEach((btn) => {
       const emoji = btn.dataset.emoji;
-      if (emoji === currentReaction) {
+      if (msg.reaction === emoji) {
         btn.classList.add('active');
       } else {
         btn.classList.remove('active');
       }
 
       btn.onclick = async () => {
-        const clickedReaction = btn.dataset.emoji;
-        const newReaction = (msg.reaction === clickedReaction) ? null : clickedReaction;
-        msg.reaction = newReaction;
+        const clickedEmoji = btn.dataset.emoji;
+        const newReaction = (msg.reaction === clickedEmoji) ? null : clickedEmoji;
+
         await db.updateMessage(msg.id, { reaction: newReaction });
+        msg.reaction = newReaction;
         overlay.style.display = 'none';
 
-        // Update ONLY this message's DOM node (no scroll jump, no re-render!)
+        // Update ONLY this message's DOM node
         this.scroller.updateMessageReactionDOM(msg.id, newReaction);
       };
     });
@@ -500,10 +547,17 @@ export class ChatView {
       this.scroller.loadInitial();
     };
 
-    // Delete message
+    // Delete message (replaces native confirm with showConfirm)
     overlay.querySelector('#ctx-delete-msg').onclick = async () => {
       overlay.style.display = 'none';
-      if (confirm('Delete this message?')) {
+      const confirmed = await showConfirm({
+        title: 'Delete message?',
+        message: 'Do you want to delete this message?',
+        confirmText: 'Delete for me',
+        cancelText: 'Cancel',
+        isDanger: true
+      });
+      if (confirmed) {
         await db.deleteMessage(msg.id);
         this.scroller.loadInitial();
       }
@@ -523,25 +577,6 @@ export class ChatView {
         Toast.show('Chat name updated');
       });
     }
-  }
-
-  promptWallpaper() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.onchange = (e) => {
-      if (e.target.files && e.target.files[0]) {
-        const reader = new FileReader();
-        reader.onload = async () => {
-          const bgDataUrl = reader.result;
-          await db.updateChat(this.chatId, { wallpaper: bgDataUrl });
-          this.container.querySelector('.chat-screen').style.backgroundImage = `url(${bgDataUrl})`;
-          Toast.show('Wallpaper set for this chat');
-        };
-        reader.readAsDataURL(e.target.files[0]);
-      }
-    };
-    input.click();
   }
 
   cleanup() {

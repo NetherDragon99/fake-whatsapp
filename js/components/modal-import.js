@@ -3,6 +3,8 @@ import { Icons } from '../icons.js';
 import { db } from '../db.js';
 import { WhatsAppParser } from '../parser.js';
 import { Toast } from './toast.js';
+import { showAlert } from './custom-dialog.js';
+import { assetUrl } from '../config/base-path.js';
 
 export class ImportModal {
   constructor(options = {}) {
@@ -127,12 +129,12 @@ export class ImportModal {
     if (demoBtn) {
       demoBtn.addEventListener('click', async () => {
         try {
-          const resp = await fetch('./assets/demo_whatsapp_archive.zip');
+          const resp = await fetch(assetUrl('assets/demo_whatsapp_archive.zip'));
           const blob = await resp.blob();
           const file = new File([blob], 'demo_whatsapp_archive.zip', { type: 'application/zip' });
           this.processSelectedFile(file);
         } catch (err) {
-          alert('Could not load demo archive: ' + err.message);
+          showAlert({ title: 'Error Loading Demo', message: 'Could not load demo archive: ' + err.message });
         }
       });
     }
@@ -243,7 +245,7 @@ export class ImportModal {
       this.showSetupStep(parseResult);
     } catch (err) {
       console.error('Import failed:', err);
-      alert('Import error: ' + (err.message || 'Failed to parse file'));
+      showAlert({ title: 'Import Failed', message: 'Import error: ' + (err.message || 'Failed to parse file') });
       this.showStep('step-file-select');
     }
   }

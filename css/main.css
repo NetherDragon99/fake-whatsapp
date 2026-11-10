@@ -19,6 +19,8 @@
 
   /* Accents */
   --wa-green: #25d366;
+  --app-accent: #25d366;
+  --accent-color: var(--app-accent);
   --wa-green-active-chip: #0a332c;
   --wa-cyan: #53bdeb;
   --wa-danger: #f15c6d;
@@ -58,6 +60,8 @@
 
   /* Accents */
   --wa-green: #008069;
+  --app-accent: #008069;
+  --accent-color: var(--app-accent);
   --wa-green-active-chip: #dcf8c6;
   --wa-cyan: #53bdeb;
   --wa-danger: #ea0038;
@@ -149,7 +153,7 @@ input, textarea, select {
   outline: none;
 }
 
-/* Common App Bar */
+/* Common App Bar (Material 3: zero border, zero drop shadow) */
 .wa-app-bar {
   height: 56px;
   min-height: 56px;
@@ -159,7 +163,21 @@ input, textarea, select {
   justify-content: space-between;
   padding: 0 16px;
   z-index: 10;
-  border-bottom: 1px solid var(--wa-border-color);
+  border-bottom: none;
+  box-shadow: none;
+}
+
+/* Fluid Material 3 Transitions (60fps) */
+button, .filter-chip, .app-bar-icon-btn, .fab, .option-row, .chat-list-item, .nav-tab {
+  transition: all 0.2s ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .app-title {

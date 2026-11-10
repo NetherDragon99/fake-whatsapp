@@ -3,6 +3,7 @@ import { Icons } from '../icons.js';
 import { db } from '../db.js';
 import { PinDialog } from '../components/pin-dialog.js';
 import { Toast } from '../components/toast.js';
+import { showConfirm } from '../components/custom-dialog.js';
 
 export class HomeView {
   constructor(router) {
@@ -78,10 +79,13 @@ export class HomeView {
           ${Icons.chatPlus('fab-icon', 26)}
         </button>
 
-        <!-- Bottom Navigation Bar (3 Tabs Only) -->
+        <!-- Bottom Navigation Bar (3 Tabs Only - Material 3 Flat with Pill Indicator) -->
         <nav class="wa-bottom-nav">
           <a href="#/chats" class="nav-tab active">
-            <div class="tab-icon-wrap">${Icons.chatsTab('', 22)}</div>
+            <div class="tab-icon-wrap">
+              <span class="tab-pill-indicator"></span>
+              ${Icons.chatsTab('', 22)}
+            </div>
             <span class="tab-label">Chats</span>
           </a>
           <a href="#/calls" class="nav-tab">
@@ -497,7 +501,14 @@ export class HomeView {
   }
 
   async deleteSelected() {
-    if (confirm(`Delete ${this.selectedChatIds.size} selected chat(s)?`)) {
+    const confirmed = await showConfirm({
+      title: 'Delete selected chat(s)?',
+      message: `Delete ${this.selectedChatIds.size} selected chat(s)? Messages and attachments will be deleted.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      isDanger: true
+    });
+    if (confirmed) {
       for (const id of this.selectedChatIds) {
         await db.deleteChat(id);
       }
