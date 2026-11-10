@@ -40,5 +40,5 @@ export const WALLPAPER_PRESETS = [
  */
 export function getWallpaperPreset(id) {
   if (!id) return WALLPAPER_PRESETS[0];
-  return WALLPAPER_PRESETS.find(p => p.id === id) || null;
+  return WALLPAPER_PRESETS.find(p => p.id === id || p.file === id) || null;
 }

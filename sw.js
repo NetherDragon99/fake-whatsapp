@@ -1,5 +1,5 @@
-// WhatsApp Android Clone Service Worker v0.0.14
-const CACHE_NAME = 'wa-clone-v0.0.14';
+// WhatsApp Android Clone Service Worker v0.0.15
+const CACHE_NAME = 'wa-clone-v0.0.15';
 
 const WALLPAPER_FILES = [
   './assets/wallpapers/nature-1.webp',
@@ -66,6 +66,11 @@ const PRECACHE_ASSETS = [
   './js/views/appearance-view.js',
   './js/views/wallpaper-picker-view.js',
   './js/views/theme-preview-view.js',
+  './js/views/chat-theme-view.js',
+  './js/views/chat-bubble-picker-view.js',
+  './js/views/solid-colours-picker-view.js',
+  './js/views/wallpaper-section-view.js',
+  './assets/data/chat-themes.json',
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png',
   './assets/icons/icon-maskable-512.png',

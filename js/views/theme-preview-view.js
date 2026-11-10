@@ -26,22 +26,22 @@ export class ThemePreviewView {
     this.container = rootEl;
     this.scope = params.scope || 'global';
     this.chatId = params.chatId || null;
-    this.currentId = params.id || 'default';
+    this.currentId = params.wallpaper || params.id || 'default';
 
     // Retrieve initial values
     if (this.chatId) {
       const chat = await db.getChat(this.chatId);
       if (chat) {
-        if (!params.id && chat.wallpaper) this.currentId = chat.wallpaper;
+        if (!params.wallpaper && !params.id && chat.wallpaper) this.currentId = chat.wallpaper;
         this.dimming = chat.wallpaperDimming || 0;
-        this.bubbleColor = chat.outgoingBubbleColor || (await db.getSetting('defaultBubbleColor', '#1d3c4e'));
+        this.bubbleColor = params.bubbleColor || chat.outgoingBubbleColor || (await db.getSetting('defaultBubbleColor', '#1d3c4e'));
       }
     } else {
-      if (!params.id) {
+      if (!params.wallpaper && !params.id) {
         this.currentId = await db.getSetting('defaultWallpaper', 'default');
       }
       this.dimming = await db.getSetting('defaultDimming', 0);
-      this.bubbleColor = await db.getSetting('defaultBubbleColor', '#1d3c4e');
+      this.bubbleColor = params.bubbleColor || (await db.getSetting('defaultBubbleColor', '#1d3c4e'));
     }
 
     if (this.currentId === 'custom') {
@@ -181,16 +181,19 @@ export class ThemePreviewView {
       const url = URL.createObjectURL(this.customBlob);
       wpLayer.style.backgroundImage = `url(${url})`;
       wpLayer.style.backgroundColor = 'transparent';
+    } else if (this.currentId.startsWith('assets/')) {
+      wpLayer.style.backgroundImage = `url(${assetUrl(this.currentId)})`;
+      wpLayer.style.backgroundColor = 'transparent';
     } else {
-      const preset = this.presets[this.currentIndex];
+      const preset = this.presets.find((p) => p.id === this.currentId || p.file === this.currentId) || this.presets[this.currentIndex];
       if (preset && preset.file) {
         const fullUrl = assetUrl(preset.file);
         wpLayer.style.backgroundImage = `url(${fullUrl})`;
         wpLayer.style.backgroundColor = 'transparent';
       } else {
-        // Default doodle background
+        // Default clean dark background
         wpLayer.style.backgroundImage = 'none';
-        wpLayer.style.backgroundColor = 'var(--bg-color)';
+        wpLayer.style.backgroundColor = '#0b141a';
       }
     }
 
@@ -303,22 +306,20 @@ export class ThemePreviewView {
       applyOutgoingBubbleColor(this.bubbleColor);
     }
 
-    // Update Recent list in IndexedDB (max 4, most recent first, no duplicates)
-    if (this.currentId !== 'custom') {
-      const recent = await db.getSetting('recent_wallpapers', []);
-      const filtered = recent.filter((r) => r !== this.currentId);
-      filtered.unshift(this.currentId);
-      const updatedRecent = filtered.slice(0, 4);
-      await db.setSetting('recent_wallpapers', updatedRecent);
-    }
+    // Update Recent list in IndexedDB
+    const recent = await db.getSetting('recent_wallpapers', []);
+    const filtered = recent.filter((r) => r !== this.currentId);
+    filtered.unshift(this.currentId);
+    const updatedRecent = filtered.slice(0, 8);
+    await db.setSetting('recent_wallpapers', updatedRecent);
 
-    Toast.show('Wallpaper applied');
+    Toast.show('Theme applied');
 
-    // Return to chat or settings
+    // Return to chat or chat-theme
     if (this.chatId) {
       this.router.navigate(`#/chat/${this.chatId}`);
     } else {
-      this.router.navigate('#/settings/appearance');
+      this.router.navigate('#/chat-theme');
     }
   }
 }

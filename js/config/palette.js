@@ -2,15 +2,24 @@
 // Used for chat bubbles, solid wallpapers, and app accents. Strict order preserved.
 
 export const APP_COLOR_PALETTE = [
-  '#2b7a78', '#3a7d54', '#2d6a4f',
-  '#3b6998', '#26616c', '#205068',
-  '#362978', '#55585f', '#606c38',
-  '#858731', '#7a721a', '#a66811',
-  '#5c060a', '#660c14', '#590d18',
-  '#4a1525', '#8c3d23', '#33292e',
-  '#263335', '#1e485e', '#112233',
-  '#393e46', '#121212', '#221122',
-  '#52687a', '#7a8511', '#859846'
+  // Row 1
+  '#25d366', '#2b7a78', '#3a7d54', '#2d6a4f',
+  // Row 2
+  '#3b6998', '#26616c', '#205068', '#1a365d',
+  // Row 3
+  '#5b21b6', '#362978', '#4c1d95', '#1e293b',
+  // Row 4
+  '#7c3aed', '#6b21a8', '#55585f', '#374151',
+  // Row 5
+  '#c2410c', '#8c3d23', '#4d7c0f', '#365314',
+  // Row 6
+  '#0d9488', '#115e59', '#be123c', '#881337',
+  // Row 7
+  '#854d0e', '#573a08', '#78716c', '#44403c',
+  // Row 8
+  '#0891b2', '#164e63', '#ca8a04', '#713f12',
+  // Row 9
+  '#65a30d', '#3f6212', '#db2777', '#831843'
 ];
 
 /**
@@ -61,6 +70,7 @@ export function applyAppAccent(hexColor) {
  */
 export function applyOutgoingBubbleColor(hexColor) {
   if (!hexColor) return;
+  document.documentElement.style.setProperty('--wa-bubble-outgoing', hexColor);
   document.documentElement.style.setProperty('--outgoing-bg', hexColor);
   document.documentElement.style.setProperty('--outgoing-inner-card', getDarkerTint(hexColor, 0.25));
   try {

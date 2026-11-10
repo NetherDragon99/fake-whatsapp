@@ -11,13 +11,17 @@ import { SettingsView } from './views/settings-view.js';
 import { AppearanceView } from './views/appearance-view.js';
 import { WallpaperPickerView } from './views/wallpaper-picker-view.js';
 import { ThemePreviewView } from './views/theme-preview-view.js';
+import { ChatThemeView } from './views/chat-theme-view.js';
+import { ChatBubblePickerView } from './views/chat-bubble-picker-view.js';
+import { SolidColoursPickerView } from './views/solid-colours-picker-view.js';
+import { WallpaperSectionView } from './views/wallpaper-section-view.js';
 import { ImportModal } from './components/modal-import.js';
 import { Toast } from './components/toast.js';
 import { applyAppAccent, applyOutgoingBubbleColor } from './config/palette.js';
 import { assetUrl } from './config/base-path.js';
 
 // Application Version Constant
-window.APP_VERSION = '0.0.14';
+window.APP_VERSION = '0.0.15';
 
 // Global deferred PWA install prompt holder
 window.deferredInstallPrompt = null;
@@ -84,7 +88,11 @@ class Application {
       { pattern: '/settings', viewClass: SettingsView },
       { pattern: '/settings/appearance/theme', viewClass: AppearanceView, defaultParams: { subRoute: 'theme' } },
       { pattern: '/settings/appearance', viewClass: AppearanceView, defaultParams: { subRoute: '' } },
+      { pattern: '/chat-theme', viewClass: ChatThemeView },
+      { pattern: '/chat-bubble-picker', viewClass: ChatBubblePickerView },
       { pattern: '/wallpaper-picker', viewClass: WallpaperPickerView },
+      { pattern: '/solid-colours-picker', viewClass: SolidColoursPickerView },
+      { pattern: '/wallpaper-section', viewClass: WallpaperSectionView },
       { pattern: '/theme-preview', viewClass: ThemePreviewView }
     ];
 

@@ -1,8 +1,7 @@
-// Screen: Wallpaper Picker (Stage 1 of Wallpaper & Theme setup)
+// Screen: WhatsApp Native Wallpaper Hub (4 Sections: Actions, Last Used, Nature, Vibrant)
 import { Icons } from '../icons.js';
 import { db } from '../db.js';
 import { WALLPAPER_PRESETS } from '../config/wallpapers.js';
-import { APP_COLOR_PALETTE } from '../config/palette.js';
 import { assetUrl } from '../config/base-path.js';
 
 export class WallpaperPickerView {
@@ -20,10 +19,27 @@ export class WallpaperPickerView {
 
     const recentWallpapers = await db.getSetting('recent_wallpapers', []);
 
-    // Filter presets by category
-    const defaultPresets = WALLPAPER_PRESETS.filter((p) => p.category === 'default');
+    // Filter presets
     const naturePresets = WALLPAPER_PRESETS.filter((p) => p.category === 'nature');
     const vibrantPresets = WALLPAPER_PRESETS.filter((p) => p.category === 'vibrant');
+
+    // Prepare Last Used items (including default nature-8 if empty so it looks like WhatsApp reference)
+    const lastUsedItems = [];
+    if (recentWallpapers.length > 0) {
+      for (const id of recentWallpapers) {
+        if (id === 'custom') {
+          const blob = await db.getSetting('temp_preview_wallpaper', null);
+          if (blob) lastUsedItems.push({ id: 'custom', blob, label: 'Custom' });
+        } else {
+          const p = WALLPAPER_PRESETS.find((x) => x.id === id);
+          if (p) lastUsedItems.push(p);
+        }
+      }
+    } else {
+      // Default initial last-used cards matching reference image 3
+      const defaultRecents = [WALLPAPER_PRESETS[14], WALLPAPER_PRESETS[23]].filter(Boolean);
+      lastUsedItems.push(...defaultRecents);
+    }
 
     rootEl.innerHTML = `
       <div class="screen-view wallpaper-picker-screen">
@@ -35,65 +51,56 @@ export class WallpaperPickerView {
         </header>
 
         <div class="wallpaper-picker-body">
-          <!-- Recent Section (Hidden if empty) -->
-          <div class="wp-section wp-recent-section" id="wp-recent-section" style="${recentWallpapers.length === 0 ? 'display: none;' : ''}">
-            <div class="wp-section-title">Recent</div>
-            <div class="wp-recent-strip" id="wp-recent-strip">
-              ${recentWallpapers.map((id) => this.renderRecentItem(id)).join('')}
-            </div>
-          </div>
-
-          <!-- Quick Action Buttons: Gallery & Solid Colours -->
-          <div class="wp-quick-actions">
-            <label class="wp-action-tile" id="tile-gallery" title="Choose from gallery">
-              <input type="file" id="wp-gallery-input" accept="image/*" style="display:none;" />
-              <div class="wp-action-circle bg-gallery">
+          <!-- Section 1 (Top): Action Buttons (Gallery & Colour) -->
+          <div class="wp-top-action-buttons">
+            <label class="wp-round-action-btn" id="btn-wp-gallery" title="Gallery">
+              <input type="file" id="wp-gallery-file-input" accept="image/*" style="display:none;" />
+              <div class="wp-round-icon-circle bg-gallery-icon">
                 ${Icons.gallery('', 26)}
               </div>
-              <span class="wp-action-label">Gallery</span>
+              <span class="wp-round-action-label">Gallery</span>
             </label>
 
-            <button type="button" class="wp-action-tile" id="tile-colours" title="Solid colours">
-              <div class="wp-action-circle bg-colours">
+            <button type="button" class="wp-round-action-btn" id="btn-wp-solid-colours" title="Colour">
+              <div class="wp-round-icon-circle bg-colour-icon">
                 <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor">
                   <path d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 19.4c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l1.9-1.9C9.28 19.64 10.59 20 12 20c4.97 0 9-4.03 9-9s-4.03-9-9-9zm0 15c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/>
                 </svg>
               </div>
-              <span class="wp-action-label">Solid colours</span>
+              <span class="wp-round-action-label">Colour</span>
             </button>
           </div>
 
-          <!-- Solid Colours Grid Drawer (Collapsible) -->
-          <div class="wp-section wp-colours-section" id="wp-colours-container" style="display: none;">
-            <div class="wp-section-title">Solid colours</div>
-            <div class="wp-swatch-grid">
-              ${APP_COLOR_PALETTE.map((hex) => `
-                <button type="button" class="wp-colour-swatch" data-color="${hex}" style="background-color: ${hex};" aria-label="Color ${hex}"></button>
-              `).join('')}
+          <!-- Section 2: Last used (Horizontal Scroll, Clickable Title) -->
+          <div class="wp-category-section">
+            <div class="wp-category-header clickable" id="header-last-used" title="View all Last used in grid">
+              <span class="wp-category-name">Last used</span>
+              <span class="wp-chevron-icon">${Icons.chevronRight ? Icons.chevronRight('', 18) : '&gt;'}</span>
+            </div>
+            <div class="wp-horizontal-scroll-track" id="track-last-used">
+              ${lastUsedItems.map((item) => this.renderWallpaperCard(item)).join('')}
             </div>
           </div>
 
-          <!-- Default Wallpaper Section -->
-          <div class="wp-section">
-            <div class="wp-section-title">Default</div>
-            <div class="wp-preset-grid">
-              ${defaultPresets.map((p) => this.renderPresetCard(p)).join('')}
+          <!-- Section 3: Nature (Horizontal Scroll, Clickable Title) -->
+          <div class="wp-category-section">
+            <div class="wp-category-header clickable" id="header-nature" title="View all Nature in grid">
+              <span class="wp-category-name">Nature</span>
+              <span class="wp-chevron-icon">${Icons.chevronRight ? Icons.chevronRight('', 18) : '&gt;'}</span>
+            </div>
+            <div class="wp-horizontal-scroll-track" id="track-nature">
+              ${naturePresets.map((item) => this.renderWallpaperCard(item)).join('')}
             </div>
           </div>
 
-          <!-- Nature Wallpapers Section -->
-          <div class="wp-section">
-            <div class="wp-section-title">Nature</div>
-            <div class="wp-preset-grid">
-              ${naturePresets.map((p) => this.renderPresetCard(p)).join('')}
+          <!-- Section 4: Vibrant (Horizontal Scroll, Clickable Title) -->
+          <div class="wp-category-section">
+            <div class="wp-category-header clickable" id="header-vibrant" title="View all Vibrant in grid">
+              <span class="wp-category-name">Vibrant</span>
+              <span class="wp-chevron-icon">${Icons.chevronRight ? Icons.chevronRight('', 18) : '&gt;'}</span>
             </div>
-          </div>
-
-          <!-- Vibrant Wallpapers Section -->
-          <div class="wp-section">
-            <div class="wp-section-title">Vibrant</div>
-            <div class="wp-preset-grid">
-              ${vibrantPresets.map((p) => this.renderPresetCard(p)).join('')}
+            <div class="wp-horizontal-scroll-track" id="track-vibrant">
+              ${vibrantPresets.map((item) => this.renderWallpaperCard(item)).join('')}
             </div>
           </div>
         </div>
@@ -103,101 +110,68 @@ export class WallpaperPickerView {
     this.bindEvents();
   }
 
-  renderRecentItem(id) {
-    if (id.startsWith('color:')) {
-      const color = id.replace('color:', '');
-      return `
-        <button type="button" class="wp-recent-item" data-id="${id}" style="background-color: ${color};" title="Color ${color}">
-          <span class="recent-label">Solid</span>
-        </button>
-      `;
+  renderWallpaperCard(item) {
+    let src = '';
+    if (item.blob) {
+      src = URL.createObjectURL(item.blob);
+    } else if (item.file) {
+      src = assetUrl(item.file);
     }
-    const preset = WALLPAPER_PRESETS.find((p) => p.id === id);
-    if (!preset || !preset.file) {
-      return `
-        <button type="button" class="wp-recent-item wp-default-card" data-id="${id}">
-          <span class="recent-label">${preset ? preset.label : id}</span>
-        </button>
-      `;
-    }
-    const fullUrl = assetUrl(preset.file);
-    return `
-      <button type="button" class="wp-recent-item" data-id="${id}">
-        <img src="${fullUrl}" loading="lazy" decoding="async" alt="${preset.label}" class="recent-thumb" onerror="this.onerror=null; this.style.display='none'; this.parentElement.style.backgroundColor='${APP_COLOR_PALETTE[0]}'; console.warn('Missing wallpaper asset:', '${preset.file}');" />
-        <span class="recent-label">${preset.label}</span>
-      </button>
-    `;
-  }
 
-  renderPresetCard(preset) {
-    if (!preset.file) {
-      return `
-        <button type="button" class="wp-preset-card wp-default-card" data-id="${preset.id}">
-          <div class="default-doodle-bg"></div>
-          <span class="wp-preset-label">${preset.label}</span>
-        </button>
-      `;
-    }
-    const fullUrl = assetUrl(preset.file);
     return `
-      <button type="button" class="wp-preset-card" data-id="${preset.id}">
-        <img src="${fullUrl}" loading="lazy" decoding="async" alt="${preset.label}" class="wp-preset-thumb" onerror="this.onerror=null; this.style.display='none'; this.parentElement.style.backgroundColor='${APP_COLOR_PALETTE[0]}'; console.warn('Missing wallpaper asset:', '${preset.file}');" />
-        <span class="wp-preset-label">${preset.label}</span>
+      <button type="button" class="wp-horizontal-card" data-id="${item.id}" aria-label="${item.label || item.id}">
+        ${src ? `<img src="${src}" alt="${item.label || ''}" class="wp-card-thumb" loading="lazy" />` : `<div class="wp-card-placeholder"></div>`}
       </button>
     `;
   }
 
   bindEvents() {
-    // Back button
     this.container.querySelector('#btn-wp-back').addEventListener('click', () => {
-      window.history.back();
+      this.router.navigate('#/chat-theme');
     });
 
-    // Toggle solid colours drawer
-    const coloursTile = this.container.querySelector('#tile-colours');
-    const coloursContainer = this.container.querySelector('#wp-colours-container');
-    coloursTile.addEventListener('click', () => {
-      const isVisible = coloursContainer.style.display !== 'none';
-      coloursContainer.style.display = isVisible ? 'none' : 'block';
-      if (!isVisible) {
-        coloursContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
-    });
-
-    // Swatch clicks
-    this.container.querySelectorAll('.wp-colour-swatch').forEach((swatch) => {
-      swatch.addEventListener('click', () => {
-        const hex = swatch.dataset.color;
-        this.openPreview(`color:${hex}`);
-      });
-    });
-
-    // Gallery upload input
-    const galleryInput = this.container.querySelector('#wp-gallery-input');
+    // Gallery File Picker
+    const galleryInput = this.container.querySelector('#wp-gallery-file-input');
     galleryInput.addEventListener('change', async (e) => {
       if (e.target.files && e.target.files[0]) {
         const file = e.target.files[0];
-        // Store temporary custom preview Blob in IndexedDB or memory
-        const tempKey = 'temp_preview_wallpaper';
-        await db.setSetting(tempKey, file);
-        this.openPreview('custom');
+        await db.setSetting('temp_preview_wallpaper', file);
+
+        // Add 'custom' to recent_wallpapers
+        const recents = await db.getSetting('recent_wallpapers', []);
+        const filtered = recents.filter((r) => r !== 'custom');
+        filtered.unshift('custom');
+        await db.setSetting('recent_wallpapers', filtered.slice(0, 6));
+
+        this.router.navigate('#/theme-preview?wallpaper=custom');
       }
     });
 
-    // Preset cards and Recent items clicks
-    this.container.querySelectorAll('.wp-preset-card, .wp-recent-item').forEach((el) => {
-      el.addEventListener('click', () => {
-        const id = el.dataset.id;
-        if (id) this.openPreview(id);
+    // Solid Colours
+    this.container.querySelector('#btn-wp-solid-colours').addEventListener('click', () => {
+      this.router.navigate('#/solid-colours-picker');
+    });
+
+    // Section Title Clicks -> Open Grid Mode
+    this.container.querySelector('#header-last-used').addEventListener('click', () => {
+      this.router.navigate('#/wallpaper-section?category=last-used');
+    });
+
+    this.container.querySelector('#header-nature').addEventListener('click', () => {
+      this.router.navigate('#/wallpaper-section?category=nature');
+    });
+
+    this.container.querySelector('#header-vibrant').addEventListener('click', () => {
+      this.router.navigate('#/wallpaper-section?category=vibrant');
+    });
+
+    // Wallpaper card clicks
+    const cards = this.container.querySelectorAll('.wp-horizontal-card');
+    cards.forEach((card) => {
+      card.addEventListener('click', () => {
+        const id = card.dataset.id;
+        this.router.navigate(`#/theme-preview?wallpaper=${encodeURIComponent(id)}`);
       });
     });
-  }
-
-  openPreview(id) {
-    const query = new URLSearchParams();
-    query.set('id', id);
-    query.set('scope', this.scope);
-    if (this.chatId) query.set('chatId', this.chatId);
-    this.router.navigate(`#/theme-preview?${query.toString()}`);
   }
 }

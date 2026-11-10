@@ -1,0 +1,125 @@
+{
+  "version": "1.0",
+  "categories": [
+    {
+      "id": "featured",
+      "name": "Featured",
+      "items": [
+        {
+          "id": "feat-1",
+          "name": "Golden Horizon",
+          "wallpaper": "assets/wallpapers/nature-8.webp",
+          "bubbleColor": "#8c3d23"
+        },
+        {
+          "id": "feat-2",
+          "name": "Lush Tropic",
+          "wallpaper": "assets/wallpapers/nature-1.webp",
+          "bubbleColor": "#2d6a4f"
+        },
+        {
+          "id": "feat-3",
+          "name": "Sunny Glow",
+          "wallpaper": "assets/wallpapers/vibrant-2.webp",
+          "bubbleColor": "#205068"
+        },
+        {
+          "id": "feat-4",
+          "name": "Cosmic Fluid",
+          "wallpaper": "assets/wallpapers/vibrant-10.webp",
+          "bubbleColor": "#55585f"
+        }
+      ]
+    },
+    {
+      "id": "nature",
+      "name": "Nature",
+      "items": [
+        {
+          "id": "nat-1",
+          "name": "Monument Valley",
+          "wallpaper": "assets/wallpapers/nature-5.webp",
+          "bubbleColor": "#8c3d23"
+        },
+        {
+          "id": "nat-2",
+          "name": "Sunset Shore",
+          "wallpaper": "assets/wallpapers/nature-6.webp",
+          "bubbleColor": "#5b21b6"
+        },
+        {
+          "id": "nat-3",
+          "name": "Glacier Peaks",
+          "wallpaper": "assets/wallpapers/nature-4.webp",
+          "bubbleColor": "#3b6998"
+        },
+        {
+          "id": "nat-4",
+          "name": "Autumn Ridge",
+          "wallpaper": "assets/wallpapers/nature-3.webp",
+          "bubbleColor": "#660c14"
+        }
+      ]
+    },
+    {
+      "id": "minimal",
+      "name": "Minimal",
+      "items": [
+        {
+          "id": "min-1",
+          "name": "Midnight Slate",
+          "wallpaper": "color:#111b21",
+          "bubbleColor": "#3b6998"
+        },
+        {
+          "id": "min-2",
+          "name": "Berry Velvet",
+          "wallpaper": "color:#121212",
+          "bubbleColor": "#be123c"
+        },
+        {
+          "id": "min-3",
+          "name": "Emerald Night",
+          "wallpaper": "color:#0b141a",
+          "bubbleColor": "#2d6a4f"
+        },
+        {
+          "id": "min-4",
+          "name": "Terracotta Dark",
+          "wallpaper": "color:#1f1b18",
+          "bubbleColor": "#c2410c"
+        }
+      ]
+    },
+    {
+      "id": "doodle",
+      "name": "Doodle",
+      "items": [
+        {
+          "id": "doodle-1",
+          "name": "Classic Forest",
+          "wallpaper": "default",
+          "bubbleColor": "#25d366"
+        },
+        {
+          "id": "doodle-2",
+          "name": "Teal Lagoon",
+          "wallpaper": "default",
+          "bubbleColor": "#0d9488"
+        },
+        {
+          "id": "doodle-3",
+          "name": "Warm Spice",
+          "wallpaper": "default",
+          "bubbleColor": "#c2410c"
+        },
+        {
+          "id": "doodle-4",
+          "name": "Olive Mist",
+          "wallpaper": "default",
+          "bubbleColor": "#4d7c0f"
+        }
+      ]
+    }
+  ]
+}

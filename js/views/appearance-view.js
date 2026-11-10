@@ -108,9 +108,9 @@ export class AppearanceView {
       this.router.navigate('#/settings');
     });
 
-    // Chat theme click -> Go to Wallpaper Picker
+    // Chat theme click -> Go to Main Chat Theme View
     rootEl.querySelector('#row-chat-theme').addEventListener('click', () => {
-      this.router.navigate('#/wallpaper-picker?scope=global');
+      this.router.navigate('#/chat-theme');
     });
 
     // App icon click -> Open App Icon Dialog

@@ -47,7 +47,7 @@ export class ChatView {
       if (wpSelection.startsWith('color:')) {
         wpBgStyle = `background-color: ${wpSelection.replace('color:', '')}; background-image: none;`;
       } else if (wpSelection !== 'default') {
-        const preset = WALLPAPER_PRESETS.find((p) => p.id === wpSelection);
+        const preset = WALLPAPER_PRESETS.find((p) => p.id === wpSelection || p.file === wpSelection);
         if (preset && preset.file) {
           wpBgStyle = `background-image: url(${assetUrl(preset.file)});`;
         }
