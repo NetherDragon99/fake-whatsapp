@@ -629,7 +629,7 @@ class Database {
     });
 
     return {
-      version: '1.0',
+      version: '1.0.0',
       exportedAt: Date.now(),
       chats,
       messages,
