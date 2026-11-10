@@ -65,6 +65,16 @@ export class VirtualMessageScroller {
     return colors[Math.abs(hash) % colors.length];
   }
 
+  escapeHtml(str) {
+    if (!str) return '';
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   formatMessageText(text) {
     if (!text) return '';
     let escaped = text
@@ -97,6 +107,13 @@ export class VirtualMessageScroller {
 
   isSticker(msg) {
     return msg.mediaType === 'sticker' || (msg.mediaName && (/\.webp$/i.test(msg.mediaName) || /stk-/i.test(msg.mediaName) || /sticker/i.test(msg.mediaName)));
+  }
+
+  isVisualMedia(msg) {
+    if (!msg || msg.isSystem || this.isSticker(msg)) return false;
+    if (msg.mediaType === 'image' || msg.mediaType === 'video') return true;
+    if (msg.mediaName && /\.(jpg|jpeg|png|webp|gif|mp4|mov|webm)$/i.test(msg.mediaName)) return true;
+    return false;
   }
 
   cancelPendingLongPress() {
@@ -342,27 +359,22 @@ export class VirtualMessageScroller {
         lastDateStr = dateStr;
       }
 
-      // Check if message is an image eligible for album grouping (Step 4)
-      const isImageMsg = (msg.mediaType === 'image' || (!msg.mediaType && msg.mediaName && /\.(jpg|jpeg|png|webp|gif)$/i.test(msg.mediaName))) &&
-                         !msg.isSystem &&
-                         !this.isSticker(msg) &&
-                         (!msg.text || !msg.text.trim());
+      // Check if message is visual media (photos & videos) eligible for album grouping
+      const isVisualMsg = this.isVisualMedia(msg);
 
-      if (isImageMsg) {
-        // Look ahead for consecutive same-minute same-sender image messages
+      if (isVisualMsg) {
+        // Look ahead for consecutive same-minute same-sender visual messages
         const albumMsgs = [msg];
         let nextIdx = i + 1;
         while (nextIdx < endIndex) {
           const nextMsg = this.allMessages[nextIdx];
           if (!nextMsg) break;
-          const isNextImage = (nextMsg.mediaType === 'image' || (!nextMsg.mediaType && nextMsg.mediaName && /\.(jpg|jpeg|png|webp|gif)$/i.test(nextMsg.mediaName))) &&
-                              !nextMsg.isSystem &&
-                              !this.isSticker(nextMsg) &&
-                              (!nextMsg.text || !nextMsg.text.trim());
+          const isNextVisual = this.isVisualMedia(nextMsg);
           const isSameSender = nextMsg.sender === msg.sender && nextMsg.isOutgoing === msg.isOutgoing;
           const isSameMinute = Math.abs(nextMsg.timestamp - msg.timestamp) < 60000;
+          const isSameBatch = msg.batchId && nextMsg.batchId && msg.batchId === nextMsg.batchId;
 
-          if (isNextImage && isSameSender && isSameMinute) {
+          if (isNextVisual && isSameSender && (isSameMinute || isSameBatch)) {
             albumMsgs.push(nextMsg);
             nextIdx++;
           } else {
@@ -442,23 +454,38 @@ export class VirtualMessageScroller {
       thumbWrap.className = 'album-thumb-wrap';
 
       if (mediaUrl) {
-        const img = document.createElement('img');
-        img.src = mediaUrl;
-        img.alt = itemMsg.mediaName || 'Photo';
-        img.loading = 'lazy';
-        img.className = 'album-thumb-img';
-        img.addEventListener('click', (e) => {
+        if (itemMsg.mediaType === 'video' || (itemMsg.mediaName && /\.(mp4|mov|webm)$/i.test(itemMsg.mediaName))) {
+          const video = document.createElement('video');
+          video.src = mediaUrl;
+          video.className = 'album-thumb-img';
+          video.muted = true;
+          video.playsInline = true;
+          thumbWrap.appendChild(video);
+
+          const playBadge = document.createElement('div');
+          playBadge.className = 'album-video-play-badge';
+          playBadge.innerHTML = `<svg viewBox="0 0 24 24" width="22" height="22" fill="#ffffff"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+          thumbWrap.appendChild(playBadge);
+        } else {
+          const img = document.createElement('img');
+          img.src = mediaUrl;
+          img.alt = itemMsg.mediaName || 'Photo';
+          img.loading = 'lazy';
+          img.className = 'album-thumb-img';
+          thumbWrap.appendChild(img);
+
+          const hdBadge = document.createElement('div');
+          hdBadge.className = 'album-thumb-hd-badge';
+          hdBadge.textContent = 'HD';
+          thumbWrap.appendChild(hdBadge);
+        }
+
+        thumbWrap.addEventListener('click', (e) => {
           e.stopPropagation();
           mediaLightbox.showAlbum(albumMsgs, idx, (chatId, msgId) => {
             this.scrollToMessage(msgId);
           });
         });
-        thumbWrap.appendChild(img);
-
-        const hdBadge = document.createElement('div');
-        hdBadge.className = 'album-thumb-hd-badge';
-        hdBadge.textContent = 'HD';
-        thumbWrap.appendChild(hdBadge);
       } else {
         thumbWrap.innerHTML = `<div class="media-placeholder">${Icons.gallery('', 24)}</div>`;
       }
@@ -480,17 +507,38 @@ export class VirtualMessageScroller {
       gridContainer.appendChild(thumbWrap);
     }
 
-    // Overlaid Timestamp & Read Receipts at bottom right of the entire grid
-    const metaPill = document.createElement('div');
-    metaPill.className = 'album-meta-pill';
-    let checksHtml = '';
-    if (firstMsg.isOutgoing) {
-      checksHtml = Icons.checks(true, 'receipt-check-white', 15);
-    }
-    metaPill.innerHTML = `<span>${this.formatTime(lastMsg.timestamp)}</span>${checksHtml}`;
-    gridContainer.appendChild(metaPill);
-
     bubble.appendChild(gridContainer);
+
+    // Caption under photos rule: if any message has text/caption, display underneath outside the photos on the same bubble
+    const captionMsg = albumMsgs.find((m) => m.text && m.text.trim().length > 0);
+    if (captionMsg) {
+      const captionBlock = document.createElement('div');
+      captionBlock.className = 'album-caption-block';
+
+      let checksHtml = '';
+      if (firstMsg.isOutgoing) {
+        checksHtml = Icons.checks(true, 'receipt-check-blue', 15);
+      }
+
+      captionBlock.innerHTML = `
+        <div class="album-caption-text">${this.escapeHtml(captionMsg.text.trim())}</div>
+        <div class="album-caption-meta">
+          <span>${this.formatTime(lastMsg.timestamp)}</span>
+          ${checksHtml}
+        </div>
+      `;
+      bubble.appendChild(captionBlock);
+    } else {
+      // Overlaid Timestamp & Read Receipts at bottom right of the entire grid
+      const metaPill = document.createElement('div');
+      metaPill.className = 'album-meta-pill';
+      let checksHtml = '';
+      if (firstMsg.isOutgoing) {
+        checksHtml = Icons.checks(true, 'receipt-check-white', 15);
+      }
+      metaPill.innerHTML = `<span>${this.formatTime(lastMsg.timestamp)}</span>${checksHtml}`;
+      gridContainer.appendChild(metaPill);
+    }
     row.appendChild(bubble);
 
     // Attach touch & long-press handler

@@ -1049,3 +1049,526 @@
   padding: 2px 8px;
   border-radius: 10px;
 }
+
+/* ==========================================================================
+   Voice Chat Recording Bar (Locked Mode @refrance Image 1)
+   ========================================================================== */
+.chat-voice-locked-bar {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px 14px 16px;
+  background-color: var(--wa-surface-elevated, #111b21);
+  border-top: 1px solid var(--wa-border-subtle, rgba(255, 255, 255, 0.08));
+  gap: 12px;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 10;
+  animation: slideUpVoice 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes slideUpVoice {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.voice-locked-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.voice-locked-timer {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--wa-text-primary, #e9edef);
+  font-variant-numeric: tabular-nums;
+  min-width: 44px;
+}
+
+.voice-locked-waveform {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  margin-left: 20px;
+  height: 24px;
+}
+
+.voice-locked-waveform .v-dot {
+  width: 4px;
+  height: 8px;
+  background-color: var(--wa-text-secondary, #8696a0);
+  border-radius: 2px;
+  animation: pulseWaveform 1.2s infinite ease-in-out;
+}
+
+.voice-locked-waveform .v-dot:nth-child(2n) {
+  height: 16px;
+  animation-delay: 0.2s;
+}
+
+.voice-locked-waveform .v-dot:nth-child(3n) {
+  height: 22px;
+  animation-delay: 0.4s;
+  background-color: #25d366;
+}
+
+.voice-locked-waveform .v-dot:nth-child(4n) {
+  height: 12px;
+  animation-delay: 0.1s;
+}
+
+@keyframes pulseWaveform {
+  0%, 100% { transform: scaleY(0.4); opacity: 0.5; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
+
+.voice-locked-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.voice-btn-discard {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.voice-btn-discard:active {
+  transform: scale(0.9);
+  background-color: rgba(239, 68, 68, 0.25);
+}
+
+.voice-btn-pause-resume {
+  flex: 1;
+  max-width: 200px;
+  height: 44px;
+  border-radius: 24px;
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--wa-text-primary, #e9edef);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 14.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.voice-btn-pause-resume:active {
+  background-color: rgba(255, 255, 255, 0.16);
+}
+
+.voice-btn-send {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background-color: #3b82f6; /* Blue send button as on reference photo */
+  color: #ffffff;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+  transition: transform 0.15s ease;
+}
+
+.voice-btn-send:active {
+  transform: scale(0.9);
+}
+
+/* Floating lock hint while holding mic */
+.voice-lock-tooltip {
+  position: absolute;
+  bottom: 64px;
+  right: 14px;
+  background-color: var(--wa-surface-elevated, #202c33);
+  color: var(--wa-text-primary, #e9edef);
+  padding: 8px 14px;
+  border-radius: 20px;
+  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  animation: bounceUp 0.8s infinite alternate ease-in-out;
+  z-index: 15;
+}
+
+@keyframes bounceUp {
+  from { transform: translateY(0); }
+  to { transform: translateY(-8px); }
+}
+
+/* ==========================================================================
+   Multi-Photo Album Caption Layout (Underneath Outside Photos)
+   ========================================================================== */
+.album-caption-block {
+  padding: 8px 10px 4px 10px;
+  font-size: 14.5px;
+  color: var(--wa-text-primary);
+  display: flex;
+  flex-direction: column;
+  background: inherit;
+}
+
+.album-caption-text {
+  word-break: break-word;
+  line-height: 1.35;
+}
+
+.album-caption-meta {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--wa-text-secondary);
+  margin-top: 4px;
+}
+
+/* Video badge in album grid */
+.album-video-play-badge {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ==========================================================================
+   Media Editor Fullscreen Modal (@refrance Images 2 & 3)
+   ========================================================================== */
+.media-editor-modal {
+  position: fixed;
+  inset: 0;
+  background-color: #000000;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.media-editor-header {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+}
+
+.editor-icon-btn {
+  background: none;
+  border: none;
+  color: #ffffff;
+  padding: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.editor-hd-btn {
+  background: none;
+  border: none;
+  color: #ffffff;
+  cursor: pointer;
+  padding: 4px 8px;
+  opacity: 0.7;
+}
+
+.editor-hd-btn.active {
+  opacity: 1;
+}
+
+.editor-hd-btn .hd-box {
+  border: 1.5px solid currentColor;
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.editor-hd-btn.active .hd-box {
+  background-color: #25d366;
+  border-color: #25d366;
+  color: #0b141a;
+}
+
+.media-editor-preview-stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 0 160px;
+  overflow: hidden;
+}
+
+.editor-main-media {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.media-editor-footer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 12px 16px 24px;
+  background: linear-gradient(to top, rgba(0,0,0,0.85) 60%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 10;
+}
+
+.editor-thumbnails-carousel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.editor-thumb-box {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.editor-thumb-box.active {
+  border-color: #ffffff;
+}
+
+.editor-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.editor-thumb-delete {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  color: #ffffff;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.editor-thumb-add-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.editor-caption-wrap {
+  width: 100%;
+}
+
+.editor-caption-pill {
+  display: flex;
+  align-items: center;
+  background-color: #1f2c34;
+  border-radius: 24px;
+  padding: 6px 16px;
+  gap: 10px;
+}
+
+.editor-caption-icon {
+  color: #8696a0;
+  display: flex;
+  align-items: center;
+}
+
+.editor-caption-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 15px;
+  outline: none;
+}
+
+.editor-caption-input::placeholder {
+  color: #8696a0;
+}
+
+.editor-bottom-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.editor-recipient-pill {
+  background-color: #1f2c34;
+  color: #e9edef;
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 16px;
+  font-weight: 500;
+}
+
+.editor-send-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background-color: #25d366;
+  color: #0b141a;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(37, 211, 102, 0.4);
+  transition: transform 0.15s ease;
+}
+
+.editor-send-btn:active {
+  transform: scale(0.92);
+}
+
+/* ==========================================================================
+   Sticker Drawer Overlay & Sheet (Draggable & Resizable)
+   ========================================================================== */
+.sticker-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.sticker-drawer-overlay.active {
+  opacity: 1;
+}
+
+.sticker-drawer-sheet {
+  background-color: var(--wa-surface-elevated, #111b21);
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: 85vh;
+  min-height: 20vh;
+  touch-action: none;
+  transform: translateY(100%);
+  transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1), height 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.sticker-drawer-overlay.active .sticker-drawer-sheet {
+  transform: translateY(0);
+}
+
+.drawer-drag-header {
+  padding: 10px 16px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: grab;
+  user-select: none;
+}
+
+.drawer-drag-handle-bar {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background-color: var(--wa-text-secondary, #8696a0);
+  opacity: 0.6;
+}
+
+.drawer-header-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--wa-text-secondary, #8696a0);
+}
+
+.drawer-stickers-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px 24px;
+  touch-action: pan-y;
+}
+
+.stickers-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  justify-items: center;
+  align-items: center;
+}
+
+.sticker-grid-tile {
+  background: none;
+  border: none;
+  padding: 6px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sticker-grid-tile:active {
+  transform: scale(0.9);
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.sticker-img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+}

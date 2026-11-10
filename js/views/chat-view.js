@@ -7,6 +7,9 @@ import { Toast } from '../components/toast.js';
 import { showConfirm, showAlert, showPrompt } from '../components/custom-dialog.js';
 import { WALLPAPER_PRESETS } from '../config/wallpapers.js';
 import { assetUrl } from '../config/base-path.js';
+import { VoiceRecorder } from '../components/voice-recorder.js';
+import { MediaEditorModal } from '../components/media-editor-modal.js';
+import { StickerDrawer } from '../components/sticker-drawer.js';
 
 export class ChatView {
   constructor(router) {
@@ -131,20 +134,49 @@ export class ChatView {
         </button>
 
         <!-- Bottom Input Bar -->
-        <footer class="chat-input-bar">
+        <footer class="chat-input-bar" id="chat-default-input-bar">
           <div class="input-pill">
-            <button type="button" class="input-icon-btn" aria-label="Emoji">${Icons.emoji('', 22)}</button>
+            <button type="button" class="input-icon-btn" id="btn-open-stickers" aria-label="Stickers">${Icons.sticker('', 22)}</button>
             <textarea id="chat-input-textarea" placeholder="Message" rows="1" dir="auto"></textarea>
-            <label class="input-icon-btn" title="Attach file">
+            <label class="input-icon-btn" id="btn-gallery-attach" title="Attach file or photo">
               ${Icons.paperclip('', 22)}
-              <input type="file" id="chat-attach-input" style="display:none;" />
+              <input type="file" id="chat-gallery-input" accept="image/*,video/*" multiple style="display:none;" />
             </label>
             <button type="button" class="input-icon-btn" id="btn-camera-snap" aria-label="Camera">${Icons.camera('', 22)}</button>
+            <input type="file" id="chat-camera-input" accept="image/*" capture="environment" style="display:none;" />
           </div>
           <button type="button" class="mic-send-btn" id="btn-mic-send" aria-label="Send or record audio">
             ${Icons.mic('mic-icon', 22)}
           </button>
         </footer>
+
+        <!-- Locked Voice Recording Bar (@refrance Image 1) -->
+        <div class="chat-voice-locked-bar" id="chat-voice-locked-bar" style="display: none;">
+          <div class="voice-locked-top">
+            <div class="voice-locked-timer" id="voice-locked-timer">0:00</div>
+            <div class="voice-locked-waveform">
+              <span class="v-dot"></span><span class="v-dot"></span><span class="v-dot"></span><span class="v-dot"></span>
+              <span class="v-dot"></span><span class="v-dot"></span><span class="v-dot"></span><span class="v-dot"></span>
+              <span class="v-dot"></span><span class="v-dot"></span><span class="v-dot"></span><span class="v-dot"></span>
+            </div>
+          </div>
+          <div class="voice-locked-bottom">
+            <button type="button" class="voice-btn-discard" id="btn-voice-discard" aria-label="Discard recording">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+              </svg>
+            </button>
+            <button type="button" class="voice-btn-pause-resume" id="btn-voice-pause-resume" aria-label="Pause or Resume">
+              <span class="pause-bars">||</span>
+              <span class="pause-label">Pause</span>
+            </button>
+            <button type="button" class="voice-btn-send" id="btn-voice-send" aria-label="Send voice message">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
 
         <!-- Hidden Date Picker for Jump To Date -->
         <input type="date" id="chat-hidden-date-picker" style="display:none;" />
@@ -314,6 +346,44 @@ export class ChatView {
     // In-Chat Search bar events
     this.bindSearchEvents();
 
+    // Sticker Drawer Button
+    const stickerBtn = this.container.querySelector('#btn-open-stickers');
+    if (stickerBtn) {
+      stickerBtn.addEventListener('click', () => {
+        new StickerDrawer({
+          onSelectSticker: (blobOrUrl, name) => {
+            this.sendStickerMessage(blobOrUrl, name);
+          }
+        }).open();
+      });
+    }
+
+    // Camera input & Gallery input
+    const cameraInput = this.container.querySelector('#chat-camera-input');
+    const galleryInput = this.container.querySelector('#chat-gallery-input');
+    const cameraBtn = this.container.querySelector('#btn-camera-snap');
+
+    if (cameraBtn && cameraInput) {
+      cameraBtn.addEventListener('click', () => {
+        cameraInput.click();
+      });
+      cameraInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+          this.openMediaEditor(Array.from(e.target.files));
+          cameraInput.value = '';
+        }
+      });
+    }
+
+    if (galleryInput) {
+      galleryInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+          this.openMediaEditor(Array.from(e.target.files));
+          galleryInput.value = '';
+        }
+      });
+    }
+
     // Input text & Send / Mic button behavior
     const textarea = this.container.querySelector('#chat-input-textarea');
     const sendBtn = this.container.querySelector('#btn-mic-send');
@@ -335,33 +405,158 @@ export class ChatView {
         textarea.value = '';
         sendBtn.innerHTML = Icons.mic('mic-icon', 22);
         sendBtn.classList.remove('is-send');
+      }
+    });
+
+    // Voice Recorder Setup (Long Press, Swipe up to lock, Pause/Resume, Discard)
+    this.setupVoiceRecording();
+  }
+
+  setupVoiceRecording() {
+    const sendBtn = this.container.querySelector('#btn-mic-send');
+    const textarea = this.container.querySelector('#chat-input-textarea');
+    const normalBar = this.container.querySelector('#chat-default-input-bar');
+    const lockedBar = this.container.querySelector('#chat-voice-locked-bar');
+    const timerEl = this.container.querySelector('#voice-locked-timer');
+    const discardBtn = this.container.querySelector('#btn-voice-discard');
+    const pauseResumeBtn = this.container.querySelector('#btn-voice-pause-resume');
+    const lockedSendBtn = this.container.querySelector('#btn-voice-send');
+
+    let pressTimer = null;
+    let startY = 0;
+    let isHolding = false;
+    let isLocked = false;
+
+    this.voiceRecorder = new VoiceRecorder({
+      onLocked: () => {
+        isLocked = true;
+        normalBar.style.display = 'none';
+        lockedBar.style.display = 'flex';
+        pauseResumeBtn.innerHTML = '<span class="pause-bars">||</span> <span class="pause-label">Pause</span>';
+      },
+      onUpdateTimer: (sec) => {
+        if (timerEl) timerEl.textContent = VoiceRecorder.formatDuration(sec);
+      },
+      onSend: async (audioBlob, duration) => {
+        this.resetVoiceUI();
+        await this.sendVoiceNoteMessage(audioBlob, duration);
+      },
+      onDiscard: () => {
+        this.resetVoiceUI();
+        Toast.show('Recording discarded');
+      }
+    });
+
+    const onPointerDown = (e) => {
+      if (textarea.value.trim().length > 0) return;
+      startY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+      isHolding = true;
+      isLocked = false;
+
+      pressTimer = setTimeout(async () => {
+        if (isHolding && !isLocked) {
+          await this.voiceRecorder.start();
+          this.showLockTooltip();
+        }
+      }, 180);
+    };
+
+    const onPointerMove = (e) => {
+      if (!isHolding || isLocked || !this.voiceRecorder.isRecording) return;
+      const currentY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+      const deltaY = startY - currentY;
+      if (deltaY > 50) {
+        this.removeLockTooltip();
+        this.voiceRecorder.lock();
+      }
+    };
+
+    const onPointerUp = async () => {
+      clearTimeout(pressTimer);
+      this.removeLockTooltip();
+
+      if (!isHolding) return;
+      isHolding = false;
+
+      if (isLocked) return;
+
+      if (this.voiceRecorder.isRecording) {
+        if (this.voiceRecorder.elapsedSeconds >= 1) {
+          await this.voiceRecorder.stop(true);
+        } else {
+          await this.voiceRecorder.stop(false);
+          Toast.show('Hold to record, release to send');
+        }
+      }
+    };
+
+    sendBtn.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+
+    discardBtn.addEventListener('click', async () => {
+      await this.voiceRecorder.stop(false);
+    });
+
+    pauseResumeBtn.addEventListener('click', () => {
+      if (this.voiceRecorder.isPaused) {
+        this.voiceRecorder.resume();
+        pauseResumeBtn.innerHTML = '<span class="pause-bars">||</span> <span class="pause-label">Pause</span>';
       } else {
-        Toast.show('Voice recording simulated');
+        this.voiceRecorder.pause();
+        pauseResumeBtn.innerHTML = '<span class="pause-bars">▶</span> <span class="pause-label">Resume</span>';
       }
     });
 
-    // File Attachment
-    const attachInput = this.container.querySelector('#chat-attach-input');
-    attachInput.addEventListener('change', async (e) => {
-      if (e.target.files && e.target.files[0]) {
-        const file = e.target.files[0];
-        await this.handleFileAttachment(file);
-        attachInput.value = '';
-      }
-    });
-
-    // Camera snap simulation
-    this.container.querySelector('#btn-camera-snap').addEventListener('click', () => {
-      attachInput.click();
+    lockedSendBtn.addEventListener('click', async () => {
+      await this.voiceRecorder.stop(true);
     });
   }
 
+  showLockTooltip() {
+    this.removeLockTooltip();
+    const tooltip = document.createElement('div');
+    tooltip.className = 'voice-lock-tooltip';
+    tooltip.id = 'voice-lock-tooltip';
+    tooltip.innerHTML = `
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+        <path d="M12 17a2 2 0 0 0 2-2V9a2 2 0 0 0-4 0v6a2 2 0 0 0 2 2zm6-9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h1V6a5 5 0 0 1 10 0v2h1zm-6-5a3 3 0 0 0-3 3v2h6V6a3 3 0 0 0-3-3z"/>
+      </svg>
+      <span>Swipe up to lock</span>
+    `;
+    this.container.appendChild(tooltip);
+  }
+
+  removeLockTooltip() {
+    const tip = this.container.querySelector('#voice-lock-tooltip');
+    if (tip) tip.remove();
+  }
+
+  resetVoiceUI() {
+    const normalBar = this.container.querySelector('#chat-default-input-bar');
+    const lockedBar = this.container.querySelector('#chat-voice-locked-bar');
+    if (normalBar) normalBar.style.display = 'flex';
+    if (lockedBar) lockedBar.style.display = 'none';
+    this.removeLockTooltip();
+  }
+
+  openMediaEditor(files) {
+    const editor = new MediaEditorModal({
+      recipientName: this.chat.name,
+      onSend: async ({ files, caption, isHd }) => {
+        await this.sendBatchMediaMessages(files, caption, isHd);
+      }
+    });
+    editor.show(files);
+  }
+
   async sendNewMessage(text) {
+    const currentMe = this.chat.meParticipant || this.chat.customMeName || 'Me';
     const newMsg = {
       id: db.generateUUID(),
       chatId: this.chatId,
       timestamp: Date.now(),
-      sender: this.chat.isOutgoingDefault ? (this.chat.customMeName || 'Me') : this.chat.name,
+      sender: currentMe,
       isOutgoing: true,
       text: text,
       mediaId: null,
@@ -372,6 +567,153 @@ export class ChatView {
     await db.saveMessage(newMsg);
     await db.updateChat(this.chatId, {
       lastMessage: text,
+      updatedAt: Date.now()
+    });
+
+    this.scroller.allMessages.push(newMsg);
+    const msgEl = await this.scroller.createMessageElement(newMsg);
+    this.container.querySelector('#chat-messages-wrap').appendChild(msgEl);
+    this.scroller.scrollToBottom(true);
+  }
+
+  async sendBatchMediaMessages(files, caption = '', isHd = false) {
+    if (!files || files.length === 0) return;
+
+    const currentMe = this.chat.meParticipant || this.chat.customMeName || 'Me';
+    const batchId = `batch_${Date.now()}`;
+    const newMsgs = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const mediaId = db.generateUUID();
+      const isVid = file.type.startsWith('video/');
+      const type = isVid ? 'video' : 'image';
+
+      const mediaItem = {
+        id: mediaId,
+        chatId: this.chatId,
+        filename: file.name,
+        type: type,
+        size: file.size,
+        blob: file,
+        isHd: isHd,
+        timestamp: Date.now() + i
+      };
+      await db.saveMedia(mediaItem);
+
+      const msg = {
+        id: db.generateUUID(),
+        chatId: this.chatId,
+        timestamp: Date.now() + i,
+        sender: currentMe,
+        isOutgoing: true,
+        text: (i === 0 && caption) ? caption : '',
+        batchId: batchId,
+        mediaId: mediaId,
+        mediaName: file.name,
+        mediaType: type
+      };
+      await db.saveMessage(msg);
+      newMsgs.push(msg);
+    }
+
+    const lastFile = files[files.length - 1];
+    await db.updateChat(this.chatId, {
+      lastMessage: files.length > 1 ? `📷 ${files.length} photos` : `📷 ${lastFile.name}`,
+      updatedAt: Date.now()
+    });
+
+    this.scroller.allMessages.push(...newMsgs);
+
+    if (newMsgs.length > 1) {
+      const albumRow = await this.scroller.createAlbumElement(newMsgs);
+      this.container.querySelector('#chat-messages-wrap').appendChild(albumRow);
+    } else {
+      const msgEl = await this.scroller.createMessageElement(newMsgs[0]);
+      this.container.querySelector('#chat-messages-wrap').appendChild(msgEl);
+    }
+
+    this.scroller.scrollToBottom(true);
+  }
+
+  async sendStickerMessage(blobOrUrl, name = 'Sticker') {
+    let blob = blobOrUrl;
+    if (typeof blobOrUrl === 'string') {
+      try {
+        const resp = await fetch(blobOrUrl);
+        blob = await resp.blob();
+      } catch (e) {}
+    }
+
+    const mediaId = db.generateUUID();
+    const mediaItem = {
+      id: mediaId,
+      chatId: this.chatId,
+      filename: `${name}.webp`,
+      type: 'sticker',
+      size: blob?.size || 1024,
+      blob: blob,
+      timestamp: Date.now()
+    };
+    await db.saveMedia(mediaItem);
+
+    const currentMe = this.chat.meParticipant || this.chat.customMeName || 'Me';
+    const newMsg = {
+      id: db.generateUUID(),
+      chatId: this.chatId,
+      timestamp: Date.now(),
+      sender: currentMe,
+      isOutgoing: true,
+      text: '',
+      mediaId: mediaId,
+      mediaName: `${name}.webp`,
+      mediaType: 'sticker'
+    };
+
+    await db.saveMessage(newMsg);
+    await db.updateChat(this.chatId, {
+      lastMessage: '💟 Sticker',
+      updatedAt: Date.now()
+    });
+
+    this.scroller.allMessages.push(newMsg);
+    const msgEl = await this.scroller.createMessageElement(newMsg);
+    this.container.querySelector('#chat-messages-wrap').appendChild(msgEl);
+    this.scroller.scrollToBottom(true);
+  }
+
+  async sendVoiceNoteMessage(audioBlob, duration) {
+    const mediaId = db.generateUUID();
+    const mediaItem = {
+      id: mediaId,
+      chatId: this.chatId,
+      filename: `voice_note_${Date.now()}.opus`,
+      type: 'audio',
+      size: audioBlob.size,
+      blob: audioBlob,
+      duration: duration,
+      timestamp: Date.now()
+    };
+    await db.saveMedia(mediaItem);
+
+    const currentMe = this.chat.meParticipant || this.chat.customMeName || 'Me';
+    const newMsg = {
+      id: db.generateUUID(),
+      chatId: this.chatId,
+      timestamp: Date.now(),
+      sender: currentMe,
+      isOutgoing: true,
+      text: '',
+      mediaId: mediaId,
+      mediaName: `voice_note_${Date.now()}.opus`,
+      mediaType: 'audio',
+      isVoiceNote: true,
+      duration: duration
+    };
+
+    await db.saveMessage(newMsg);
+    await db.updateChat(this.chatId, {
+      lastMessage: `🎤 Voice message (${VoiceRecorder.formatDuration(duration)})`,
       updatedAt: Date.now()
     });
 

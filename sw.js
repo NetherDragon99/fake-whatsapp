@@ -1,5 +1,20 @@
-// WhatsApp Android Clone Service Worker v0.0.16
-const CACHE_NAME = 'wa-clone-v0.0.16';
+// WhatsApp Android Clone Service Worker v0.0.17
+const CACHE_NAME = 'wa-clone-v0.0.17';
+
+const STICKER_FILES = [
+  './assets/stickers/sticker-1.svg',
+  './assets/stickers/sticker-2.svg',
+  './assets/stickers/sticker-3.svg',
+  './assets/stickers/sticker-4.svg',
+  './assets/stickers/sticker-5.svg',
+  './assets/stickers/sticker-6.svg',
+  './assets/stickers/sticker-7.svg',
+  './assets/stickers/sticker-8.svg',
+  './assets/stickers/sticker-9.svg',
+  './assets/stickers/sticker-10.svg',
+  './assets/stickers/sticker-11.svg',
+  './assets/stickers/sticker-12.svg'
+];
 
 const APP_ICON_FILES = [
   './assets/icons/app-icon-1.png',
@@ -75,6 +90,9 @@ const PRECACHE_ASSETS = [
   './js/components/pin-dialog.js',
   './js/components/lightbox.js',
   './js/components/toast.js',
+  './js/components/voice-recorder.js',
+  './js/components/media-editor-modal.js',
+  './js/components/sticker-drawer.js',
   './js/views/home-view.js',
   './js/views/new-list-view.js',
   './js/views/gallery-view.js',
@@ -97,7 +115,8 @@ const PRECACHE_ASSETS = [
   './assets/icons/icon.svg',
   './assets/demo_whatsapp_archive.zip',
   ...WALLPAPER_FILES,
-  ...APP_ICON_FILES
+  ...APP_ICON_FILES,
+  ...STICKER_FILES
 ];
 
 // Install: Resilient pre-caching using Promise.allSettled

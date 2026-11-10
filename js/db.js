@@ -8,6 +8,13 @@ class Database {
     this.initPromise = null;
   }
 
+  generateUUID() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return 'uuid_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+  }
+
   async init() {
     if (this.db) return this.db;
     if (this.initPromise) return this.initPromise;
@@ -182,7 +189,7 @@ class Database {
     chat.avatarBlob = newChatAvatar;
     chat.meParticipant = newMeName;
     chat.isOutgoingDefault = !(chat.isOutgoingDefault ?? true);
-    if (chat.lastMessage) {
+    if (chat.lastMessage && typeof chat.lastMessage === 'object') {
       chat.lastMessage.isOutgoing = !chat.lastMessage.isOutgoing;
     }
     await this.saveChat(chat);
@@ -293,6 +300,10 @@ class Database {
       req.onsuccess = () => resolve(req.result || 0);
       req.onerror = () => reject(tx.error);
     });
+  }
+
+  async saveMessage(msg) {
+    return this.saveMessages([msg]);
   }
 
   async saveMessages(messages) {

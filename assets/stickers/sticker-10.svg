@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <filter id="shadow-10" x="-10%" y="-10%" width="120%" height="120%">
+    <feDropShadow dx="0" dy="4" stdDeviation="4" flood-opacity="0.25"/>
+  </filter>
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="white" filter="url(#shadow-10)"/>
+  <rect x="12" y="12" width="104" height="104" rx="24" fill="#3b82f6" fill-opacity="0.12"/>
+  <text x="64" y="78" font-size="64" text-anchor="middle" dominant-baseline="middle" font-family="'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif">😎</text>
+</svg>

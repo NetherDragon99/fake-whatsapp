@@ -75,6 +75,12 @@ export const Icons = {
       <line x1="15" y1="9" x2="15.01" y2="9"/>
     </svg>`,
 
+  sticker: (cls = '', size = 22) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M15.5 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9.5a2.5 2.5 0 0 0 2.5-2.5V8.5L15.5 3z"/>
+      <path d="M15 3v5.5a.5.5 0 0 0 .5.5H21"/>
+    </svg>`,
+
   download: (cls = '', size = 20) => `
     <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
