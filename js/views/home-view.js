@@ -12,6 +12,7 @@ export class HomeView {
     this.activeFilter = 'All'; // 'All', 'Unread', 'Favourites', 'Groups', or custom list id
     this.selectedChatIds = new Set();
     this.isSelectionMode = false;
+    this.selectedAreAllUnread = false;
     this.currentSearchQuery = '';
   }
 
@@ -50,7 +51,7 @@ export class HomeView {
             <button class="app-bar-icon-btn" id="btn-pin-selected" title="Pin / Unpin">${Icons.pin('', 20)}</button>
             <button class="app-bar-icon-btn" id="btn-delete-selected" title="Delete">${Icons.trash('', 20)}</button>
             <button class="app-bar-icon-btn" id="btn-archive-selected" title="Archive">${Icons.archive('', 20)}</button>
-            <button class="app-bar-icon-btn" id="btn-mark-unread" title="Mark as unread">${Icons.unread('', 20)}</button>
+            <button class="app-bar-icon-btn" id="btn-mark-unread" title="Mark as unread" aria-label="Mark as unread">${Icons.markAsUnread('', 20)}</button>
             <button class="app-bar-icon-btn" id="btn-fav-selected" title="Favourite">${Icons.star('', 20)}</button>
           </div>
         </header>
@@ -148,7 +149,7 @@ export class HomeView {
     this.container.querySelector('#btn-pin-selected').addEventListener('click', () => this.togglePinSelected());
     this.container.querySelector('#btn-delete-selected').addEventListener('click', () => this.deleteSelected());
     this.container.querySelector('#btn-archive-selected').addEventListener('click', () => this.toggleArchiveSelected());
-    this.container.querySelector('#btn-mark-unread').addEventListener('click', () => this.markSelectedUnread());
+    this.container.querySelector('#btn-mark-unread').addEventListener('click', () => this.toggleSelectedUnread());
     this.container.querySelector('#btn-fav-selected').addEventListener('click', () => this.toggleFavSelected());
 
     // Bottom Navigation explicit routing (Task 2)
@@ -259,7 +260,7 @@ export class HomeView {
     let filteredChats = allChats.filter((c) => !c.isArchived && !c.isLocked);
 
     if (this.activeFilter === 'Unread') {
-      filteredChats = filteredChats.filter((c) => c.unreadCount > 0);
+      filteredChats = filteredChats.filter((c) => (c.unreadCount > 0 || c.isMarkedUnread));
     } else if (this.activeFilter === 'Favourites') {
       filteredChats = filteredChats.filter((c) => c.isFavourite);
     } else if (this.activeFilter === 'Groups') {
@@ -377,6 +378,8 @@ export class HomeView {
 
     const previewText = mediaPrefix || (lastMsg.text ? lastMsg.text.replace(/\n/g, ' ') : 'No messages yet');
 
+    const isUnread = Boolean(chat.unreadCount > 0 || chat.isMarkedUnread);
+
     item.innerHTML = `
       <div class="chat-avatar-wrap">
         ${chat.avatarBlob ? `<img src="${URL.createObjectURL(chat.avatarBlob)}" class="chat-avatar-img" />` : (chat.isGroup ? Icons.groupAvatar('', 50) : Icons.userAvatar('', 50))}
@@ -384,7 +387,7 @@ export class HomeView {
       <div class="chat-main-wrap">
         <div class="chat-top-row">
           <span class="chat-title" dir="auto">${chat.name}</span>
-          <span class="chat-time ${chat.unreadCount > 0 ? 'unread-time' : ''}">${timeFormatted}</span>
+          <span class="chat-time ${isUnread ? 'unread-time' : ''}">${timeFormatted}</span>
         </div>
         <div class="chat-bottom-row">
           <div class="chat-snippet" dir="auto">
@@ -393,7 +396,7 @@ export class HomeView {
           </div>
           <div class="chat-badges">
             ${chat.isPinned ? `<span class="pin-badge">${Icons.pin('', 14)}</span>` : ''}
-            ${chat.unreadCount > 0 ? `<span class="unread-pill">${chat.unreadCount}</span>` : ''}
+            ${isUnread ? `<span class="unread-dot" aria-label="Unread"></span>` : ''}
           </div>
         </div>
       </div>
@@ -435,11 +438,14 @@ export class HomeView {
     }
 
     // Item click (navigates to chat only when tapping outside the avatar)
-    item.addEventListener('click', (e) => {
+    item.addEventListener('click', async (e) => {
       if (e.target.closest('.chat-avatar-wrap')) return;
       if (this.isSelectionMode) {
         this.toggleItemSelection(chat.id);
       } else {
+        if (isUnread) {
+          await db.updateChat(chat.id, { unreadCount: 0, isMarkedUnread: false });
+        }
         this.router.navigate(`#/chat/${chat.id}`);
       }
     });
@@ -562,7 +568,7 @@ export class HomeView {
     }
   }
 
-  updateSelectionBar() {
+  async updateSelectionBar() {
     const defaultBar = this.container.querySelector('#home-default-bar');
     const selectBar = this.container.querySelector('#home-selection-bar');
     const countText = this.container.querySelector('#selection-count-text');
@@ -579,6 +585,31 @@ export class HomeView {
         item.classList.remove('selected');
       }
     });
+
+    // Check if all selected chats are unread to toggle open vs closed envelope
+    const markUnreadBtn = this.container.querySelector('#btn-mark-unread');
+    if (markUnreadBtn && this.selectedChatIds.size > 0) {
+      let allUnread = true;
+      for (const id of this.selectedChatIds) {
+        const chat = await db.getChat(id);
+        const isUnread = Boolean(chat && (chat.unreadCount > 0 || chat.isMarkedUnread));
+        if (!isUnread) {
+          allUnread = false;
+          break;
+        }
+      }
+
+      this.selectedAreAllUnread = allUnread;
+      if (allUnread) {
+        markUnreadBtn.innerHTML = Icons.markAsRead('', 20);
+        markUnreadBtn.title = 'Mark as read';
+        markUnreadBtn.setAttribute('aria-label', 'Mark as read');
+      } else {
+        markUnreadBtn.innerHTML = Icons.markAsUnread('', 20);
+        markUnreadBtn.title = 'Mark as unread';
+        markUnreadBtn.setAttribute('aria-label', 'Mark as unread');
+      }
+    }
   }
 
   exitSelectionMode() {
@@ -618,12 +649,15 @@ export class HomeView {
     this.loadChatList();
   }
 
-  async markSelectedUnread() {
+  async toggleSelectedUnread() {
+    const shouldMarkUnread = !this.selectedAreAllUnread;
     for (const id of this.selectedChatIds) {
       const chat = await db.getChat(id);
       if (chat) {
-        const newUnread = chat.unreadCount > 0 ? 0 : 1;
-        await db.updateChat(id, { unreadCount: newUnread });
+        await db.updateChat(id, {
+          unreadCount: shouldMarkUnread ? 1 : 0,
+          isMarkedUnread: shouldMarkUnread
+        });
       }
     }
     this.exitSelectionMode();

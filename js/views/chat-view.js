@@ -32,6 +32,13 @@ export class ChatView {
       return;
     }
 
+    // Automatically mark chat as read upon opening
+    if (this.chat.unreadCount > 0 || this.chat.isMarkedUnread) {
+      await db.updateChat(this.chatId, { unreadCount: 0, isMarkedUnread: false });
+      this.chat.unreadCount = 0;
+      this.chat.isMarkedUnread = false;
+    }
+
     const defaultWp = await db.getSetting('defaultWallpaper', 'default');
     const defaultDimming = await db.getSetting('defaultDimming', 0);
     const outgoingTheme = await db.getSetting('theme', 'slate');

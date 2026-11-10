@@ -218,6 +218,16 @@
   padding: 0 5px;
 }
 
+.unread-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background-color: var(--wa-green);
+  display: inline-block;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
 /* Floating Action Button (FAB) */
 .wa-fab {
   position: absolute;
