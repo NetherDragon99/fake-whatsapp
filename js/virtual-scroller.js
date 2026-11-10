@@ -202,15 +202,15 @@ export class VirtualMessageScroller {
       const clientHeight = this.container.clientHeight;
       const scrollBottomDist = scrollHeight - scrollTop - clientHeight;
 
-      // Dynamic 25% boundary threshold of total rendered height (min 600px buffer)
-      const threshold = Math.max(600, scrollHeight * 0.25);
+      // Dynamic 50% boundary threshold of total rendered height (min 800px buffer)
+      const threshold = Math.max(800, scrollHeight * 0.5);
 
-      // Pre-load older messages when user enters the top 25% of loaded content
+      // Pre-load older messages when user enters the top 50% of loaded content
       if (scrollTop < threshold && !this.isLoadingMore && this.visibleStartIndex > 0) {
         this.loadOlder();
       }
 
-      // Pre-load newer messages when user enters the bottom 25% of loaded content
+      // Pre-load newer messages when user enters the bottom 50% of loaded content
       if (scrollBottomDist < threshold && !this.isLoadingMore && this.visibleEndIndex < this.allMessages.length) {
         this.loadNewer();
       }
