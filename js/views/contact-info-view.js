@@ -270,7 +270,7 @@ export class ContactInfoView {
     });
 
     // Populate media horizontal strip with strict sticker separation (Task 5)
-    const isSticker = (m) => m.type === 'sticker' || m.mediaType === 'sticker' || (m.filename && /\.webp$/i.test(m.filename));
+    const isSticker = (m) => m.type === 'sticker' || m.mediaType === 'sticker' || (m.filename && (/\.webp$/i.test(m.filename) || /stk-/i.test(m.filename) || /sticker/i.test(m.filename))) || m.mimeType === 'image/webp';
     const photosAndVideos = chatMedia.filter((m) => {
       const mime = m.mimeType || m.type || '';
       const isVisual = mime.startsWith('image/') || mime.startsWith('video/') || mime === 'image' || mime === 'video';

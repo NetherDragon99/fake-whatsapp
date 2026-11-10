@@ -79,8 +79,39 @@ export class ChatView {
           <div class="chat-header-actions">
             <button type="button" class="app-bar-icon-btn" id="btn-chat-video-call" aria-label="Video Call">${Icons.callVideo('', 22)}</button>
             <button type="button" class="app-bar-icon-btn" id="btn-chat-voice-call" aria-label="Voice Call">${Icons.callVoice('', 22)}</button>
+            <button type="button" class="app-bar-icon-btn" id="btn-chat-menu-more" aria-label="More options">${Icons.moreVert('', 22)}</button>
           </div>
         </header>
+
+        <!-- 3-Dot Dropdown Menu (Cloned from @refrance14) -->
+        <div class="wa-dropdown-menu chat-dropdown-menu" id="chat-dropdown-menu" style="display: none;">
+          <div class="dropdown-item" id="menu-search-in-chat">
+            <span class="dropdown-item-icon">${Icons.search('', 20)}</span>
+            <span>Search in chat</span>
+          </div>
+          <div class="dropdown-item" id="menu-swap-perspective">
+            <span class="dropdown-item-icon">${Icons.swap('', 20)}</span>
+            <span>Swap Sender / Receiver</span>
+          </div>
+          <div class="dropdown-item" id="menu-jump-to-date">
+            <span class="dropdown-item-icon">${Icons.calendar('', 20)}</span>
+            <span>Jump to Date</span>
+          </div>
+          <div class="dropdown-item" id="menu-edit-chat-info">
+            <span class="dropdown-item-icon">${Icons.userAvatar('', 20)}</span>
+            <span>Edit Chat Info</span>
+          </div>
+          <div class="dropdown-item" id="menu-chat-wallpaper">
+            <span class="dropdown-item-icon">${Icons.gallery('', 20)}</span>
+            <span>Wallpaper</span>
+          </div>
+          <div class="dropdown-item danger-item" id="menu-clear-chat">
+            <span class="dropdown-item-icon">${Icons.trash('', 20)}</span>
+            <span class="danger-text">Clear chat</span>
+          </div>
+        </div>
+
+        <input type="date" id="chat-date-picker" style="display: none;" />
 
         <!-- In-Chat Search Bar (Hidden by default) -->
         <div class="chat-search-bar" id="chat-search-header" style="display:none;">
@@ -212,8 +243,61 @@ export class ChatView {
       });
     }
 
-    // Hidden date picker for Jump to Date triggered from Contact Info
-    const datePicker = this.container.querySelector('#chat-hidden-date-picker');
+    // 3-Dot Dropdown Menu Listeners (@refrance14)
+    const moreMenuBtn = this.container.querySelector('#btn-chat-menu-more');
+    const dropdownMenu = this.container.querySelector('#chat-dropdown-menu');
+    if (moreMenuBtn && dropdownMenu) {
+      moreMenuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dropdownMenu.style.display = dropdownMenu.style.display === 'none' ? 'block' : 'none';
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('#chat-dropdown-menu') && !e.target.closest('#btn-chat-menu-more')) {
+          if (dropdownMenu) dropdownMenu.style.display = 'none';
+        }
+      });
+
+      this.container.querySelector('#menu-search-in-chat')?.addEventListener('click', () => {
+        dropdownMenu.style.display = 'none';
+        this.toggleSearchHeader(true);
+      });
+
+      this.container.querySelector('#menu-swap-perspective')?.addEventListener('click', () => {
+        dropdownMenu.style.display = 'none';
+        this.flipPerspective();
+      });
+
+      this.container.querySelector('#menu-jump-to-date')?.addEventListener('click', () => {
+        dropdownMenu.style.display = 'none';
+        const dp = this.container.querySelector('#chat-date-picker') || this.container.querySelector('#chat-hidden-date-picker');
+        if (dp) {
+          if (typeof dp.showPicker === 'function') {
+            dp.showPicker();
+          } else {
+            dp.click();
+          }
+        }
+      });
+
+      this.container.querySelector('#menu-edit-chat-info')?.addEventListener('click', () => {
+        dropdownMenu.style.display = 'none';
+        this.openEditChatModal();
+      });
+
+      this.container.querySelector('#menu-chat-wallpaper')?.addEventListener('click', () => {
+        dropdownMenu.style.display = 'none';
+        this.router.navigate('#/wallpaper-picker?chatId=' + this.chatId);
+      });
+
+      this.container.querySelector('#menu-clear-chat')?.addEventListener('click', () => {
+        dropdownMenu.style.display = 'none';
+        this.clearChatHistory();
+      });
+    }
+
+    // Date picker for Jump to Date
+    const datePicker = this.container.querySelector('#chat-date-picker') || this.container.querySelector('#chat-hidden-date-picker');
     if (datePicker) {
       datePicker.addEventListener('change', (e) => {
         if (e.target.value) {
@@ -535,6 +619,27 @@ export class ChatView {
       const titleEl = this.container.querySelector('.chat-header-title');
       if (titleEl) titleEl.textContent = newName.trim();
       Toast.show('Chat name updated');
+    }
+  }
+
+  async clearChatHistory() {
+    const msgs = await db.getMessages(this.chatId);
+    if (msgs.length === 0) {
+      Toast.show('Chat is already empty');
+      return;
+    }
+    const confirmed = await showConfirm({
+      title: 'Clear this chat?',
+      message: 'Are you sure you want to clear all messages in this chat?',
+      confirmText: 'Clear chat',
+      cancelText: 'Cancel',
+      isDanger: true
+    });
+    if (confirmed) {
+      for (const m of msgs) await db.deleteMessage(m.id);
+      await db.updateChat(this.chatId, { lastMessage: null, updatedAt: Date.now() });
+      await this.scroller.loadInitial();
+      Toast.show('Messages cleared');
     }
   }
 

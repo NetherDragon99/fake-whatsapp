@@ -58,12 +58,29 @@ export class Router {
 
     // Cleanup previous view if needed
     if (this.currentViewInstance && typeof this.currentViewInstance.cleanup === 'function') {
-      this.currentViewInstance.cleanup();
+      try {
+        this.currentViewInstance.cleanup();
+      } catch (err) {
+        console.warn('[Router] Error cleaning up previous view:', err);
+      }
     }
 
-    const ViewClass = matchedRoute.viewClass;
-    this.currentViewInstance = new ViewClass(this);
-    await this.currentViewInstance.render(this.rootContainer, routeParams);
+    try {
+      const ViewClass = matchedRoute.viewClass;
+      this.currentViewInstance = new ViewClass(this);
+      await this.currentViewInstance.render(this.rootContainer, routeParams);
+    } catch (renderErr) {
+      console.error('[Router] Error rendering view:', renderErr);
+      this.rootContainer.innerHTML = `
+        <div class="empty-state" style="padding: 40px 16px; text-align: center;">
+          <h3 style="color: var(--wa-text-primary); margin-bottom: 8px;">Failed to load page</h3>
+          <p style="color: var(--wa-text-secondary); margin-bottom: 20px;">${renderErr.message || 'An error occurred while opening this page.'}</p>
+          <button type="button" class="btn-chat-primary" onclick="window.location.hash='#/chats'" style="padding: 10px 24px; border-radius: 20px; border: none; background: var(--app-accent, #25d366); color: #0b141a; font-weight: 600; cursor: pointer;">
+            Return to Chats
+          </button>
+        </div>
+      `;
+    }
   }
 
   matchPattern(pattern, path) {

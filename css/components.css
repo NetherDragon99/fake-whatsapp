@@ -498,7 +498,7 @@
   width: 120px;
   height: 120px;
   position: relative;
-  overflow: visible;
+  overflow: visible !important;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -532,13 +532,13 @@
   height: 36px;
   border-radius: 50%;
   background-color: var(--app-accent, var(--wa-green));
-  color: #0b141a;
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
-  border: 2px solid var(--wa-bg-main);
+  border: 2px solid var(--wa-surface, #1f2c34);
   z-index: 5;
 }
 
@@ -2177,7 +2177,10 @@ input:checked + .switch-slider::before {
 
 /* Profile Avatar in Settings with Badge */
 .settings-avatar-wrap {
+  width: 64px;
+  height: 64px;
   position: relative;
+  overflow: visible !important;
   cursor: pointer;
 }
 
@@ -2196,12 +2199,14 @@ input:checked + .switch-slider::before {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  border-radius: 50%;
+  overflow: hidden;
 }
 
 .avatar-camera-badge {
   position: absolute;
-  bottom: -2px;
-  right: -2px;
+  bottom: 0px;
+  right: 0px;
   width: 24px;
   height: 24px;
   border-radius: 50%;
@@ -2210,7 +2215,7 @@ input:checked + .switch-slider::before {
   align-items: center;
   justify-content: center;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-  border: 2px solid var(--wa-bg-main);
+  border: 2px solid var(--wa-surface-elevated, #1f2c34);
   z-index: 5;
 }
 

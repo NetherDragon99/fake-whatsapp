@@ -337,6 +337,7 @@ export class ImportModal {
 
       const type = this.parser.categorizeMedia(cleanName);
       let mimeType = 'application/octet-stream';
+      if (type === 'sticker') mimeType = 'image/webp';
       if (type === 'image') mimeType = 'image/jpeg';
       if (type === 'video') mimeType = 'video/mp4';
       if (type === 'audio') mimeType = 'audio/ogg';

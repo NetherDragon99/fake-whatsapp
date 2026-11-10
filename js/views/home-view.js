@@ -401,8 +401,13 @@ export class HomeView {
     // Avatar click -> floating profile preview modal (Task 8)
     const avatarWrap = item.querySelector('.chat-avatar-wrap');
     if (avatarWrap) {
+      avatarWrap.addEventListener('touchstart', (e) => {
+        e.stopPropagation();
+        if (pressTimer) clearTimeout(pressTimer);
+      }, { passive: true });
       avatarWrap.addEventListener('click', (e) => {
         e.stopPropagation();
+        e.preventDefault();
         if (this.isSelectionMode) {
           this.toggleItemSelection(chat.id);
         } else {
@@ -411,8 +416,9 @@ export class HomeView {
       });
     }
 
-    // Item click
-    item.addEventListener('click', () => {
+    // Item click (navigates to chat only when tapping outside the avatar)
+    item.addEventListener('click', (e) => {
+      if (e.target.closest('.chat-avatar-wrap')) return;
       if (this.isSelectionMode) {
         this.toggleItemSelection(chat.id);
       } else {

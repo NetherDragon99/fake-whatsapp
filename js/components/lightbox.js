@@ -169,6 +169,12 @@ class Lightbox {
       if (targetSlide) {
         track.scrollLeft = targetSlide.offsetLeft;
       }
+      setTimeout(() => {
+        const ts = track.children[currentIndex];
+        if (ts && Math.abs(track.scrollLeft - ts.offsetLeft) > 5) {
+          track.scrollLeft = ts.offsetLeft;
+        }
+      }, 50);
     });
 
     // Track scroll events to update counter
@@ -246,6 +252,84 @@ class Lightbox {
     window.addEventListener('popstate', this.handlePopState);
   }
 
+  // --- Fullscreen Vertically Stacked Album View (@refrance12) ---
+  async showStackedAlbum(albumMsgs, chatName = '', onShowInChat) {
+    this.onShowInChat = onShowInChat;
+    this.close();
+
+    this.overlay = document.createElement('div');
+    this.overlay.className = 'wa-lightbox-overlay stacked-album-overlay';
+
+    const totalCount = albumMsgs.length;
+    const firstMsg = albumMsgs[0];
+    const dateFormatted = firstMsg && firstMsg.timestamp
+      ? new Date(firstMsg.timestamp).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
+      : '';
+    const title = chatName || (firstMsg && firstMsg.sender) || 'Media';
+    const subtitle = `${totalCount} ${totalCount === 1 ? 'photo' : 'photos'}${dateFormatted ? ' • ' + dateFormatted : ''}`;
+
+    this.overlay.innerHTML = `
+      <div class="stacked-album-header">
+        <button type="button" class="lightbox-back-btn" aria-label="Close">${Icons.arrowBack('', 24)}</button>
+        <div class="stacked-album-title-box">
+          <div class="stacked-album-title">${title}</div>
+          <div class="stacked-album-subtitle">${subtitle}</div>
+        </div>
+      </div>
+      <div class="stacked-album-body" id="stacked-album-list">
+        <!-- Loaded dynamically -->
+      </div>
+    `;
+
+    document.body.appendChild(this.overlay);
+
+    const listContainer = this.overlay.querySelector('#stacked-album-list');
+
+    this.albumUrls = [];
+    for (let idx = 0; idx < totalCount; idx++) {
+      const msg = albumMsgs[idx];
+      let url = null;
+      if (msg.mediaId) {
+        const med = await db.getMedia(msg.mediaId);
+        if (med && med.blob) {
+          url = URL.createObjectURL(med.blob);
+          this.albumUrls.push(url);
+        }
+      }
+
+      const item = document.createElement('div');
+      item.className = 'stacked-photo-item';
+      item.dataset.index = idx;
+
+      const timeFormatted = msg.timestamp
+        ? new Date(msg.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })
+        : '';
+
+      if (url) {
+        item.innerHTML = `
+          <img src="${url}" alt="${msg.mediaName || 'Photo'}" class="stacked-photo-img" loading="lazy" />
+          <div class="stacked-photo-hd-badge">HD</div>
+          <div class="stacked-photo-time-pill">${timeFormatted}</div>
+        `;
+      } else {
+        item.innerHTML = `
+          <div class="lightbox-error" style="height:200px; display:flex; align-items:center; justify-content:center;">Media content unavailable</div>
+        `;
+      }
+
+      item.addEventListener('click', () => {
+        this.showAlbum(albumMsgs, idx, onShowInChat);
+      });
+
+      listContainer.appendChild(item);
+    }
+
+    this.overlay.querySelector('.lightbox-back-btn').addEventListener('click', () => this.close());
+
+    window.history.pushState({ modal: 'stacked-album' }, '');
+    window.addEventListener('popstate', this.handlePopState);
+  }
+
   handlePopState = (e) => {
     if (this.overlay) {
       this.close(false); // already popped
@@ -269,7 +353,7 @@ class Lightbox {
         this._albumKeyDownHandler = null;
       }
       window.removeEventListener('popstate', this.handlePopState);
-      if (triggerBack && history.state && history.state.modal === 'lightbox') {
+      if (triggerBack && history.state && (history.state.modal === 'lightbox' || history.state.modal === 'stacked-album')) {
         history.back();
       }
     }

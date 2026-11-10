@@ -66,7 +66,7 @@ export class VirtualMessageScroller {
   }
 
   isSticker(msg) {
-    return msg.mediaType === 'sticker' || (msg.mediaName && /\.webp$/i.test(msg.mediaName) && (!msg.text || !msg.text.trim()));
+    return msg.mediaType === 'sticker' || (msg.mediaName && (/\.webp$/i.test(msg.mediaName) || /stk-/i.test(msg.mediaName) || /sticker/i.test(msg.mediaName)));
   }
 
   cancelPendingLongPress() {
@@ -194,6 +194,21 @@ export class VirtualMessageScroller {
     if (this.isLoadingMore || this.visibleStartIndex <= 0) return;
     this.isLoadingMore = true;
 
+    // Anchor detection to eliminate scroll jumping
+    const containerRect = this.container.getBoundingClientRect();
+    let anchorNode = null;
+    let anchorOffset = 0;
+    for (const child of this.container.children) {
+      if (child.classList.contains('msg-row') || child.classList.contains('album-msg-row')) {
+        const r = child.getBoundingClientRect();
+        if (r.bottom > containerRect.top + 5) {
+          anchorNode = child;
+          anchorOffset = r.top - containerRect.top;
+          break;
+        }
+      }
+    }
+
     const prevScrollHeight = this.container.scrollHeight;
     const prevScrollTop = this.container.scrollTop;
 
@@ -211,11 +226,26 @@ export class VirtualMessageScroller {
       for (let i = nodes.length - 1; i >= nodes.length - pruneCount && i >= 0; i--) {
         if (nodes[i]) nodes[i].remove();
       }
+      // Remove any orphaned trailing date pills
+      let lastChild = this.container.lastElementChild;
+      while (lastChild && lastChild.classList.contains('date-pill-row')) {
+        lastChild.remove();
+        lastChild = this.container.lastElementChild;
+      }
     }
 
-    // Scroll Anchoring: maintain exact relative scroll position after prepending
-    const newScrollHeight = this.container.scrollHeight;
-    this.container.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
+    // Scroll Anchoring: compensate exact drift mathematically
+    if (anchorNode && anchorNode.isConnected) {
+      const newRect = anchorNode.getBoundingClientRect();
+      const currentOffset = newRect.top - containerRect.top;
+      const drift = currentOffset - anchorOffset;
+      if (Math.abs(drift) > 0.5) {
+        this.container.scrollTop += drift;
+      }
+    } else {
+      const newScrollHeight = this.container.scrollHeight;
+      this.container.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
+    }
 
     this.isLoadingMore = false;
   }
@@ -224,6 +254,22 @@ export class VirtualMessageScroller {
     if (this.isLoadingMore || this.visibleEndIndex >= this.allMessages.length) return;
     this.isLoadingMore = true;
 
+    // Pick a landmark anchor node visible near bottom/center that will not be pruned from top
+    const containerRect = this.container.getBoundingClientRect();
+    let anchorNode = null;
+    let anchorOffset = 0;
+    const msgNodes = Array.from(this.container.querySelectorAll('.msg-row'));
+    for (let i = msgNodes.length - 1; i >= 0; i--) {
+      const node = msgNodes[i];
+      const r = node.getBoundingClientRect();
+      if (r.top < containerRect.bottom - 20) {
+        anchorNode = node;
+        anchorOffset = r.top - containerRect.top;
+        break;
+      }
+    }
+
+    const prevScrollTop = this.container.scrollTop;
     const newStart = this.visibleEndIndex;
     const newEnd = Math.min(this.allMessages.length, this.visibleEndIndex + this.CHUNK_SIZE);
 
@@ -233,22 +279,40 @@ export class VirtualMessageScroller {
     // Prune excess from top if exceeding MAX_DOM_MESSAGES
     if (this.visibleEndIndex - this.visibleStartIndex > this.MAX_DOM_MESSAGES) {
       const pruneCount = (this.visibleEndIndex - this.visibleStartIndex) - this.MAX_DOM_MESSAGES;
-      let removedHeight = 0;
       let msgCountRemoved = 0;
       const children = Array.from(this.container.children);
 
       for (let i = 0; i < children.length && msgCountRemoved < pruneCount; i++) {
         const node = children[i];
-        removedHeight += node.offsetHeight || node.getBoundingClientRect().height;
         if (node.classList.contains('msg-row')) {
           msgCountRemoved++;
         }
         node.remove();
       }
 
+      // Remove orphaned leading date pills
+      let firstChild = this.container.firstElementChild;
+      while (firstChild && firstChild.classList.contains('date-pill-row')) {
+        const next = firstChild.nextElementSibling;
+        if (!next || next.classList.contains('date-pill-row')) {
+          firstChild.remove();
+          firstChild = this.container.firstElementChild;
+        } else {
+          break;
+        }
+      }
+
       this.visibleStartIndex += msgCountRemoved;
-      // Scroll Anchoring: adjust scrollTop by removedHeight to avoid scroll jump
-      this.container.scrollTop = Math.max(0, this.container.scrollTop - removedHeight);
+    }
+
+    // Scroll Anchoring: compensate exact drift mathematically
+    if (anchorNode && anchorNode.isConnected) {
+      const newRect = anchorNode.getBoundingClientRect();
+      const currentOffset = newRect.top - containerRect.top;
+      const drift = currentOffset - anchorOffset;
+      if (Math.abs(drift) > 0.5) {
+        this.container.scrollTop += drift;
+      }
     }
 
     this.isLoadingMore = false;
@@ -388,18 +452,23 @@ export class VirtualMessageScroller {
           });
         });
         thumbWrap.appendChild(img);
+
+        const hdBadge = document.createElement('div');
+        hdBadge.className = 'album-thumb-hd-badge';
+        hdBadge.textContent = 'HD';
+        thumbWrap.appendChild(hdBadge);
       } else {
         thumbWrap.innerHTML = `<div class="media-placeholder">${Icons.gallery('', 24)}</div>`;
       }
 
-      // 4th item +N overlay if more than 4 items
+      // 4th item +N overlay if more than 4 items (Opens Stacked Album View @refrance12)
       if (idx === 3 && albumMsgs.length > 4) {
         const plusOverlay = document.createElement('div');
         plusOverlay.className = 'album-plus-overlay';
         plusOverlay.textContent = `+${albumMsgs.length - 4}`;
         plusOverlay.addEventListener('click', (e) => {
           e.stopPropagation();
-          mediaLightbox.showAlbum(albumMsgs, 3, (chatId, msgId) => {
+          mediaLightbox.showStackedAlbum(albumMsgs, this.chat.name, (chatId, msgId) => {
             this.scrollToMessage(msgId);
           });
         });
@@ -671,7 +740,12 @@ export class VirtualMessageScroller {
     return docCard;
   }
 
-  scrollToBottom(smooth = true) {
+  async scrollToBottom(smooth = true) {
+    if (this.visibleEndIndex < this.allMessages.length) {
+      this.visibleStartIndex = Math.max(0, this.allMessages.length - this.CHUNK_SIZE);
+      this.visibleEndIndex = this.allMessages.length;
+      await this.renderBatch(this.visibleStartIndex, this.visibleEndIndex, 'replace');
+    }
     if (smooth) {
       this.container.scrollTo({ top: this.container.scrollHeight, behavior: 'smooth' });
     } else {

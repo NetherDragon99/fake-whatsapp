@@ -1,6 +1,9 @@
 # Reference images
 assets/refrances/
+assets/refrances/*
 assets/references/
+assets/references/*
 reference/
 references/
 design-references/
+*.user_uploaded/

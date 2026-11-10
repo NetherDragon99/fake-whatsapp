@@ -14,18 +14,19 @@ export class SettingsView {
 
   async render(rootEl) {
     this.container = rootEl;
-    let ownerName = 'You';
-    let userAvatarBlob = null;
-    let storageStats = { formattedSize: '0 B', chatCount: 0, messageCount: 0 };
-    const appVersion = window.APP_VERSION || '0.0.3';
-
     try {
-      ownerName = await db.getSetting('ownerName', 'You');
-      userAvatarBlob = await db.getSetting('userProfileAvatar', null);
-      storageStats = await db.getStorageUsage();
-    } catch (err) {
-      console.warn('[SettingsView] Error loading settings data:', err);
-    }
+      let ownerName = 'You';
+      let userAvatarBlob = null;
+      let storageStats = { formattedSize: '0 B', chatCount: 0, messageCount: 0 };
+      const appVersion = window.APP_VERSION || '0.0.4';
+
+      try {
+        ownerName = await db.getSetting('ownerName', 'You');
+        userAvatarBlob = await db.getSetting('userProfileAvatar', null);
+        storageStats = await db.getStorageUsage();
+      } catch (err) {
+        console.warn('[SettingsView] Error loading settings data:', err);
+      }
 
     // Standalone display mode check
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
@@ -158,7 +159,7 @@ export class SettingsView {
           <!-- App Version Footer -->
           <div class="settings-footer-version">
             <span>WhatsApp Clone for Android</span>
-            <span class="version-number">v0.0.3</span>
+            <span class="version-number">v${appVersion}</span>
           </div>
         </div>
 
@@ -347,5 +348,20 @@ export class SettingsView {
         }
       }, { passive: true });
     }
+  } catch (err) {
+    console.error('[SettingsView] Error rendering settings view:', err);
+    rootEl.innerHTML = `
+      <div class="screen-view settings-screen">
+        <header class="wa-app-bar flat-app-bar">
+          <div class="app-title">Settings</div>
+        </header>
+        <div style="padding: 32px 16px; text-align: center;">
+          <p style="color: var(--wa-text-secondary); margin-bottom: 16px;">Failed to load settings: ${err.message || 'Unknown error'}</p>
+          <button type="button" class="btn-chat-primary" onclick="window.location.hash='#/chats'" style="padding: 10px 24px; border-radius: 20px; border: none; background: var(--app-accent, #25d366); color: #0b141a; font-weight: 600; cursor: pointer;">
+            Return to Chats
+          </button>
+        </div>
+      </div>
+    `;
   }
 }

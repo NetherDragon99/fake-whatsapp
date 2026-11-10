@@ -88,7 +88,7 @@ export class GalleryView {
 
     // Filter media by type and chat with strict sticker separation (Task 5)
     let filtered = this.allMediaItems.filter((m) => {
-      const isSticker = m.type === 'sticker' || m.mediaType === 'sticker' || (m.filename && /\.webp$/i.test(m.filename));
+      const isSticker = m.type === 'sticker' || m.mediaType === 'sticker' || (m.filename && (/\.webp$/i.test(m.filename) || /stk-/i.test(m.filename) || /sticker/i.test(m.filename))) || m.mimeType === 'image/webp';
       const isImg = m.mimeType.startsWith('image/') && !isSticker;
       const isVid = m.mimeType.startsWith('video/');
 

@@ -108,7 +108,8 @@ export class WhatsAppParser {
   categorizeMedia(filename) {
     if (!filename) return null;
     const lower = filename.toLowerCase();
-    if (/\.(jpg|jpeg|png|webp|gif|heic|bmp)$/i.test(lower)) return 'image';
+    if (/\.webp$/i.test(lower) || lower.includes('sticker') || lower.includes('stk-')) return 'sticker';
+    if (/\.(jpg|jpeg|png|gif|heic|bmp)$/i.test(lower)) return 'image';
     if (/\.(mp4|3gp|mov|mkv|webm)$/i.test(lower)) return 'video';
     if (/\.(opus|ogg|mp3|m4a|aac|wav)$/i.test(lower)) return 'audio';
     if (/\.pdf$/i.test(lower)) return 'pdf';
