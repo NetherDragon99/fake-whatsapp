@@ -471,7 +471,7 @@ export class ChatView {
     }
 
     if (targetMsg) {
-      await this.scroller.loadInitial(targetMsg.id);
+      await this.scroller.jumpToDate(targetMsg, dateString);
       Toast.show(`Jumped to ${dateString}`);
     } else {
       Toast.show('No messages found around this date');

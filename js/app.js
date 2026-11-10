@@ -17,7 +17,7 @@ import { applyAppAccent, applyOutgoingBubbleColor } from './config/palette.js';
 import { assetUrl } from './config/base-path.js';
 
 // Application Version Constant
-window.APP_VERSION = '0.0.12';
+window.APP_VERSION = '0.0.13';
 
 // Global deferred PWA install prompt holder
 window.deferredInstallPrompt = null;

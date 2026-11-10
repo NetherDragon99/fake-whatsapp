@@ -800,6 +800,74 @@ export class VirtualMessageScroller {
     }
   }
 
+  async jumpToDate(targetMsg, dateString) {
+    if (!targetMsg) return;
+
+    // Check if target message is already in DOM
+    let el = this.container.querySelector(`[data-msg-id="${targetMsg.id}"]`) ||
+             this.container.querySelector(`#msg-${targetMsg.id}`);
+
+    const foundIdx = this.allMessages.findIndex((m) => m.id === targetMsg.id);
+    const curCenterIdx = Math.floor((this.visibleStartIndex + this.visibleEndIndex) / 2);
+    const isJumpingFromNewer = curCenterIdx >= foundIdx;
+
+    if (!el) {
+      if (foundIdx !== -1) {
+        this.visibleStartIndex = Math.max(0, foundIdx - 15);
+        this.visibleEndIndex = Math.min(this.allMessages.length, this.visibleStartIndex + this.CHUNK_SIZE);
+        await this.renderBatch(this.visibleStartIndex, this.visibleEndIndex, 'replace');
+
+        el = this.container.querySelector(`[data-msg-id="${targetMsg.id}"]`) ||
+             this.container.querySelector(`#msg-${targetMsg.id}`);
+      }
+    }
+
+    if (!el) return;
+
+    // Locate the date pill preceding the message
+    let datePillRow = null;
+    let prev = el.previousElementSibling;
+    while (prev) {
+      if (prev.classList.contains('date-pill-row')) {
+        datePillRow = prev;
+        break;
+      }
+      if (prev.classList.contains('msg-row') || prev.classList.contains('album-msg-row')) {
+        break;
+      }
+      prev = prev.previousElementSibling;
+    }
+
+    const anchorEl = datePillRow || el;
+    const containerRect = this.container.getBoundingClientRect();
+    const anchorRect = anchorEl.getBoundingClientRect();
+    const relativeTop = anchorRect.top - containerRect.top;
+    const finalScrollTop = Math.max(0, this.container.scrollTop + relativeTop - 24);
+
+    // Initial cinematic offset for glide animation (~450px)
+    const glideOffset = isJumpingFromNewer ? 450 : -450;
+    const initialGlideScrollTop = Math.max(0, Math.min(this.container.scrollHeight - this.container.clientHeight, finalScrollTop + glideOffset));
+
+    this.container.scrollTop = initialGlideScrollTop;
+
+    // Trigger smooth glide to destination
+    requestAnimationFrame(() => {
+      this.container.scrollTo({
+        top: finalScrollTop,
+        behavior: 'smooth'
+      });
+    });
+
+    // Pulse highlight the date pill & target message
+    const pillSpan = datePillRow ? datePillRow.querySelector('.date-pill') : null;
+    if (pillSpan) {
+      pillSpan.classList.add('jump-date-pulse');
+      setTimeout(() => pillSpan.classList.remove('jump-date-pulse'), 2500);
+    }
+    el.classList.add('jump-date-pulse');
+    setTimeout(() => el.classList.remove('jump-date-pulse'), 2500);
+  }
+
   updateMessageReactionDOM(msgId, reaction) {
     const found = this.allMessages.find((m) => m.id === msgId);
     if (found) found.reaction = reaction;

@@ -210,6 +210,49 @@
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
   text-transform: capitalize;
+  transition: transform 0.25s ease, background-color 0.25s ease;
+}
+
+/* Jump to Date Highlight Pulse */
+.date-pill.jump-date-pulse {
+  animation: datePillPulse 2.4s ease-out forwards;
+}
+
+.msg-row.jump-date-pulse .msg-bubble {
+  animation: msgBubblePulse 2.4s ease-out forwards;
+}
+
+@keyframes datePillPulse {
+  0% {
+    transform: scale(1.18);
+    background-color: var(--app-accent, var(--wa-green));
+    color: #ffffff;
+    box-shadow: 0 0 16px rgba(37, 211, 102, 0.6);
+  }
+  30% {
+    transform: scale(1.08);
+    background-color: var(--app-accent, var(--wa-green));
+    color: #ffffff;
+    box-shadow: 0 0 12px rgba(37, 211, 102, 0.4);
+  }
+  100% {
+    transform: scale(1);
+    background-color: var(--wa-date-pill-bg);
+    color: var(--wa-date-pill-text);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  }
+}
+
+@keyframes msgBubblePulse {
+  0% {
+    box-shadow: 0 0 18px rgba(37, 211, 102, 0.55);
+  }
+  40% {
+    box-shadow: 0 0 12px rgba(37, 211, 102, 0.35);
+  }
+  100% {
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
+  }
 }
 
 /* Encryption & Empty Notice */
