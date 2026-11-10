@@ -1,5 +1,5 @@
-// WhatsApp Android Clone Service Worker v0.0.19
-const CACHE_NAME = 'wa-clone-v0.0.19';
+// WhatsApp Android Clone Service Worker v0.0.20
+const CACHE_NAME = 'wa-clone-v0.0.20';
 
 const STICKER_FILES = [
   './assets/stickers/sticker-1.svg',
@@ -66,6 +66,7 @@ const WALLPAPER_FILES = [
 const PRECACHE_ASSETS = [
   './',
   './index.html',
+  'index.html',
   './manifest.webmanifest',
   './css/main.css',
   './css/chat.css',
@@ -171,10 +172,47 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Handle SPA navigation requests
+  // Handle SPA navigation requests (Opening or refreshing app offline or online)
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request).catch(() => caches.match('./index.html') || caches.match('./'))
+      (async () => {
+        // If device is offline, immediately return cached index.html without network delay
+        if (self.navigator && self.navigator.onLine === false) {
+          const cached = await caches.match('./index.html') ||
+                         await caches.match('./') ||
+                         await caches.match(request) ||
+                         await caches.match('index.html');
+          if (cached) return cached;
+        }
+
+        // Try network when online
+        try {
+          const networkResponse = await fetch(request);
+          if (networkResponse && networkResponse.status === 200) {
+            return networkResponse;
+          }
+        } catch (e) {
+          // Network failed (offline / disconnected)
+        }
+
+        // Return cached index.html / root
+        const cached = await caches.match('./index.html') ||
+                       await caches.match('./') ||
+                       await caches.match(request) ||
+                       await caches.match('index.html');
+        if (cached) return cached;
+
+        // Last resort: search active cache directly
+        try {
+          const cache = await caches.open(CACHE_NAME);
+          const fallback = await cache.match('./index.html') || await cache.match('./') || await cache.match('index.html');
+          if (fallback) return fallback;
+        } catch (e) {}
+
+        return new Response('WhatsApp', {
+          headers: { 'Content-Type': 'text/html; charset=utf-8' }
+        });
+      })()
     );
     return;
   }
@@ -186,9 +224,16 @@ self.addEventListener('fetch', (event) => {
 
   if (isStaticMedia) {
     event.respondWith(
-      caches.match(request).then((cachedResponse) => {
-        if (cachedResponse) return cachedResponse;
-        return fetch(request).then((networkResponse) => {
+      (async () => {
+        const cached = await caches.match(request);
+        if (cached) return cached;
+
+        if (self.navigator && self.navigator.onLine === false) {
+          return new Response('', { status: 404, statusText: 'Not Found' });
+        }
+
+        try {
+          const networkResponse = await fetch(request);
           if (networkResponse && networkResponse.status === 200) {
             const responseToCache = networkResponse.clone();
             caches.open(CACHE_NAME).then((cache) => {
@@ -196,16 +241,38 @@ self.addEventListener('fetch', (event) => {
             });
           }
           return networkResponse;
-        });
-      })
+        } catch (e) {
+          return new Response('', { status: 404, statusText: 'Not Found' });
+        }
+      })()
     );
     return;
   }
 
-  // Stale-While-Revalidate for application code and stylesheets
+  // Stale-While-Revalidate for application code, stylesheets, and vendor scripts
   event.respondWith(
-    caches.match(request).then((cachedResponse) => {
-      const fetchPromise = fetch(request).then((networkResponse) => {
+    (async () => {
+      const cachedResponse = await caches.match(request);
+      if (cachedResponse) {
+        // If online, refresh cache in background silently
+        if (self.navigator && self.navigator.onLine !== false) {
+          fetch(request).then((networkResponse) => {
+            if (networkResponse && networkResponse.status === 200) {
+              const responseToCache = networkResponse.clone();
+              caches.open(CACHE_NAME).then((cache) => {
+                cache.put(request, responseToCache);
+              });
+            }
+          }).catch(() => {
+            // Silently ignore background refresh failure when offline
+          });
+        }
+        return cachedResponse;
+      }
+
+      // If not in cache, fetch from network
+      try {
+        const networkResponse = await fetch(request);
         if (networkResponse && networkResponse.status === 200) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
@@ -213,12 +280,9 @@ self.addEventListener('fetch', (event) => {
           });
         }
         return networkResponse;
-      }).catch((err) => {
-        // Offline fallback
-        return cachedResponse;
-      });
-
-      return cachedResponse || fetchPromise;
-    })
+      } catch (err) {
+        return new Response('', { status: 404, statusText: 'Not Found' });
+      }
+    })()
   );
 });

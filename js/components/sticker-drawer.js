@@ -197,3 +197,4 @@ export class StickerDrawer {
     handle.addEventListener('touchstart', onPointerDown, { passive: true });
   }
 }
+

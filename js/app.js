@@ -23,7 +23,7 @@ import { applyAppIcon } from './config/app-icons.js';
 import { assetUrl } from './config/base-path.js';
 
 // Application Version Constant
-window.APP_VERSION = '0.0.19';
+window.APP_VERSION = '0.0.20';
 
 // Global deferred PWA install prompt holder
 window.deferredInstallPrompt = null;
@@ -201,9 +201,11 @@ class Application {
 
   initServiceWorker() {
     if ('serviceWorker' in navigator) {
-      // Seamless SW Auto-Update: Listen for controllerchange immediately and reload silently
+      // Seamless SW Auto-Update: Only reload if an existing controller was replaced
+      const hadController = Boolean(navigator.serviceWorker.controller);
       let refreshing = false;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController) return;
         if (refreshing) return;
         refreshing = true;
         window.location.reload();
@@ -212,16 +214,42 @@ class Application {
       // Listen for activation messages from sw.js
       navigator.serviceWorker.addEventListener('message', (event) => {
         if (event.data && event.data.type === 'UPDATE_ACTIVATED') {
+          if (!hadController) return;
           if (refreshing) return;
           refreshing = true;
           window.location.reload();
         }
       });
 
-      window.addEventListener('load', () => {
+      const registerSW = () => {
         navigator.serviceWorker.register('./sw.js', { scope: './' })
           .then((registration) => {
             console.log('[SW] Registered with scope:', registration.scope);
+
+            // Silent background update check when online
+            if (navigator.onLine) {
+              registration.update().catch(() => {});
+            }
+
+            // Check for new version when device reconnects to internet
+            window.addEventListener('online', () => {
+              console.log('[SW] Reconnected to internet, checking for updates...');
+              registration.update().catch(() => {});
+            });
+
+            // Check for updates when app tab becomes active again
+            document.addEventListener('visibilitychange', () => {
+              if (document.visibilityState === 'visible' && navigator.onLine) {
+                registration.update().catch(() => {});
+              }
+            });
+
+            // Periodic background check every 30 minutes while online
+            setInterval(() => {
+              if (navigator.onLine) {
+                registration.update().catch(() => {});
+              }
+            }, 30 * 60 * 1000);
 
             // Detect Service Worker updates
             registration.addEventListener('updatefound', () => {
@@ -240,7 +268,13 @@ class Application {
           .catch((err) => {
             console.warn('[SW] Registration failed (expected on file:// or unsupported setups):', err);
           });
-      });
+      };
+
+      if (document.readyState === 'complete') {
+        registerSW();
+      } else {
+        window.addEventListener('load', registerSW);
+      }
     }
   }
 }
