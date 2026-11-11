@@ -152,26 +152,26 @@ class Application {
 
             // Silent background update check when online
             if (navigator.onLine) {
-              registration.update().catch(() => {});
+              registration.update().catch(() => { });
             }
 
             // Check for new version when device reconnects to internet
             window.addEventListener('online', () => {
               console.log('[SW] Reconnected to internet, checking for updates...');
-              registration.update().catch(() => {});
+              registration.update().catch(() => { });
             });
 
             // Check for updates when app tab becomes active again
             document.addEventListener('visibilitychange', () => {
               if (document.visibilityState === 'visible' && navigator.onLine) {
-                registration.update().catch(() => {});
+                registration.update().catch(() => { });
               }
             });
 
             // Periodic background check every 30 minutes while online
             setInterval(() => {
               if (navigator.onLine) {
-                registration.update().catch(() => {});
+                registration.update().catch(() => { });
               }
             }, 30 * 60 * 1000);
 

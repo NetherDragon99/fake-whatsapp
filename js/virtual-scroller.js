@@ -15,10 +15,13 @@ export class VirtualMessageScroller {
 
     this.CHUNK_SIZE = 50;
     this.MAX_DOM_MESSAGES = 250;
+    this.BUFFER_PX = 350;
     this.allMessages = [];
     this.visibleStartIndex = 0;
     this.visibleEndIndex = 0;
     this.isLoadingMore = false;
+    this.isAutoScrolling = false;
+    this.autoScrollTimer = null;
     this.mediaCache = new Map(); // id -> objectURL
     this.activeLongPressTimer = null;
 
@@ -219,34 +222,38 @@ export class VirtualMessageScroller {
       const clientHeight = this.container.clientHeight;
       const scrollBottomDist = scrollHeight - scrollTop - clientHeight;
 
-      // Dynamic 50% boundary threshold of total rendered height (min 800px buffer)
-      const threshold = Math.max(800, scrollHeight * 0.5);
-
-      // Pre-load older messages when user enters the top 50% of loaded content
-      if (scrollTop < threshold && !this.isLoadingMore && this.visibleStartIndex > 0) {
-        this.loadOlder();
-      }
-
-      // Pre-load newer messages when user enters the bottom 50% of loaded content
-      if (scrollBottomDist < threshold && !this.isLoadingMore && this.visibleEndIndex < this.allMessages.length) {
-        this.loadNewer();
-      }
-
       // Check floating scroll-to-bottom button visibility
       const scrollBtn = document.getElementById('chat-scroll-bottom-btn');
       if (scrollBtn) {
-        const isAwayFromBottom = scrollBottomDist > 350 || this.visibleEndIndex < this.allMessages.length;
+        const isAwayFromBottom = scrollBottomDist > 300 || this.visibleEndIndex < this.allMessages.length;
         if (isAwayFromBottom) {
           scrollBtn.classList.add('visible');
         } else {
           scrollBtn.classList.remove('visible');
         }
       }
+
+      // If auto-scrolling is active (scrollToBottom glide, jumpToDate, scrollToMessage), mute boundary loading!
+      if (this.isAutoScrolling) {
+        return;
+      }
+
+      const BUFFER_PX = this.BUFFER_PX || 350;
+
+      // Pre-load older messages when user enters the top 350px buffer of loaded content
+      if (scrollTop < BUFFER_PX && !this.isLoadingMore && this.visibleStartIndex > 0) {
+        this.loadOlder();
+      }
+
+      // Pre-load newer messages when user enters the bottom 350px buffer of loaded content
+      if (scrollBottomDist < BUFFER_PX && !this.isLoadingMore && this.visibleEndIndex < this.allMessages.length) {
+        this.loadNewer();
+      }
     }, { passive: true });
   }
 
   async loadOlder() {
-    if (this.isLoadingMore || this.visibleStartIndex <= 0) return;
+    if (this.isLoadingMore || this.isAutoScrolling || this.visibleStartIndex <= 0) return;
     this.isLoadingMore = true;
 
     const prevScrollHeight = this.container.scrollHeight;
@@ -265,26 +272,33 @@ export class VirtualMessageScroller {
 
     // Prune excess from bottom if exceeding MAX_DOM_MESSAGES
     if (this.visibleEndIndex - this.visibleStartIndex > this.MAX_DOM_MESSAGES) {
-      const pruneCount = (this.visibleEndIndex - this.visibleStartIndex) - this.MAX_DOM_MESSAGES;
-      this.visibleEndIndex -= pruneCount;
-      const nodes = Array.from(this.container.querySelectorAll('.msg-row, .album-msg-row'));
-      for (let i = nodes.length - 1; i >= nodes.length - pruneCount && i >= 0; i--) {
-        if (nodes[i]) nodes[i].remove();
+      const pruneTarget = (this.visibleEndIndex - this.visibleStartIndex) - this.MAX_DOM_MESSAGES;
+      let msgsRemoved = 0;
+
+      while (this.container.lastElementChild && msgsRemoved < pruneTarget) {
+        const lastChild = this.container.lastElementChild;
+        if (lastChild.classList.contains('msg-row') || lastChild.classList.contains('album-msg-row')) {
+          const count = parseInt(lastChild.dataset.msgCount, 10) || 1;
+          msgsRemoved += count;
+          lastChild.remove();
+        } else {
+          lastChild.remove();
+        }
       }
-      // Remove any orphaned trailing date pills
-      let lastChild = this.container.lastElementChild;
-      while (lastChild && lastChild.classList.contains('date-pill-row')) {
-        lastChild.remove();
-        lastChild = this.container.lastElementChild;
+
+      this.visibleEndIndex -= msgsRemoved;
+
+      // Remove any trailing date pill without messages following it
+      while (this.container.lastElementChild && this.container.lastElementChild.classList.contains('date-pill-row')) {
+        this.container.lastElementChild.remove();
       }
-      // Note: Pruning from bottom has zero effect on viewport scroll position
     }
 
     this.isLoadingMore = false;
   }
 
   async loadNewer() {
-    if (this.isLoadingMore || this.visibleEndIndex >= this.allMessages.length) return;
+    if (this.isLoadingMore || this.isAutoScrolling || this.visibleEndIndex >= this.allMessages.length) return;
     this.isLoadingMore = true;
 
     const newStart = this.visibleEndIndex;
@@ -296,35 +310,35 @@ export class VirtualMessageScroller {
 
     // Prune excess from top if exceeding MAX_DOM_MESSAGES
     if (this.visibleEndIndex - this.visibleStartIndex > this.MAX_DOM_MESSAGES) {
-      const pruneCount = (this.visibleEndIndex - this.visibleStartIndex) - this.MAX_DOM_MESSAGES;
+      const pruneTarget = (this.visibleEndIndex - this.visibleStartIndex) - this.MAX_DOM_MESSAGES;
       
       const prevScrollHeight = this.container.scrollHeight;
       const prevScrollTop = this.container.scrollTop;
 
-      let msgCountRemoved = 0;
-      const children = Array.from(this.container.children);
+      let msgsRemoved = 0;
 
-      for (let i = 0; i < children.length && msgCountRemoved < pruneCount; i++) {
-        const node = children[i];
-        if (node.classList.contains('msg-row') || node.classList.contains('album-msg-row')) {
-          msgCountRemoved++;
+      while (this.container.firstElementChild && msgsRemoved < pruneTarget) {
+        const firstChild = this.container.firstElementChild;
+        if (firstChild.classList.contains('msg-row') || firstChild.classList.contains('album-msg-row')) {
+          const count = parseInt(firstChild.dataset.msgCount, 10) || 1;
+          msgsRemoved += count;
+          firstChild.remove();
+        } else {
+          firstChild.remove();
         }
-        node.remove();
       }
 
       // Remove orphaned leading date pills
-      let firstChild = this.container.firstElementChild;
-      while (firstChild && firstChild.classList.contains('date-pill-row')) {
-        const next = firstChild.nextElementSibling;
+      while (this.container.firstElementChild && this.container.firstElementChild.classList.contains('date-pill-row')) {
+        const next = this.container.firstElementChild.nextElementSibling;
         if (!next || next.classList.contains('date-pill-row')) {
-          firstChild.remove();
-          firstChild = this.container.firstElementChild;
+          this.container.firstElementChild.remove();
         } else {
           break;
         }
       }
 
-      this.visibleStartIndex += msgCountRemoved;
+      this.visibleStartIndex += msgsRemoved;
 
       // Mathematical offset adjustment for elements removed from top
       const afterScrollHeight = this.container.scrollHeight;
@@ -414,6 +428,7 @@ export class VirtualMessageScroller {
     row.className = `msg-row ${firstMsg.isOutgoing ? 'outgoing' : 'incoming'} album-msg-row`;
     row.id = `msg-${firstMsg.id}`;
     row.dataset.msgId = firstMsg.id;
+    row.dataset.msgCount = String(albumMsgs.length);
 
     const bubble = document.createElement('div');
     bubble.className = `msg-bubble ${firstMsg.isOutgoing ? 'bubble-outgoing' : 'bubble-incoming'} ${this.outgoingTheme === 'green' && firstMsg.isOutgoing ? 'theme-green' : ''} media-album-bubble`;
@@ -554,6 +569,7 @@ export class VirtualMessageScroller {
     row.className = `msg-row ${msg.isOutgoing ? 'outgoing' : 'incoming'}`;
     row.id = `msg-${msg.id}`;
     row.dataset.msgId = msg.id;
+    row.dataset.msgCount = '1';
 
     if (msg.isSystem) {
       row.className = 'msg-row system';
@@ -800,18 +816,32 @@ export class VirtualMessageScroller {
   }
 
   async scrollToBottom(smooth = true) {
+    clearTimeout(this.autoScrollTimer);
+    this.isAutoScrolling = true;
+
+    // Immediately hide the floating scroll-to-bottom button
+    const scrollBtn = document.getElementById('chat-scroll-bottom-btn');
+    if (scrollBtn) {
+      scrollBtn.classList.remove('visible');
+    }
+
     const isUnloadedHistory = this.visibleEndIndex < this.allMessages.length;
 
     if (isUnloadedHistory) {
-      // User is viewing older/unloaded history: load the latest window
-      this.visibleStartIndex = Math.max(0, this.allMessages.length - this.CHUNK_SIZE);
+      // User is viewing older/unloaded history:
+      // Instantly swap to the latest message batch (last 50 messages)
+      const batchCount = Math.min(this.allMessages.length, this.CHUNK_SIZE);
+      this.visibleStartIndex = Math.max(0, this.allMessages.length - batchCount);
       this.visibleEndIndex = this.allMessages.length;
+
       await this.renderBatch(this.visibleStartIndex, this.visibleEndIndex, 'replace');
 
       if (smooth) {
-        // Swift, fluid glide transition (~250ms): position temporarily near the bottom
-        const glideStart = Math.max(0, this.container.scrollHeight - this.container.clientHeight - 650);
+        // Native WhatsApp Glide: position viewport slightly above the bottom (~350px) for a short, fluid glide downward (~250ms)
+        const maxScroll = Math.max(0, this.container.scrollHeight - this.container.clientHeight);
+        const glideStart = Math.max(0, maxScroll - 350);
         this.container.scrollTop = glideStart;
+
         requestAnimationFrame(() => {
           this.container.scrollTo({ top: this.container.scrollHeight, behavior: 'smooth' });
         });
@@ -819,6 +849,7 @@ export class VirtualMessageScroller {
         this.container.scrollTop = this.container.scrollHeight;
       }
     } else {
+      // All messages down to the bottom are already loaded: simply smooth scroll
       if (smooth) {
         this.container.scrollTo({ top: this.container.scrollHeight, behavior: 'smooth' });
       } else {
@@ -826,14 +857,20 @@ export class VirtualMessageScroller {
       }
     }
 
-    // Hide arrow button once returned to bottom
-    const scrollBtn = document.getElementById('chat-scroll-bottom-btn');
-    if (scrollBtn) {
-      scrollBtn.classList.remove('visible');
-    }
+    // Safety timeout: reset the auto-scrolling lock after animation completes and guarantee final bottom alignment
+    this.autoScrollTimer = setTimeout(() => {
+      this.isAutoScrolling = false;
+      this.container.scrollTop = this.container.scrollHeight;
+      if (scrollBtn) {
+        scrollBtn.classList.remove('visible');
+      }
+    }, smooth ? 400 : 60);
   }
 
   async scrollToMessage(messageId) {
+    clearTimeout(this.autoScrollTimer);
+    this.isAutoScrolling = true;
+
     let el = this.container.querySelector(`[data-msg-id="${messageId}"]`) ||
              this.container.querySelector(`#msg-${messageId}`);
 
@@ -853,10 +890,16 @@ export class VirtualMessageScroller {
       el.classList.add('highlight-flash');
       setTimeout(() => el.classList.remove('highlight-flash'), 2500);
     }
+
+    this.autoScrollTimer = setTimeout(() => {
+      this.isAutoScrolling = false;
+    }, 600);
   }
 
   async jumpToDate(targetMsg, dateString) {
     if (!targetMsg) return;
+    clearTimeout(this.autoScrollTimer);
+    this.isAutoScrolling = true;
 
     // Check if target message is already in DOM
     let el = this.container.querySelector(`[data-msg-id="${targetMsg.id}"]`) ||
@@ -877,7 +920,10 @@ export class VirtualMessageScroller {
       }
     }
 
-    if (!el) return;
+    if (!el) {
+      this.isAutoScrolling = false;
+      return;
+    }
 
     // Locate the date pill preceding the message
     let datePillRow = null;
@@ -899,8 +945,8 @@ export class VirtualMessageScroller {
     const relativeTop = anchorRect.top - containerRect.top;
     const finalScrollTop = Math.max(0, this.container.scrollTop + relativeTop - 24);
 
-    // Initial cinematic offset for glide animation (~450px)
-    const glideOffset = isJumpingFromNewer ? 450 : -450;
+    // Initial offset for glide animation (~350px)
+    const glideOffset = isJumpingFromNewer ? 350 : -350;
     const initialGlideScrollTop = Math.max(0, Math.min(this.container.scrollHeight - this.container.clientHeight, finalScrollTop + glideOffset));
 
     this.container.scrollTop = initialGlideScrollTop;
@@ -921,6 +967,10 @@ export class VirtualMessageScroller {
     }
     el.classList.add('jump-date-pulse');
     setTimeout(() => el.classList.remove('jump-date-pulse'), 2500);
+
+    this.autoScrollTimer = setTimeout(() => {
+      this.isAutoScrolling = false;
+    }, 600);
   }
 
   updateMessageReactionDOM(msgId, reaction) {
@@ -948,6 +998,7 @@ export class VirtualMessageScroller {
   }
 
   cleanup() {
+    clearTimeout(this.autoScrollTimer);
     this.cancelPendingLongPress();
     audioManager.stopCurrent();
     for (const url of this.mediaCache.values()) {

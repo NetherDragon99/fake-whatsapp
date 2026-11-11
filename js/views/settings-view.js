@@ -28,15 +28,15 @@ export class SettingsView {
         console.warn('[SettingsView] Error loading settings data:', err);
       }
 
-    // Standalone display mode check
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
-                         window.navigator.standalone === true;
+      // Standalone display mode check
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+        window.navigator.standalone === true;
 
-    const avatarHtml = userAvatarBlob
-      ? `<img src="${URL.createObjectURL(userAvatarBlob)}" class="profile-avatar-img" alt="Profile" />`
-      : Icons.userAvatar('', 64);
+      const avatarHtml = userAvatarBlob
+        ? `<img src="${URL.createObjectURL(userAvatarBlob)}" class="profile-avatar-img" alt="Profile" />`
+        : Icons.userAvatar('', 64);
 
-    rootEl.innerHTML = `
+      rootEl.innerHTML = `
       <div class="screen-view settings-screen">
         <header class="wa-app-bar flat-app-bar">
           <div class="app-title">Settings</div>

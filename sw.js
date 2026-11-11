@@ -1,5 +1,5 @@
-// WhatsApp Android Clone Service Worker v1.0.1
-const CACHE_NAME = 'wa-clone-v1.0.1';
+// WhatsApp Android Clone Service Worker v1.0.2
+const CACHE_NAME = 'wa-clone-v1.0.2';
 
 const STICKER_FILES = [
   './assets/stickers/sticker-1.svg',
@@ -180,9 +180,9 @@ self.addEventListener('fetch', (event) => {
         // If device is offline, immediately return cached index.html without network delay
         if (self.navigator && self.navigator.onLine === false) {
           const cached = await caches.match('./index.html') ||
-                         await caches.match('./') ||
-                         await caches.match(request) ||
-                         await caches.match('index.html');
+            await caches.match('./') ||
+            await caches.match(request) ||
+            await caches.match('index.html');
           if (cached) return cached;
         }
 
@@ -198,9 +198,9 @@ self.addEventListener('fetch', (event) => {
 
         // Return cached index.html / root
         const cached = await caches.match('./index.html') ||
-                       await caches.match('./') ||
-                       await caches.match(request) ||
-                       await caches.match('index.html');
+          await caches.match('./') ||
+          await caches.match(request) ||
+          await caches.match('index.html');
         if (cached) return cached;
 
         // Last resort: search active cache directly
@@ -208,7 +208,7 @@ self.addEventListener('fetch', (event) => {
           const cache = await caches.open(CACHE_NAME);
           const fallback = await cache.match('./index.html') || await cache.match('./') || await cache.match('index.html');
           if (fallback) return fallback;
-        } catch (e) {}
+        } catch (e) { }
 
         return new Response('WhatsApp', {
           headers: { 'Content-Type': 'text/html; charset=utf-8' }
@@ -220,8 +220,8 @@ self.addEventListener('fetch', (event) => {
 
   // Cache-first for wallpapers, static icons, and archives
   const isStaticMedia = url.pathname.includes('/assets/wallpapers/') ||
-                        url.pathname.includes('/assets/icons/') ||
-                        url.pathname.includes('.zip');
+    url.pathname.includes('/assets/icons/') ||
+    url.pathname.includes('.zip');
 
   if (isStaticMedia) {
     event.respondWith(

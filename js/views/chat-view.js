@@ -392,9 +392,12 @@ export class ChatView {
     }
 
     // Floating Scroll to Bottom
-    this.container.querySelector('#chat-scroll-bottom-btn').addEventListener('click', () => {
-      this.scroller.scrollToBottom(true);
-    });
+    const scrollBottomBtn = this.container.querySelector('#chat-scroll-bottom-btn');
+    if (scrollBottomBtn) {
+      scrollBottomBtn.addEventListener('click', () => {
+        this.scroller?.scrollToBottom(true);
+      });
+    }
 
     // In-Chat Search bar events
     this.bindSearchEvents();
