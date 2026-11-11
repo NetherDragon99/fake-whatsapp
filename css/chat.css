@@ -451,6 +451,16 @@
   box-shadow: none !important;
   padding: 0 !important;
   border-radius: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.bubble-outgoing.sticker-bubble {
+  align-items: flex-end !important;
+}
+
+.bubble-incoming.sticker-bubble {
+  align-items: flex-start !important;
 }
 
 .sticker-bubble .media-image-wrap {
@@ -459,6 +469,7 @@
   margin-bottom: 0 !important;
   max-width: 140px !important;
   position: relative;
+  overflow: visible !important;
 }
 
 .sticker-bubble img,
@@ -472,22 +483,43 @@
   display: block;
 }
 
+/* Time & checkmark under the sticker in a styled pill */
 .sticker-bubble .msg-meta {
-  position: absolute;
-  bottom: 4px;
-  right: 4px;
-  background: rgba(0, 0, 0, 0.6);
-  color: #ffffff !important;
-  padding: 2px 6px;
-  border-radius: 10px;
-  font-size: 10.5px;
-  margin: 0;
-  backdrop-filter: blur(4px);
-  z-index: 2;
+  position: static !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  margin-top: 3px !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding: 2px 8px !important;
+  border-radius: 12px !important;
+  font-size: 11px !important;
+  line-height: 1.2 !important;
+  float: none !important;
+  user-select: none !important;
+  z-index: 2 !important;
 }
 
-.sticker-bubble .msg-meta .receipt-check {
-  color: var(--wa-cyan) !important;
+/* Outgoing sticker: WhatsApp dark-green pill matching outgoing message bubble */
+.bubble-outgoing.sticker-bubble .msg-meta {
+  background: var(--wa-outgoing-bubble, #005c4b) !important;
+  color: #ffffff !important;
+}
+
+.bubble-outgoing.sticker-bubble.theme-green .msg-meta {
+  background: #005c4b !important;
+}
+
+.bubble-outgoing.sticker-bubble .msg-meta .receipt-check {
+  color: var(--wa-cyan, #53bdeb) !important;
+  margin-left: 2px !important;
+}
+
+/* Incoming sticker: subtle dark surface pill */
+.bubble-incoming.sticker-bubble .msg-meta {
+  background: var(--wa-surface, #202c33) !important;
+  color: rgba(255, 255, 255, 0.9) !important;
 }
 
 .media-image-wrap,
