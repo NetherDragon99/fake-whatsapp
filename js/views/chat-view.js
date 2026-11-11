@@ -20,6 +20,8 @@ export class ChatView {
     this.scroller = null;
     this.searchMatches = [];
     this.currentSearchMatchIndex = -1;
+    this.selectedMessageIds = new Set();
+    this.isSelectionMode = false;
   }
 
   async render(rootEl, params = {}) {
@@ -90,6 +92,21 @@ export class ChatView {
             <button type="button" class="app-bar-icon-btn" id="btn-chat-video-call" aria-label="Video Call">${Icons.callVideo('', 22)}</button>
             <button type="button" class="app-bar-icon-btn" id="btn-chat-voice-call" aria-label="Voice Call">${Icons.callVoice('', 22)}</button>
             <button type="button" class="app-bar-icon-btn" id="btn-chat-menu-more" aria-label="More options">${Icons.moreVert('', 22)}</button>
+          </div>
+        </header>
+
+        <!-- Chat Message Selection Bar (WhatsApp Native) -->
+        <header class="wa-app-bar chat-header selection-bar" id="chat-selection-header" style="display: none;">
+          <div class="chat-header-left">
+            <button type="button" class="app-bar-icon-btn" id="btn-cancel-msg-select" aria-label="Cancel selection">${Icons.arrowBack('', 24)}</button>
+            <div class="selection-count-title" id="chat-select-count">1</div>
+          </div>
+          <div class="chat-header-actions">
+            <button type="button" class="app-bar-icon-btn" id="btn-msg-star-selected" title="Star / Unstar">${Icons.star('', 20)}</button>
+            <button type="button" class="app-bar-icon-btn" id="btn-msg-copy-selected" title="Copy">${Icons.copy('', 20)}</button>
+            <button type="button" class="app-bar-icon-btn" id="btn-msg-forward-selected" title="Forward">${Icons.forward('', 20)}</button>
+            <button type="button" class="app-bar-icon-btn danger-icon" id="btn-msg-delete-selected" title="Delete">${Icons.trash('', 20)}</button>
+            <button type="button" class="app-bar-icon-btn" id="btn-msg-select-all" title="Select all">${Icons.moreVert('', 20)}</button>
           </div>
         </header>
 
@@ -246,6 +263,8 @@ export class ChatView {
               <span class="react-btn" data-emoji="🙏">🙏</span>
             </div>
             <div class="context-action-list">
+              <button type="button" class="context-item" id="ctx-star-msg">Star message</button>
+              <button type="button" class="context-item" id="ctx-select-msg">Select message</button>
               <button type="button" class="context-item" id="ctx-copy-text">Copy text</button>
               <button type="button" class="context-item" id="ctx-toggle-forward">Toggle "Forwarded"</button>
               <button type="button" class="context-item danger-text" id="ctx-delete-msg">Delete message</button>
@@ -267,12 +286,26 @@ export class ChatView {
       chat: this.chat,
       outgoingTheme,
       onMediaClick: (mediaItem, msg) => {
+        if (this.isSelectionMode) {
+          this.toggleMessageSelection(msg.id);
+          return;
+        }
         mediaLightbox.show(mediaItem, msg, (cId, mId) => {
           this.scroller.scrollToMessage(mId);
         });
       },
+      onMessageClick: (msg, rowEl, evt) => {
+        if (this.isSelectionMode) {
+          evt?.stopPropagation();
+          this.toggleMessageSelection(msg.id, rowEl);
+        }
+      },
       onMessageAction: (msg, rowEl, evt) => {
-        this.openMessageContextMenu(msg, rowEl);
+        if (this.isSelectionMode) {
+          this.toggleMessageSelection(msg.id, rowEl);
+        } else {
+          this.openMessageContextMenu(msg, rowEl);
+        }
       }
     });
 
@@ -306,6 +339,26 @@ export class ChatView {
     // Header Back
     this.container.querySelector('#btn-chat-back').addEventListener('click', () => {
       this.router.back();
+    });
+
+    // Message Selection Header Actions
+    this.container.querySelector('#btn-cancel-msg-select')?.addEventListener('click', () => {
+      this.exitSelectionMode();
+    });
+    this.container.querySelector('#btn-msg-star-selected')?.addEventListener('click', () => {
+      this.starSelectedMessages();
+    });
+    this.container.querySelector('#btn-msg-copy-selected')?.addEventListener('click', () => {
+      this.copySelectedMessages();
+    });
+    this.container.querySelector('#btn-msg-forward-selected')?.addEventListener('click', () => {
+      this.forwardSelectedMessages();
+    });
+    this.container.querySelector('#btn-msg-delete-selected')?.addEventListener('click', () => {
+      this.deleteSelectedMessages();
+    });
+    this.container.querySelector('#btn-msg-select-all')?.addEventListener('click', () => {
+      this.selectAllMessages();
     });
 
     // Profile Click -> Contact Info Screen 5
@@ -1189,6 +1242,20 @@ export class ChatView {
     });
 
     // Copy Text
+    overlay.querySelector('#ctx-star-msg').onclick = async () => {
+      overlay.style.display = 'none';
+      const isStarred = !msg.isStarred;
+      await db.updateMessage(msg.id, { isStarred });
+      msg.isStarred = isStarred;
+      Toast.show(isStarred ? 'Message starred' : 'Message unstarred');
+      this.scroller.loadInitial();
+    };
+
+    overlay.querySelector('#ctx-select-msg').onclick = () => {
+      overlay.style.display = 'none';
+      this.enterSelectionMode(msg.id, rowEl);
+    };
+
     overlay.querySelector('#ctx-copy-text').onclick = () => {
       overlay.style.display = 'none';
       if (msg.text) {
@@ -1223,6 +1290,148 @@ export class ChatView {
     overlay.onclick = (e) => {
       if (e.target === overlay) overlay.style.display = 'none';
     };
+  }
+
+  // --- Message Multi-Selection System ---
+  enterSelectionMode(initialMsgId, rowEl) {
+    this.isSelectionMode = true;
+    this.selectedMessageIds.clear();
+    if (initialMsgId) {
+      this.selectedMessageIds.add(initialMsgId);
+    }
+    if (window.router) {
+      window.router.pushOverlay('chat-msg-selection', () => this.exitSelectionMode());
+    }
+    this.updateMessageSelectionBar();
+    if (rowEl) rowEl.classList.add('is-msg-selected');
+  }
+
+  toggleMessageSelection(msgId, rowEl) {
+    if (this.selectedMessageIds.has(msgId)) {
+      this.selectedMessageIds.delete(msgId);
+      if (rowEl) rowEl.classList.remove('is-msg-selected');
+      else {
+        const row = this.container.querySelector(`.msg-row[data-msg-id="${msgId}"]`);
+        if (row) row.classList.remove('is-msg-selected');
+      }
+    } else {
+      this.selectedMessageIds.add(msgId);
+      if (rowEl) rowEl.classList.add('is-msg-selected');
+      else {
+        const row = this.container.querySelector(`.msg-row[data-msg-id="${msgId}"]`);
+        if (row) row.classList.add('is-msg-selected');
+      }
+    }
+
+    if (this.selectedMessageIds.size === 0) {
+      this.exitSelectionMode();
+    } else {
+      this.updateMessageSelectionBar();
+    }
+  }
+
+  updateMessageSelectionBar() {
+    const defaultHeader = this.container.querySelector('#chat-default-header');
+    const selectHeader = this.container.querySelector('#chat-selection-header');
+    const countEl = this.container.querySelector('#chat-select-count');
+
+    if (defaultHeader) defaultHeader.style.display = 'none';
+    if (selectHeader) selectHeader.style.display = 'flex';
+    if (countEl) countEl.textContent = `${this.selectedMessageIds.size}`;
+  }
+
+  exitSelectionMode() {
+    this.isSelectionMode = false;
+    this.selectedMessageIds.clear();
+    const defaultHeader = this.container.querySelector('#chat-default-header');
+    const selectHeader = this.container.querySelector('#chat-selection-header');
+
+    if (defaultHeader) defaultHeader.style.display = 'flex';
+    if (selectHeader) selectHeader.style.display = 'none';
+
+    this.container.querySelectorAll('.msg-row.is-msg-selected').forEach((r) => {
+      r.classList.remove('is-msg-selected');
+    });
+
+    if (window.router) {
+      window.router.removeOverlay('chat-msg-selection');
+    }
+  }
+
+  async starSelectedMessages() {
+    if (this.selectedMessageIds.size === 0) return;
+    for (const id of this.selectedMessageIds) {
+      const m = await db.getMessage(id);
+      if (m) await db.updateMessage(id, { isStarred: !m.isStarred });
+    }
+    Toast.show(`${this.selectedMessageIds.size} messages updated`);
+    this.exitSelectionMode();
+    this.scroller.loadInitial();
+  }
+
+  async copySelectedMessages() {
+    if (this.selectedMessageIds.size === 0) return;
+    const texts = [];
+    for (const id of this.selectedMessageIds) {
+      const m = await db.getMessage(id);
+      if (m && m.text) texts.push(m.text);
+    }
+    if (texts.length > 0) {
+      await navigator.clipboard.writeText(texts.join('\n\n'));
+      Toast.show(`${texts.length} messages copied to clipboard`);
+    } else {
+      Toast.show('No text in selected messages');
+    }
+    this.exitSelectionMode();
+  }
+
+  async forwardSelectedMessages() {
+    if (this.selectedMessageIds.size === 0) return;
+    for (const id of this.selectedMessageIds) {
+      await db.updateMessage(id, { isForwarded: true });
+    }
+    Toast.show(`${this.selectedMessageIds.size} messages marked forwarded`);
+    this.exitSelectionMode();
+    this.scroller.loadInitial();
+  }
+
+  async deleteSelectedMessages() {
+    const count = this.selectedMessageIds.size;
+    if (count === 0) return;
+
+    const confirmed = await showConfirm({
+      title: `Delete ${count} message${count > 1 ? 's' : ''}?`,
+      message: 'Do you want to delete the selected messages?',
+      confirmText: 'Delete for me',
+      cancelText: 'Cancel',
+      isDanger: true,
+      extraCheckbox: {
+        id: 'chk-del-starred-msgs',
+        label: 'Delete starred messages too',
+        checked: false
+      }
+    });
+
+    if (confirmed) {
+      const chk = document.getElementById('chk-del-starred-msgs');
+      const deleteStarred = chk ? chk.checked : false;
+      await db.deleteMessagesBatch(Array.from(this.selectedMessageIds), !deleteStarred);
+      Toast.show(`${count} messages deleted`);
+      this.exitSelectionMode();
+      this.scroller.loadInitial();
+    }
+  }
+
+  selectAllMessages() {
+    const allRows = this.container.querySelectorAll('.msg-row[data-msg-id]');
+    allRows.forEach((r) => {
+      const id = r.dataset.msgId;
+      if (id) {
+        this.selectedMessageIds.add(id);
+        r.classList.add('is-msg-selected');
+      }
+    });
+    this.updateMessageSelectionBar();
   }
 
   async openEditChatModal() {

@@ -9,8 +9,9 @@ export class VirtualMessageScroller {
     this.container = container;
     this.chatId = options.chatId;
     this.chat = options.chat || {};
-    this.onMediaClick = options.onMediaClick || (() => {});
-    this.onMessageAction = options.onMessageAction || (() => {});
+    this.onMediaClick = options.onMediaClick || (() => { });
+    this.onMessageAction = options.onMessageAction || (() => { });
+    this.onMessageClick = options.onMessageClick || null;
     this.outgoingTheme = options.outgoingTheme || 'slate';
 
     this.CHUNK_SIZE = 50;
@@ -181,7 +182,7 @@ export class VirtualMessageScroller {
         <div class="empty-chat-notice">
           <div class="encryption-pill">
             ${Icons.lock('lock-icon', 13)}
-            <span>Messages and calls are end-to-end encrypted. No one outside of this chat, not even WhatsApp, can read or listen to them.</span>
+            <span>Messages and calls are end-to-end encrypted. No one outside of this chat, not even steven the app creator, can read or listen to them as the chat work localy on your device without any synic, The app oly recive updates but not able to send any data.</span>
           </div>
           <div class="empty-chat-demo-card">
             <p>This conversation is empty.</p>
@@ -324,7 +325,7 @@ export class VirtualMessageScroller {
     // Prune excess from top if exceeding MAX_DOM_MESSAGES
     if (this.visibleEndIndex - this.visibleStartIndex > this.MAX_DOM_MESSAGES) {
       const pruneTarget = (this.visibleEndIndex - this.visibleStartIndex) - this.MAX_DOM_MESSAGES;
-      
+
       const prevScrollHeight = this.container.scrollHeight;
       const prevScrollTop = this.container.scrollTop;
 
@@ -574,6 +575,12 @@ export class VirtualMessageScroller {
       this.onMessageAction(firstMsg, row, e);
     });
 
+    row.addEventListener('click', (e) => {
+      if (this.onMessageClick) {
+        this.onMessageClick(firstMsg, row, e);
+      }
+    });
+
     return row;
   }
 
@@ -669,6 +676,12 @@ export class VirtualMessageScroller {
     // Attach reliable long-press gesture (cancels on pointer move > 10px and scroll)
     this.attachLongPress(row, (e) => {
       this.onMessageAction(msg, row, e);
+    });
+
+    row.addEventListener('click', (e) => {
+      if (this.onMessageClick) {
+        this.onMessageClick(msg, row, e);
+      }
     });
 
     return row;
@@ -885,7 +898,7 @@ export class VirtualMessageScroller {
     this.isAutoScrolling = true;
 
     let el = this.container.querySelector(`[data-msg-id="${messageId}"]`) ||
-             this.container.querySelector(`#msg-${messageId}`);
+      this.container.querySelector(`#msg-${messageId}`);
 
     if (!el) {
       const foundIdx = this.allMessages.findIndex((m) => m.id === messageId);
@@ -894,7 +907,7 @@ export class VirtualMessageScroller {
         this.visibleEndIndex = Math.min(this.allMessages.length, this.visibleStartIndex + this.CHUNK_SIZE);
         await this.renderBatch(this.visibleStartIndex, this.visibleEndIndex, 'replace');
         el = this.container.querySelector(`[data-msg-id="${messageId}"]`) ||
-             this.container.querySelector(`#msg-${messageId}`);
+          this.container.querySelector(`#msg-${messageId}`);
       }
     }
 
@@ -916,7 +929,7 @@ export class VirtualMessageScroller {
 
     // Check if target message is already in DOM
     let el = this.container.querySelector(`[data-msg-id="${targetMsg.id}"]`) ||
-             this.container.querySelector(`#msg-${targetMsg.id}`);
+      this.container.querySelector(`#msg-${targetMsg.id}`);
 
     const foundIdx = this.allMessages.findIndex((m) => m.id === targetMsg.id);
     const curCenterIdx = Math.floor((this.visibleStartIndex + this.visibleEndIndex) / 2);
@@ -929,7 +942,7 @@ export class VirtualMessageScroller {
         await this.renderBatch(this.visibleStartIndex, this.visibleEndIndex, 'replace');
 
         el = this.container.querySelector(`[data-msg-id="${targetMsg.id}"]`) ||
-             this.container.querySelector(`#msg-${targetMsg.id}`);
+          this.container.querySelector(`#msg-${targetMsg.id}`);
       }
     }
 
@@ -991,7 +1004,7 @@ export class VirtualMessageScroller {
     if (found) found.reaction = reaction;
 
     const row = this.container.querySelector(`#msg-${msgId}`) ||
-                this.container.querySelector(`[data-msg-id="${msgId}"]`);
+      this.container.querySelector(`[data-msg-id="${msgId}"]`);
     if (!row) return;
 
     const bubble = row.querySelector('.msg-bubble');

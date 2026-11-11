@@ -122,12 +122,13 @@ export class SettingsView {
           <!-- Storage & Database Backup -->
           <div class="settings-section">
             <div class="settings-section-header">Storage and Data</div>
-            <div class="settings-option-row">
+            <div class="settings-option-row clickable" id="row-manage-storage">
               <span class="settings-icon">${Icons.download('', 20)}</span>
               <div class="settings-texts">
                 <div class="setting-title">App Storage Used</div>
                 <div class="setting-sub">${storageStats.formattedSize} (${storageStats.chatCount} chats, ${storageStats.messageCount} messages)</div>
               </div>
+              <div class="settings-chevron">${Icons.chevronRight('', 18)}</div>
             </div>
 
             <div class="settings-option-row clickable" id="row-export-backup">
@@ -158,7 +159,7 @@ export class SettingsView {
 
           <!-- App Version Footer -->
           <div class="settings-footer-version">
-            <span>WhatsApp Clone for Android</span>
+            <span>WhatsApp Clone By Steven</span>
             <span class="version-number">v${appVersion}</span>
           </div>
         </div>
@@ -273,6 +274,11 @@ export class SettingsView {
     this.container.querySelector('#row-manage-pin').addEventListener('click', async () => {
       const ok = await PinDialog.promptSetup();
       if (ok) Toast.show('PIN configured successfully');
+    });
+
+    // Manage Storage Navigation
+    this.container.querySelector('#row-manage-storage')?.addEventListener('click', () => {
+      this.router.navigate('#/manage-storage');
     });
 
     // Export Full Backup

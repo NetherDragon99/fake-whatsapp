@@ -10,7 +10,7 @@
  * @param {boolean} [options.isDanger=false] - Whether the action is destructive (renders in red)
  * @returns {Promise<boolean>}
  */
-export function showConfirm({ title, message, confirmText = 'OK', cancelText = 'Cancel', isDanger = false }) {
+export function showConfirm({ title, message, confirmText = 'OK', cancelText = 'Cancel', isDanger = false, extraCheckbox = null }) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay custom-dialog-overlay active';
@@ -18,7 +18,15 @@ export function showConfirm({ title, message, confirmText = 'OK', cancelText = '
     overlay.innerHTML = `
       <div class="custom-dialog-card ${isDanger ? 'is-danger' : ''}" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
         ${title ? `<h3 class="custom-dialog-title" id="dialog-title">${escapeHtml(title)}</h3>` : ''}
-        <div class="custom-dialog-body">${escapeHtml(message)}</div>
+        <div class="custom-dialog-body">
+          ${escapeHtml(message)}
+          ${extraCheckbox ? `
+            <div class="custom-dialog-checkbox-row" style="margin-top: 14px; display: flex; align-items: center; gap: 10px;">
+              <input type="checkbox" id="${extraCheckbox.id}" class="wa-checkbox" ${extraCheckbox.checked ? 'checked' : ''} style="width: 18px; height: 18px; cursor: pointer;" />
+              <label for="${extraCheckbox.id}" style="font-size: 13.5px; color: var(--wa-text-primary, #e9edef); cursor: pointer; user-select: none;">${escapeHtml(extraCheckbox.label)}</label>
+            </div>
+          ` : ''}
+        </div>
         <div class="custom-dialog-actions">
           <button type="button" class="dialog-btn dialog-btn-cancel">${escapeHtml(cancelText)}</button>
           <button type="button" class="dialog-btn dialog-btn-confirm ${isDanger ? 'btn-danger' : ''}">${escapeHtml(confirmText)}</button>

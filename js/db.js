@@ -670,6 +670,267 @@ class Database {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
+  // --- Advanced Granular Storage Breakdown & Multi-Select Clearance ---
+  categorizeMediaRecord(m) {
+    if (!m) return 'document';
+    const type = m.type || '';
+    const mime = m.mimeType || '';
+    const filename = m.filename || '';
+
+    if (type === 'sticker' || (mime === 'image/webp' && /stk|sticker/i.test(filename))) return 'sticker';
+    if (type === 'image' || mime.startsWith('image/')) return 'photos';
+    if (type === 'video' || mime.startsWith('video/')) return 'videos';
+    if (type === 'audio' || mime.startsWith('audio/') || /\.(opus|ogg|m4a|aac|mp3|wav)$/i.test(filename)) return 'audio';
+    if (type === 'pdf' || mime === 'application/pdf' || /\.pdf$/i.test(filename)) return 'documents';
+    return 'documents';
+  }
+
+  async getChatDetailedStorage(chatId) {
+    await this.init();
+    const chatMedia = await this.getMediaByChat(chatId);
+    const msgs = await this.getMessages(chatId);
+
+    const categories = {
+      photos: { count: 0, bytes: 0, items: [] },
+      videos: { count: 0, bytes: 0, items: [] },
+      audio: { count: 0, bytes: 0, items: [] },
+      documents: { count: 0, bytes: 0, items: [] },
+      messages: { count: 0, bytes: 0, items: [] }
+    };
+
+    let totalBytes = 0;
+    let starredCount = 0;
+
+    for (const med of chatMedia) {
+      const cat = this.categorizeMediaRecord(med);
+      const size = med.size || (med.blob && med.blob.size) || 0;
+      totalBytes += size;
+
+      if (cat === 'photos' || cat === 'sticker') {
+        categories.photos.count++;
+        categories.photos.bytes += size;
+        categories.photos.items.push(med);
+      } else if (cat === 'videos') {
+        categories.videos.count++;
+        categories.videos.bytes += size;
+        categories.videos.items.push(med);
+      } else if (cat === 'audio') {
+        categories.audio.count++;
+        categories.audio.bytes += size;
+        categories.audio.items.push(med);
+      } else {
+        categories.documents.count++;
+        categories.documents.bytes += size;
+        categories.documents.items.push(med);
+      }
+    }
+
+    for (const msg of msgs) {
+      if (msg.isStarred) starredCount++;
+      const msgBytes = (msg.text ? msg.text.length * 2 : 0) + 128;
+      totalBytes += msgBytes;
+      categories.messages.count++;
+      categories.messages.bytes += msgBytes;
+      categories.messages.items.push(msg);
+    }
+
+    return {
+      totalBytes,
+      formattedTotal: this.formatBytes(totalBytes),
+      totalItems: chatMedia.length + msgs.length,
+      photos: {
+        count: categories.photos.count,
+        bytes: categories.photos.bytes,
+        formatted: this.formatBytes(categories.photos.bytes),
+        items: categories.photos.items
+      },
+      videos: {
+        count: categories.videos.count,
+        bytes: categories.videos.bytes,
+        formatted: this.formatBytes(categories.videos.bytes),
+        items: categories.videos.items
+      },
+      audio: {
+        count: categories.audio.count,
+        bytes: categories.audio.bytes,
+        formatted: this.formatBytes(categories.audio.bytes),
+        items: categories.audio.items
+      },
+      documents: {
+        count: categories.documents.count,
+        bytes: categories.documents.bytes,
+        formatted: this.formatBytes(categories.documents.bytes),
+        items: categories.documents.items
+      },
+      messages: {
+        count: categories.messages.count,
+        bytes: categories.messages.bytes,
+        formatted: this.formatBytes(categories.messages.bytes),
+        items: categories.messages.items
+      },
+      starredCount,
+      allMedia: chatMedia
+    };
+  }
+
+  async getStorageUsageRanked() {
+    await this.init();
+    const chats = await this.getChats();
+    const rankedChats = [];
+
+    let globalTotalBytes = 0;
+    let globalMediaBytes = 0;
+    let globalMessageBytes = 0;
+    let globalMessageCount = 0;
+    let globalMediaCount = 0;
+
+    for (const c of chats) {
+      const stats = await this.getChatDetailedStorage(c.id);
+      const mediaBytes = stats.photos.bytes + stats.videos.bytes + stats.audio.bytes + stats.documents.bytes;
+      globalTotalBytes += stats.totalBytes;
+      globalMediaBytes += mediaBytes;
+      globalMessageBytes += stats.messages.bytes;
+      globalMessageCount += stats.messages.count;
+      globalMediaCount += stats.allMedia.length;
+
+      rankedChats.push({
+        chat: c,
+        stats,
+        totalBytes: stats.totalBytes,
+        formattedTotal: stats.formattedTotal,
+        mediaCount: stats.allMedia.length,
+        messageCount: stats.messages.count
+      });
+    }
+
+    rankedChats.sort((a, b) => b.totalBytes - a.totalBytes);
+
+    return {
+      global: {
+        totalBytes: globalTotalBytes,
+        mediaBytes: globalMediaBytes,
+        messageBytes: globalMessageBytes,
+        formattedTotal: this.formatBytes(globalTotalBytes),
+        formattedMedia: this.formatBytes(globalMediaBytes),
+        formattedMessages: this.formatBytes(globalMessageBytes),
+        chatCount: chats.length,
+        messageCount: globalMessageCount,
+        mediaCount: globalMediaCount
+      },
+      chats: rankedChats
+    };
+  }
+
+  async clearChatCategory(chatId, category, deleteStarred = false) {
+    await this.init();
+    const chatMedia = await this.getMediaByChat(chatId);
+    const msgs = await this.getMessages(chatId);
+
+    const mediaToDelete = [];
+    const messagesToDelete = [];
+
+    if (category === 'all') {
+      for (const m of chatMedia) mediaToDelete.push(m.id);
+      for (const msg of msgs) {
+        if (!deleteStarred && msg.isStarred) continue;
+        messagesToDelete.push(msg.id);
+      }
+    } else if (category === 'messages') {
+      for (const msg of msgs) {
+        if (!deleteStarred && msg.isStarred) continue;
+        messagesToDelete.push(msg.id);
+      }
+    } else {
+      for (const m of chatMedia) {
+        const cat = this.categorizeMediaRecord(m);
+        let matches = false;
+        if (category === 'photos' && (cat === 'photos' || cat === 'sticker')) matches = true;
+        else if (category === 'videos' && cat === 'videos') matches = true;
+        else if (category === 'audio' && cat === 'audio') matches = true;
+        else if (category === 'documents' && cat === 'documents') matches = true;
+
+        if (matches) {
+          mediaToDelete.push(m.id);
+          const parentMsg = msgs.find((msg) => msg.mediaId === m.id);
+          if (parentMsg && (deleteStarred || !parentMsg.isStarred)) {
+            messagesToDelete.push(parentMsg.id);
+          }
+        }
+      }
+    }
+
+    if (mediaToDelete.length > 0) {
+      await this.deleteMediaBatch(mediaToDelete);
+    }
+    if (messagesToDelete.length > 0) {
+      await this.deleteMessagesBatch(messagesToDelete, !deleteStarred);
+    }
+
+    const remainingMsgs = await this.getMessages(chatId);
+    const lastMsg = remainingMsgs.length > 0 ? remainingMsgs[remainingMsgs.length - 1] : null;
+
+    await this.updateChat(chatId, {
+      lastMessage: lastMsg ? {
+        text: lastMsg.text,
+        timestamp: lastMsg.timestamp,
+        isOutgoing: lastMsg.isOutgoing,
+        mediaType: lastMsg.mediaType
+      } : null,
+      updatedAt: lastMsg ? lastMsg.timestamp : Date.now()
+    });
+
+    return true;
+  }
+
+  async deleteMediaBatch(mediaIds) {
+    await this.init();
+    if (!mediaIds || mediaIds.length === 0) return true;
+    const idSet = new Set(mediaIds);
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction('media', 'readwrite');
+      const store = tx.objectStore('media');
+      for (const id of idSet) {
+        store.delete(id);
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async deleteMessagesBatch(messageIds, preserveStarred = true) {
+    await this.init();
+    if (!messageIds || messageIds.length === 0) return true;
+    const idSet = new Set(messageIds);
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction('messages', 'readwrite');
+      const store = tx.objectStore('messages');
+      for (const id of idSet) {
+        if (preserveStarred) {
+          const req = store.get(id);
+          req.onsuccess = () => {
+            if (req.result && !req.result.isStarred) {
+              store.delete(id);
+            }
+          };
+        } else {
+          store.delete(id);
+        }
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async clearChatsStorageBatch(chatIds, deleteStarred = false) {
+    if (!chatIds || chatIds.length === 0) return true;
+    for (const cid of chatIds) {
+      await this.clearChatCategory(cid, 'all', deleteStarred);
+    }
+    return true;
+  }
+
   // --- Full Backup Export & Restore ---
   async exportFullBackup() {
     await this.init();

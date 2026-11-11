@@ -17,6 +17,8 @@ import { ChatBubblePickerView } from './views/chat-bubble-picker-view.js';
 import { SolidColoursPickerView } from './views/solid-colours-picker-view.js';
 import { WallpaperSectionView } from './views/wallpaper-section-view.js';
 import { AppIconView } from './views/app-icon-view.js';
+import { ManageStorageView } from './views/manage-storage-view.js';
+import { ChatStorageView } from './views/chat-storage-view.js';
 import { ImportModal } from './components/modal-import.js';
 import { WhatsAppParser } from './parser.js';
 import { Toast } from './components/toast.js';
@@ -93,6 +95,8 @@ class Application {
       { pattern: '/gallery', viewClass: GalleryView },
       { pattern: '/chat/:id/info', viewClass: ContactInfoView },
       { pattern: '/chat/:id', viewClass: ChatView },
+      { pattern: '/manage-storage/:id', viewClass: ChatStorageView },
+      { pattern: '/manage-storage', viewClass: ManageStorageView },
       { pattern: '/settings/appearance/theme', viewClass: AppearanceView, defaultParams: { subRoute: 'theme' } },
       { pattern: '/settings/appearance/app-icon', viewClass: AppIconView },
       { pattern: '/settings/appearance', viewClass: AppearanceView, defaultParams: { subRoute: '' } },

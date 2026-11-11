@@ -2,6 +2,8 @@
 import { Icons } from '../icons.js';
 import { db } from '../db.js';
 import { mediaLightbox } from '../components/lightbox.js';
+import { Toast } from '../components/toast.js';
+import { showConfirm } from '../components/custom-dialog.js';
 
 export class GalleryView {
   constructor(router) {
@@ -26,6 +28,8 @@ export class GalleryView {
     this.isLoadingMore = false;
     this.lastScrollTop = 0;
     this.onScrollBound = this.handleScroll.bind(this);
+    this.selectedMediaIds = new Set();
+    this.isSelectionMode = false;
   }
 
   async render(rootEl, params = {}) {
@@ -42,9 +46,24 @@ export class GalleryView {
 
     rootEl.innerHTML = `
       <div class="screen-view gallery-screen">
-        <header class="wa-app-bar">
+        <!-- Normal App Bar -->
+        <header class="wa-app-bar" id="gallery-default-header">
           <button class="app-bar-icon-btn" id="btn-gallery-back" aria-label="Go back">${Icons.arrowBack('', 24)}</button>
           <div class="app-title">${titleText}</div>
+          <div class="app-bar-actions">
+            <button class="app-bar-icon-btn" id="btn-gallery-select-mode" title="Select files">${Icons.edit('', 20)}</button>
+          </div>
+        </header>
+
+        <!-- Multi-Selection Bar -->
+        <header class="wa-app-bar selection-bar" id="gallery-selection-bar" style="display:none;">
+          <button class="app-bar-icon-btn" id="btn-cancel-gallery-select" aria-label="Cancel selection">${Icons.arrowBack('', 24)}</button>
+          <div class="selection-count-title" id="gallery-select-count">1 selected</div>
+          <div class="app-bar-actions">
+            <button type="button" class="app-bar-text-btn" id="btn-gallery-select-all">Select All</button>
+            <button type="button" class="app-bar-icon-btn" id="btn-gallery-download-selected" title="Download selected">${Icons.download('', 20)}</button>
+            <button type="button" class="app-bar-icon-btn danger-icon" id="btn-gallery-delete-selected" title="Delete selected">${Icons.trash('', 22)}</button>
+          </div>
         </header>
 
         <!-- Gallery Multi-Toggle Filter Controls -->
@@ -71,6 +90,23 @@ export class GalleryView {
     // Back button navigation
     this.container.querySelector('#btn-gallery-back').addEventListener('click', () => {
       this.router.back();
+    });
+
+    // Selection Mode Buttons
+    this.container.querySelector('#btn-gallery-select-mode')?.addEventListener('click', () => {
+      this.enterSelectionMode();
+    });
+    this.container.querySelector('#btn-cancel-gallery-select')?.addEventListener('click', () => {
+      this.exitSelectionMode();
+    });
+    this.container.querySelector('#btn-gallery-select-all')?.addEventListener('click', () => {
+      this.selectAllMedia();
+    });
+    this.container.querySelector('#btn-gallery-download-selected')?.addEventListener('click', () => {
+      this.downloadSelectedMedia();
+    });
+    this.container.querySelector('#btn-gallery-delete-selected')?.addEventListener('click', () => {
+      this.deleteSelectedMedia();
     });
 
     // Multi-Toggle Filter Chips
@@ -506,22 +542,53 @@ export class GalleryView {
 
   createVisualTile(item) {
     const tile = document.createElement('div');
-    tile.className = 'gallery-tile gallery-item-node';
+    tile.className = `gallery-tile gallery-item-node ${item.media?.id && this.selectedMediaIds.has(item.media.id) ? 'is-selected' : ''}`;
+    if (item.media?.id) {
+      tile.dataset.mediaId = item.media.id;
+    }
     const url = URL.createObjectURL(item.media.blob);
     tile.dataset.objectUrl = url;
+
+    const badgeHtml = `<div class="gallery-select-badge ${item.media?.id && this.selectedMediaIds.has(item.media.id) ? 'checked' : ''}">${Icons.check('', 14)}</div>`;
 
     if (item.type === 'video') {
       tile.innerHTML = `
         <video src="${url}" preload="metadata" class="tile-thumb"></video>
         <div class="tile-video-badge">${Icons.play('', 14)}</div>
+        ${badgeHtml}
       `;
     } else if (item.type === 'sticker') {
-      tile.innerHTML = `<img src="${url}" alt="${item.media.filename}" loading="lazy" class="tile-thumb" style="object-fit:contain; background:transparent;" />`;
+      tile.innerHTML = `
+        <img src="${url}" alt="${item.media.filename}" loading="lazy" class="tile-thumb" style="object-fit:contain; background:transparent;" />
+        ${badgeHtml}
+      `;
     } else {
-      tile.innerHTML = `<img src="${url}" alt="${item.media.filename}" loading="lazy" class="tile-thumb" />`;
+      tile.innerHTML = `
+        <img src="${url}" alt="${item.media.filename}" loading="lazy" class="tile-thumb" />
+        ${badgeHtml}
+      `;
     }
 
+    let pressTimer = null;
+    tile.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      pressTimer = setTimeout(() => {
+        if (item.media?.id) {
+          this.enterSelectionMode(item.media.id, tile);
+        }
+      }, 450);
+    });
+    tile.addEventListener('pointerup', () => clearTimeout(pressTimer));
+    tile.addEventListener('pointerleave', () => clearTimeout(pressTimer));
+    tile.addEventListener('pointercancel', () => clearTimeout(pressTimer));
+
     tile.addEventListener('click', () => {
+      if (this.isSelectionMode) {
+        if (item.media?.id) {
+          this.toggleItemSelection(item.media.id, tile);
+        }
+        return;
+      }
       mediaLightbox.show(item.media, item.msg, (targetChatId, targetMsgId) => {
         this.router.navigate(`#/chat/${targetChatId}?msgId=${targetMsgId}`);
       });
@@ -532,7 +599,10 @@ export class GalleryView {
 
   createDocCard(item) {
     const card = document.createElement('div');
-    card.className = 'gallery-doc-card gallery-item-node';
+    card.className = `gallery-doc-card gallery-item-node ${item.media?.id && this.selectedMediaIds.has(item.media.id) ? 'is-selected' : ''}`;
+    if (item.media?.id) {
+      card.dataset.mediaId = item.media.id;
+    }
     const url = URL.createObjectURL(item.media.blob);
     card.dataset.objectUrl = url;
 
@@ -542,6 +612,7 @@ export class GalleryView {
       day: 'numeric'
     });
     const isPdf = item.media.mimeType === 'application/pdf' || item.media.type === 'pdf';
+    const badgeHtml = `<div class="gallery-select-badge ${item.media?.id && this.selectedMediaIds.has(item.media.id) ? 'checked' : ''}">${Icons.check('', 14)}</div>`;
 
     card.innerHTML = `
       <div class="gallery-doc-icon">
@@ -554,9 +625,29 @@ export class GalleryView {
       <div class="gallery-doc-action" title="Download">
         ${Icons.download('', 18)}
       </div>
+      ${badgeHtml}
     `;
 
+    let pressTimer = null;
+    card.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      pressTimer = setTimeout(() => {
+        if (item.media?.id) {
+          this.enterSelectionMode(item.media.id, card);
+        }
+      }, 450);
+    });
+    card.addEventListener('pointerup', () => clearTimeout(pressTimer));
+    card.addEventListener('pointerleave', () => clearTimeout(pressTimer));
+    card.addEventListener('pointercancel', () => clearTimeout(pressTimer));
+
     card.addEventListener('click', (e) => {
+      if (this.isSelectionMode) {
+        if (item.media?.id) {
+          this.toggleItemSelection(item.media.id, card);
+        }
+        return;
+      }
       if (e.target.closest('.gallery-doc-action')) {
         const a = document.createElement('a');
         a.href = url;
@@ -605,6 +696,150 @@ export class GalleryView {
         try { URL.revokeObjectURL(node.dataset.objectUrl); } catch (e) {}
       }
     });
+  }
+
+  // --- Gallery Multi-Selection Methods ---
+  enterSelectionMode(initialMediaId = null, element = null) {
+    this.isSelectionMode = true;
+    this.selectedMediaIds.clear();
+    if (initialMediaId) {
+      this.selectedMediaIds.add(initialMediaId);
+      if (element) {
+        element.classList.add('is-selected');
+        const badge = element.querySelector('.gallery-select-badge');
+        if (badge) badge.classList.add('checked');
+      }
+    }
+    if (window.router) {
+      window.router.pushOverlay('gallery-selection', () => this.exitSelectionMode());
+    }
+    this.updateSelectionBar();
+  }
+
+  toggleItemSelection(mediaId, element = null) {
+    if (!element) {
+      element = this.container.querySelector(`[data-media-id="${mediaId}"]`);
+    }
+    const badge = element?.querySelector('.gallery-select-badge');
+
+    if (this.selectedMediaIds.has(mediaId)) {
+      this.selectedMediaIds.delete(mediaId);
+      if (element) element.classList.remove('is-selected');
+      if (badge) badge.classList.remove('checked');
+    } else {
+      this.selectedMediaIds.add(mediaId);
+      if (element) element.classList.add('is-selected');
+      if (badge) badge.classList.add('checked');
+    }
+
+    if (this.selectedMediaIds.size === 0) {
+      this.exitSelectionMode();
+    } else {
+      this.updateSelectionBar();
+    }
+  }
+
+  updateSelectionBar() {
+    const defaultBar = this.container.querySelector('#gallery-default-bar');
+    const selectBar = this.container.querySelector('#gallery-selection-bar');
+    const countEl = this.container.querySelector('#gallery-select-count');
+    const selectAllBtn = this.container.querySelector('#btn-gallery-select-all');
+
+    if (defaultBar) defaultBar.style.display = 'none';
+    if (selectBar) selectBar.style.display = 'flex';
+
+    let totalBytes = 0;
+    for (const id of this.selectedMediaIds) {
+      const it = this.filteredItems.find((x) => x.media?.id === id);
+      if (it?.media?.size) totalBytes += it.media.size;
+    }
+
+    if (countEl) {
+      countEl.textContent = `${this.selectedMediaIds.size} selected (${db.formatBytes(totalBytes)})`;
+    }
+
+    const selectableCount = this.filteredItems.filter((x) => x.media?.id).length;
+    if (selectAllBtn) {
+      selectAllBtn.textContent = this.selectedMediaIds.size === selectableCount ? 'Deselect All' : 'Select All';
+    }
+  }
+
+  exitSelectionMode() {
+    this.isSelectionMode = false;
+    this.selectedMediaIds.clear();
+    const defaultBar = this.container.querySelector('#gallery-default-bar');
+    const selectBar = this.container.querySelector('#gallery-selection-bar');
+
+    if (defaultBar) defaultBar.style.display = 'flex';
+    if (selectBar) selectBar.style.display = 'none';
+
+    this.container.querySelectorAll('.gallery-tile.is-selected, .gallery-doc-card.is-selected').forEach((el) => {
+      el.classList.remove('is-selected');
+      const badge = el.querySelector('.gallery-select-badge');
+      if (badge) badge.classList.remove('checked');
+    });
+
+    if (window.router) {
+      window.router.removeOverlay('gallery-selection');
+    }
+  }
+
+  selectAllMedia() {
+    const selectable = this.filteredItems.filter((x) => x.media?.id);
+    if (this.selectedMediaIds.size === selectable.length) {
+      this.exitSelectionMode();
+      return;
+    }
+    for (const it of selectable) {
+      this.selectedMediaIds.add(it.media.id);
+    }
+    this.container.querySelectorAll('.gallery-tile, .gallery-doc-card').forEach((el) => {
+      el.classList.add('is-selected');
+      const badge = el.querySelector('.gallery-select-badge');
+      if (badge) badge.classList.add('checked');
+    });
+    this.updateSelectionBar();
+  }
+
+  downloadSelectedMedia() {
+    if (this.selectedMediaIds.size === 0) return;
+    let count = 0;
+    for (const id of this.selectedMediaIds) {
+      const it = this.filteredItems.find((x) => x.media?.id === id);
+      if (it?.media?.blob) {
+        const url = URL.createObjectURL(it.media.blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = it.media.filename || `media_${id}`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        count++;
+      }
+    }
+    Toast.show(`Downloading ${count} files...`);
+    this.exitSelectionMode();
+  }
+
+  async deleteSelectedMedia() {
+    const count = this.selectedMediaIds.size;
+    if (count === 0) return;
+
+    const confirmed = await showConfirm({
+      title: `Delete ${count} item${count > 1 ? 's' : ''}?`,
+      message: 'Do you want to delete the selected media from your chats and storage?',
+      confirmText: 'Delete for me',
+      cancelText: 'Cancel',
+      isDanger: true
+    });
+
+    if (confirmed) {
+      const ids = Array.from(this.selectedMediaIds);
+      await db.deleteMediaBatch(ids);
+      Toast.show(`${count} item${count > 1 ? 's' : ''} deleted`);
+      this.exitSelectionMode();
+      await this.loadMediaData();
+      this.renderGrid();
+    }
   }
 
   cleanup() {
