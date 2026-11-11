@@ -847,38 +847,159 @@
 /* --- Media Album Grid (Step 4 / Reference 5) --- */
 .media-album-bubble {
   padding: 3px !important;
-  max-width: 320px !important;
+  /* Fixed width so 1/2/3/4-image grids all share the same bubble width */
+  width: 290px !important;
+  max-width: 290px !important;
   border-radius: 12px !important;
   position: relative;
   overflow: hidden;
 }
 
+/* Goal 1: remove padding bottom so meta row sits flush after grid */
+.media-album-bubble .album-grid-container {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
 .album-grid-container {
   display: grid;
   gap: 2px;
-  border-radius: 10px;
+  /* top corners rounded; bottom handled per bubble rounding */
+  border-radius: 10px 10px 0 0;
   overflow: hidden;
   position: relative;
+  /* Fill the fixed bubble width */
   width: 100%;
 }
 
-/* 2x2 Grid Layout */
-.album-grid-container.count-4,
-.album-grid-container.count-3 {
+/* 4-image: 2×2 grid */
+.album-grid-container.count-4 {
   grid-template-columns: repeat(2, 1fr);
   grid-template-rows: repeat(2, 130px);
 }
 
+/* 2-image: side by side, same fixed height */
 .album-grid-container.count-2 {
   grid-template-columns: repeat(2, 1fr);
   grid-template-rows: 150px;
 }
 
+/* 1-image: full width */
 .album-grid-container.count-1 {
   grid-template-columns: 1fr;
-  grid-template-rows: 200px;
+  border-radius: 10px 10px 0 0;
+  grid-template-rows: 220px;
 }
 
+/* =====================================================================
+   Goal 3: Smart 3-image grid layout
+   Always a 2×2 grid of equal cells; one item spans 2 cells.
+   The double-slot item is determined at render-time by aspect ratio.
+
+   Layout modifier classes on .album-grid-container.count-3:
+     triple-layout-col  → double item spans 2 rows (portrait orientation)
+     triple-layout-row  → double item spans 2 columns (landscape orientation)
+   Position modifier:
+     triple-pos-first   → double item is first (top-left / top)
+     triple-pos-last    → double item is last (bottom-right / bottom)
+   ===================================================================== */
+.album-grid-container.count-3 {
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 130px);
+}
+
+/* --- Col-span double (portrait photo, spans 2 rows vertically) --- */
+
+/* Double-slot FIRST (left column, rows 1+2) */
+.album-grid-container.count-3.triple-layout-col.triple-pos-first
+  .album-thumb-double {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+}
+.album-grid-container.count-3.triple-layout-col.triple-pos-first
+  .album-thumb-wrap:not(.album-thumb-double):nth-child(2) {
+  grid-column: 2;
+  grid-row: 1;
+}
+.album-grid-container.count-3.triple-layout-col.triple-pos-first
+  .album-thumb-wrap:not(.album-thumb-double):nth-child(3) {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+/* Double-slot LAST (right column, rows 1+2) */
+.album-grid-container.count-3.triple-layout-col.triple-pos-last
+  .album-thumb-double {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+.album-grid-container.count-3.triple-layout-col.triple-pos-last
+  .album-thumb-wrap:not(.album-thumb-double):nth-child(1) {
+  grid-column: 1;
+  grid-row: 1;
+}
+.album-grid-container.count-3.triple-layout-col.triple-pos-last
+  .album-thumb-wrap:not(.album-thumb-double):nth-child(2) {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+/* --- Row-span double (landscape photo, spans 2 columns horizontally) --- */
+
+/* Double-slot FIRST (top row, cols 1+2) */
+.album-grid-container.count-3.triple-layout-row.triple-pos-first
+  .album-thumb-double {
+  grid-column: 1 / span 2;
+  grid-row: 1;
+}
+.album-grid-container.count-3.triple-layout-row.triple-pos-first
+  .album-thumb-wrap:not(.album-thumb-double):nth-child(2) {
+  grid-column: 1;
+  grid-row: 2;
+}
+.album-grid-container.count-3.triple-layout-row.triple-pos-first
+  .album-thumb-wrap:not(.album-thumb-double):nth-child(3) {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+/* Double-slot LAST (bottom row, cols 1+2) */
+.album-grid-container.count-3.triple-layout-row.triple-pos-last
+  .album-thumb-double {
+  grid-column: 1 / span 2;
+  grid-row: 2;
+}
+.album-grid-container.count-3.triple-layout-row.triple-pos-last
+  .album-thumb-wrap:not(.album-thumb-double):nth-child(1) {
+  grid-column: 1;
+  grid-row: 1;
+}
+.album-grid-container.count-3.triple-layout-row.triple-pos-last
+  .album-thumb-wrap:not(.album-thumb-double):nth-child(2) {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+/* Fallback: no modifier classes → middle photo gets left col 2-row span */
+.album-grid-container.count-3:not([class*="triple-layout"])
+  .album-thumb-wrap:nth-child(1) {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+}
+.album-grid-container.count-3:not([class*="triple-layout"])
+  .album-thumb-wrap:nth-child(2) {
+  grid-column: 2;
+  grid-row: 1;
+}
+.album-grid-container.count-3:not([class*="triple-layout"])
+  .album-thumb-wrap:nth-child(3) {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+/* =====================================================================
+   Thumb cells
+   ===================================================================== */
 .album-thumb-wrap {
   position: relative;
   width: 100%;
@@ -890,6 +1011,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Smooth tap feedback */
+  -webkit-tap-highlight-color: transparent;
 }
 
 .album-thumb-img {
@@ -899,11 +1022,11 @@
   object-position: center;
   background-position: center;
   display: block;
-  transition: transform 0.2s ease-in-out;
+  transition: transform 0.18s ease;
 }
 
 .album-thumb-wrap:active .album-thumb-img {
-  transform: scale(0.97);
+  transform: scale(0.96);
 }
 
 .album-plus-overlay {
@@ -920,23 +1043,29 @@
   cursor: pointer;
 }
 
-.album-meta-pill {
-  position: absolute;
-  bottom: 6px;
-  right: 6px;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  padding: 2px 8px;
-  border-radius: 10px;
-  display: inline-flex;
+/* =====================================================================
+   Goal 1: Meta row BELOW the grid (replaces overlay pill)
+   Styled exactly like a WhatsApp text message meta row.
+   ===================================================================== */
+.album-meta-row {
+  display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 4px;
-  color: #ffffff;
+  padding: 3px 8px 4px 8px;
+  /* inherits bubble background — no extra bg strip */
+}
+
+.album-meta-time {
   font-size: 11px;
-  font-weight: 500;
-  z-index: 5;
-  pointer-events: none;
+  color: var(--wa-text-secondary, #8696a0);
+  font-weight: 400;
+  line-height: 1;
+}
+
+/* Keep the old overlay pill styles for any legacy use but hidden by default */
+.album-meta-pill {
+  display: none;
 }
 
 .album-thumb-hd-badge {
@@ -1063,6 +1192,44 @@
   font-weight: 500;
   padding: 2px 8px;
   border-radius: 10px;
+}
+
+/* Ensure fullscreen album lightbox sits on top of stacked album */
+.album-lightbox-overlay {
+  z-index: 1100 !important;
+}
+
+/* Stacked view horizontally on large screens (Goal 2) */
+@media (min-width: 768px) {
+  .stacked-album-body {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 20px 32px;
+    gap: 16px;
+    scroll-snap-type: x mandatory;
+  }
+
+  .stacked-photo-item {
+    width: auto;
+    height: 100%;
+    max-height: calc(100vh - 120px);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    scroll-snap-align: center;
+  }
+
+  .stacked-photo-img {
+    width: auto;
+    height: 100%;
+    max-height: calc(100vh - 120px);
+    max-width: 75vw;
+    object-fit: contain;
+  }
 }
 
 /* ==========================================================================

@@ -434,6 +434,84 @@ export class VirtualMessageScroller {
   }
 
   // --- Multi-Image Album Grid inside Chat Bubbles (Step 4) ---
+
+  async _getMediaDimensions(msg) {
+    if (msg.mediaWidth && msg.mediaHeight) {
+      return { width: msg.mediaWidth, height: msg.mediaHeight };
+    }
+    let mediaUrl = null;
+    if (msg.mediaId) {
+      if (this.mediaCache.has(msg.mediaId)) {
+        mediaUrl = this.mediaCache.get(msg.mediaId);
+      } else {
+        const item = await db.getMedia(msg.mediaId);
+        if (item && item.blob) {
+          mediaUrl = URL.createObjectURL(item.blob);
+          this.mediaCache.set(msg.mediaId, mediaUrl);
+        }
+      }
+    }
+    if (!mediaUrl) return { width: 1, height: 1 };
+
+    return new Promise((resolve) => {
+      const isVideo = msg.mediaType === 'video' || (msg.mediaName && /\.(mp4|mov|webm)$/i.test(msg.mediaName));
+      if (isVideo) {
+        const video = document.createElement('video');
+        video.onloadedmetadata = () => {
+          msg.mediaWidth = video.videoWidth || 16;
+          msg.mediaHeight = video.videoHeight || 9;
+          resolve({ width: msg.mediaWidth, height: msg.mediaHeight });
+        };
+        video.onerror = () => resolve({ width: 16, height: 9 });
+        video.src = mediaUrl;
+      } else {
+        const img = new Image();
+        img.onload = () => {
+          msg.mediaWidth = img.naturalWidth || 1;
+          msg.mediaHeight = img.naturalHeight || 1;
+          resolve({ width: msg.mediaWidth, height: msg.mediaHeight });
+        };
+        img.onerror = () => resolve({ width: 1, height: 1 });
+        img.src = mediaUrl;
+      }
+    });
+  }
+
+  /**
+   * Compute a smart layout for a 3-image grid.
+   * Picks the photo with the most extreme aspect ratio (landscape or portrait)
+   * to occupy the double slot, and places it (top/bottom/left/right) based on send order.
+   */
+  async _computeTripleLayout(albumMsgs) {
+    const dims = await Promise.all([
+      this._getMediaDimensions(albumMsgs[0]),
+      this._getMediaDimensions(albumMsgs[1]),
+      this._getMediaDimensions(albumMsgs[2])
+    ]);
+
+    let bestIdx = 0;
+    let maxDist = -1;
+    let bestOrientation = 'col';
+
+    for (let i = 0; i < 3; i++) {
+      const w = dims[i].width || 1;
+      const h = dims[i].height || 1;
+      const ratio = w / h;
+      const dist = ratio >= 1 ? ratio : 1 / ratio;
+      if (dist > maxDist) {
+        maxDist = dist;
+        bestIdx = i;
+        bestOrientation = ratio >= 1 ? 'row' : 'col';
+      }
+    }
+
+    const position = bestIdx === 0
+      ? (bestOrientation === 'row' ? 'top' : 'left')
+      : (bestOrientation === 'row' ? 'bottom' : 'right');
+
+    return { doubleIdx: bestIdx, layout: bestOrientation, position };
+  }
+
   async createAlbumElement(albumMsgs) {
     const firstMsg = albumMsgs[0];
     const lastMsg = albumMsgs[albumMsgs.length - 1];
@@ -457,11 +535,32 @@ export class VirtualMessageScroller {
       bubble.appendChild(senderHeader);
     }
 
-    // Grid container
+    // Grid container — fixed display count capped at 4; for 3-image, compute smart layout
     const displayCount = Math.min(4, albumMsgs.length);
     const gridContainer = document.createElement('div');
     gridContainer.className = `album-grid-container count-${displayCount}`;
 
+    // For 3-image grids, compute which image gets the double slot and how
+    let tripleLayout = null;
+    if (displayCount === 3) {
+      tripleLayout = await this._computeTripleLayout(albumMsgs);
+      gridContainer.classList.add(`triple-layout-${tripleLayout.layout}`);
+      gridContainer.classList.add(`triple-pos-${tripleLayout.position}`);
+    }
+
+    // All grid clicks open the stacked album view first (Goal 2).
+    // Individual image focus is then achieved from within the stacked view.
+    const openStacked = () => {
+      mediaLightbox.showStackedAlbum(albumMsgs, this.chat.name, (chatId, msgId) => {
+        this.scrollToMessage(msgId);
+      });
+    };
+
+    gridContainer.addEventListener('click', () => {
+      openStacked();
+    });
+
+    const thumbWraps = [];
     for (let idx = 0; idx < displayCount; idx++) {
       const itemMsg = albumMsgs[idx];
       let mediaItem = null;
@@ -509,36 +608,70 @@ export class VirtualMessageScroller {
           thumbWrap.appendChild(hdBadge);
         }
 
+        // Goal 2: ALL thumb clicks open the stacked view, not direct fullscreen
         thumbWrap.addEventListener('click', (e) => {
           e.stopPropagation();
-          mediaLightbox.showAlbum(albumMsgs, idx, (chatId, msgId) => {
-            this.scrollToMessage(msgId);
-          });
+          openStacked();
         });
       } else {
         thumbWrap.innerHTML = `<div class="media-placeholder">${Icons.gallery('', 24)}</div>`;
+        thumbWrap.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openStacked();
+        });
       }
 
-      // 4th item +N overlay if more than 4 items (Opens Stacked Album View @refrance12)
+      // 4th item +N overlay if more than 4 items — also opens stacked view
       if (idx === 3 && albumMsgs.length > 4) {
         const plusOverlay = document.createElement('div');
         plusOverlay.className = 'album-plus-overlay';
         plusOverlay.textContent = `+${albumMsgs.length - 4}`;
         plusOverlay.addEventListener('click', (e) => {
           e.stopPropagation();
-          mediaLightbox.showStackedAlbum(albumMsgs, this.chat.name, (chatId, msgId) => {
-            this.scrollToMessage(msgId);
-          });
+          openStacked();
         });
         thumbWrap.appendChild(plusOverlay);
       }
 
-      gridContainer.appendChild(thumbWrap);
+      thumbWraps.push(thumbWrap);
     }
 
+    // Apply explicit gridArea placement for 3-image smart layout so no vacant cells exist
+    if (tripleLayout && thumbWraps.length === 3) {
+      const doubleThumb = thumbWraps[tripleLayout.doubleIdx];
+      doubleThumb.classList.add('album-thumb-double', `album-thumb-double-${tripleLayout.layout}`);
+      const otherThumbs = [0, 1, 2]
+        .filter((i) => i !== tripleLayout.doubleIdx)
+        .map((i) => thumbWraps[i]);
+
+      if (tripleLayout.layout === 'row') {
+        if (tripleLayout.position === 'top') {
+          doubleThumb.style.gridArea = '1 / 1 / 2 / 3';
+          otherThumbs[0].style.gridArea = '2 / 1 / 3 / 2';
+          otherThumbs[1].style.gridArea = '2 / 2 / 3 / 3';
+        } else {
+          otherThumbs[0].style.gridArea = '1 / 1 / 2 / 2';
+          otherThumbs[1].style.gridArea = '1 / 2 / 2 / 3';
+          doubleThumb.style.gridArea = '2 / 1 / 3 / 3';
+        }
+      } else {
+        if (tripleLayout.position === 'left') {
+          doubleThumb.style.gridArea = '1 / 1 / 3 / 2';
+          otherThumbs[0].style.gridArea = '1 / 2 / 2 / 3';
+          otherThumbs[1].style.gridArea = '2 / 2 / 3 / 3';
+        } else {
+          otherThumbs[0].style.gridArea = '1 / 1 / 2 / 2';
+          otherThumbs[1].style.gridArea = '2 / 1 / 3 / 2';
+          doubleThumb.style.gridArea = '1 / 2 / 3 / 3';
+        }
+      }
+    }
+
+    thumbWraps.forEach((tw) => gridContainer.appendChild(tw));
     bubble.appendChild(gridContainer);
 
-    // Caption under photos rule: if any message has text/caption, display underneath outside the photos on the same bubble
+    // Goal 1: Timestamp & checks always go in a footer row BELOW the grid,
+    // styled exactly like a text message meta row — never overlaid on the photos.
     const captionMsg = albumMsgs.find((m) => m.text && m.text.trim().length > 0);
     if (captionMsg) {
       const captionBlock = document.createElement('div');
@@ -546,7 +679,7 @@ export class VirtualMessageScroller {
 
       let checksHtml = '';
       if (firstMsg.isOutgoing) {
-        checksHtml = Icons.checks(true, 'receipt-check-blue', 15);
+        checksHtml = Icons.checks(true, 'receipt-check', 15);
       }
 
       captionBlock.innerHTML = `
@@ -558,15 +691,15 @@ export class VirtualMessageScroller {
       `;
       bubble.appendChild(captionBlock);
     } else {
-      // Overlaid Timestamp & Read Receipts at bottom right of the entire grid
-      const metaPill = document.createElement('div');
-      metaPill.className = 'album-meta-pill';
+      // No caption: timestamp goes in a clean footer meta row (Goal 1)
+      const metaRow = document.createElement('div');
+      metaRow.className = 'album-meta-row';
       let checksHtml = '';
       if (firstMsg.isOutgoing) {
-        checksHtml = Icons.checks(true, 'receipt-check-white', 15);
+        checksHtml = Icons.checks(true, 'receipt-check', 15);
       }
-      metaPill.innerHTML = `<span>${this.formatTime(lastMsg.timestamp)}</span>${checksHtml}`;
-      gridContainer.appendChild(metaPill);
+      metaRow.innerHTML = `<span class="album-meta-time">${this.formatTime(lastMsg.timestamp)}</span>${checksHtml}`;
+      bubble.appendChild(metaRow);
     }
     row.appendChild(bubble);
 

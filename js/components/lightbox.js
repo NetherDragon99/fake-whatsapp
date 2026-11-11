@@ -4,7 +4,8 @@ import { db } from '../db.js';
 
 class Lightbox {
   constructor() {
-    this.overlay = null;
+    this.overlay = null;         // top-most visible overlay
+    this.stackedOverlay = null;  // kept alive under fullscreen album view
     this.currentUrl = null;
     this.albumUrls = [];
     this.onShowInChat = null;
@@ -56,7 +57,6 @@ class Lightbox {
 
     document.body.appendChild(this.overlay);
 
-    // Event listeners
     this.overlay.querySelector('.lightbox-back-btn').addEventListener('click', () => this.close());
     
     this.overlay.querySelector('.lightbox-download-btn').addEventListener('click', () => {
@@ -77,15 +77,27 @@ class Lightbox {
       }
     });
 
-    // History state push for Android hardware back button
     window.history.pushState({ modal: 'lightbox' }, '');
     window.addEventListener('popstate', this.handlePopState);
   }
 
-  // --- Fullscreen Multi-Image Album Lightbox (Task 4) ---
+  // --- Fullscreen Multi-Image Album Lightbox ---
+  // When called from within a stacked view (stackedOverlay is live), closing this
+  // goes BACK to the stacked view instead of fully closing.
   async showAlbum(albumMsgs, startIndex = 0, onShowInChat) {
     this.onShowInChat = onShowInChat;
-    this.close();
+
+    // If a fullscreen album overlay is already open (not stacked), close it first
+    if (this.overlay && !this.overlay.classList.contains('stacked-album-overlay')) {
+      const old = this.overlay;
+      old.classList.add('overlay-closing');
+      setTimeout(() => old.remove(), 210);
+      this.overlay = null;
+      if (this._albumKeyDownHandler) {
+        document.removeEventListener('keydown', this._albumKeyDownHandler);
+        this._albumKeyDownHandler = null;
+      }
+    }
 
     this.overlay = document.createElement('div');
     this.overlay.className = 'wa-lightbox-overlay album-lightbox-overlay';
@@ -208,8 +220,10 @@ class Lightbox {
       });
     }
 
-    // Back button
-    this.overlay.querySelector('.lightbox-back-btn').addEventListener('click', () => this.close());
+    // Back button — if stacked view is underneath, return to it; otherwise fully close
+    this.overlay.querySelector('.lightbox-back-btn').addEventListener('click', () => {
+      this._closeAlbumOverlay();
+    });
 
     // Download current photo
     this.overlay.querySelector('#album-btn-download').addEventListener('click', () => {
@@ -237,7 +251,7 @@ class Lightbox {
     // Keyboard navigation
     const onKeyDown = (e) => {
       if (e.key === 'Escape') {
-        this.close();
+        this._closeAlbumOverlay();
       } else if (e.key === 'ArrowLeft' && prevBtn) {
         prevBtn.click();
       } else if (e.key === 'ArrowRight' && nextBtn) {
@@ -252,13 +266,39 @@ class Lightbox {
     window.addEventListener('popstate', this.handlePopState);
   }
 
-  // --- Fullscreen Vertically Stacked Album View (@refrance12) ---
+  // Close only the top-level album overlay; if stacked view is underneath, re-show it
+  _closeAlbumOverlay(triggerBack = true) {
+    if (this.overlay && this.overlay !== this.stackedOverlay) {
+      const closingEl = this.overlay;
+      closingEl.classList.add('overlay-closing');
+      setTimeout(() => closingEl.remove(), 210);
+      this.overlay = null;
+    }
+    if (this._albumKeyDownHandler) {
+      document.removeEventListener('keydown', this._albumKeyDownHandler);
+      this._albumKeyDownHandler = null;
+    }
+
+    if (this.stackedOverlay && this.stackedOverlay.isConnected) {
+      this.overlay = this.stackedOverlay;
+    }
+
+    if (triggerBack && history.state && history.state.modal === 'lightbox') {
+      this._suppressNextPopState = true;
+      history.back();
+    }
+  }
+
+  // --- Fullscreen Vertically Stacked Album View ---
+  // Navigation: grid → stacked view → (tap image) → fullscreen album → back → stacked → back → chat
   async showStackedAlbum(albumMsgs, chatName = '', onShowInChat) {
     this.onShowInChat = onShowInChat;
-    this.close();
+    this.close(); // close any old overlays
 
-    this.overlay = document.createElement('div');
-    this.overlay.className = 'wa-lightbox-overlay stacked-album-overlay';
+    const stackedEl = document.createElement('div');
+    stackedEl.className = 'wa-lightbox-overlay stacked-album-overlay';
+    this.stackedOverlay = stackedEl;
+    this.overlay = stackedEl;
 
     const totalCount = albumMsgs.length;
     const firstMsg = albumMsgs[0];
@@ -268,7 +308,7 @@ class Lightbox {
     const title = chatName || (firstMsg && firstMsg.sender) || 'Media';
     const subtitle = `${totalCount} ${totalCount === 1 ? 'photo' : 'photos'}${dateFormatted ? ' • ' + dateFormatted : ''}`;
 
-    this.overlay.innerHTML = `
+    stackedEl.innerHTML = `
       <div class="stacked-album-header">
         <button type="button" class="lightbox-back-btn" aria-label="Close">${Icons.arrowBack('', 24)}</button>
         <div class="stacked-album-title-box">
@@ -281,9 +321,9 @@ class Lightbox {
       </div>
     `;
 
-    document.body.appendChild(this.overlay);
+    document.body.appendChild(stackedEl);
 
-    const listContainer = this.overlay.querySelector('#stacked-album-list');
+    const listContainer = stackedEl.querySelector('#stacked-album-list');
 
     this.albumUrls = [];
     for (let idx = 0; idx < totalCount; idx++) {
@@ -317,47 +357,70 @@ class Lightbox {
         `;
       }
 
+      // Tapping an item in stacked view opens fullscreen album focused on that item.
+      // The stacked overlay stays in the DOM so back-from-fullscreen returns here.
       item.addEventListener('click', () => {
+        // Keep stackedEl in DOM but hide behind the album overlay
+        this.overlay = null; // allow showAlbum to not close the stacked overlay
         this.showAlbum(albumMsgs, idx, onShowInChat);
       });
 
       listContainer.appendChild(item);
     }
 
-    this.overlay.querySelector('.lightbox-back-btn').addEventListener('click', () => this.close());
+    stackedEl.querySelector('.lightbox-back-btn').addEventListener('click', () => {
+      this.close(true);
+    });
 
     window.history.pushState({ modal: 'stacked-album' }, '');
     window.addEventListener('popstate', this.handlePopState);
   }
 
   handlePopState = (e) => {
+    if (this._suppressNextPopState) {
+      this._suppressNextPopState = false;
+      return;
+    }
     if (this.overlay) {
-      this.close(false); // already popped
+      if (this.overlay.classList.contains('album-lightbox-overlay') && this.stackedOverlay && this.stackedOverlay.isConnected) {
+        this._closeAlbumOverlay(false);
+      } else {
+        this.close(false); // already popped by browser
+      }
     }
   };
 
   close(triggerBack = true) {
+    // Close album overlay
     if (this.overlay) {
       const closingEl = this.overlay;
       closingEl.classList.add('overlay-closing');
       setTimeout(() => closingEl.remove(), 210);
       this.overlay = null;
-      if (this.currentUrl) {
-        URL.revokeObjectURL(this.currentUrl);
-        this.currentUrl = null;
-      }
-      if (this.albumUrls && this.albumUrls.length) {
-        this.albumUrls.forEach((u) => URL.revokeObjectURL(u));
-        this.albumUrls = [];
-      }
-      if (this._albumKeyDownHandler) {
-        document.removeEventListener('keydown', this._albumKeyDownHandler);
-        this._albumKeyDownHandler = null;
-      }
-      window.removeEventListener('popstate', this.handlePopState);
-      if (triggerBack && history.state && (history.state.modal === 'lightbox' || history.state.modal === 'stacked-album')) {
-        history.back();
-      }
+    }
+    // Also close stacked overlay if it's separate
+    if (this.stackedOverlay && this.stackedOverlay.isConnected) {
+      const se = this.stackedOverlay;
+      se.classList.add('overlay-closing');
+      setTimeout(() => se.remove(), 210);
+    }
+    this.stackedOverlay = null;
+
+    if (this.currentUrl) {
+      URL.revokeObjectURL(this.currentUrl);
+      this.currentUrl = null;
+    }
+    if (this.albumUrls && this.albumUrls.length) {
+      this.albumUrls.forEach((u) => URL.revokeObjectURL(u));
+      this.albumUrls = [];
+    }
+    if (this._albumKeyDownHandler) {
+      document.removeEventListener('keydown', this._albumKeyDownHandler);
+      this._albumKeyDownHandler = null;
+    }
+    window.removeEventListener('popstate', this.handlePopState);
+    if (triggerBack && history.state && (history.state.modal === 'lightbox' || history.state.modal === 'stacked-album')) {
+      history.back();
     }
   }
 }
