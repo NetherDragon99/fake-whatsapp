@@ -89,7 +89,11 @@ class Database {
       const request = store.getAll();
       request.onsuccess = () => {
         const chats = request.result || [];
-        chats.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+        chats.sort((a, b) => {
+          if (a.isPinned && !b.isPinned) return -1;
+          if (!a.isPinned && b.isPinned) return 1;
+          return (b.updatedAt || 0) - (a.updatedAt || 0);
+        });
         resolve(chats);
       };
       request.onerror = () => reject(tx.error);
