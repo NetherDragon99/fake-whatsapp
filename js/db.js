@@ -416,6 +416,9 @@ class Database {
   // --- Media Blobs CRUD ---
   async saveMedia(mediaItem) {
     await this.init();
+    if (mediaItem && !mediaItem.timestamp) {
+      mediaItem.timestamp = Date.now();
+    }
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction('media', 'readwrite');
       tx.objectStore('media').put(mediaItem);
@@ -427,10 +430,14 @@ class Database {
   async saveMediaBatch(items) {
     await this.init();
     if (!items || items.length === 0) return true;
+    const now = Date.now();
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction('media', 'readwrite');
       const store = tx.objectStore('media');
       for (const item of items) {
+        if (item && !item.timestamp) {
+          item.timestamp = now;
+        }
         store.put(item);
       }
       tx.oncomplete = () => resolve(true);
@@ -454,7 +461,11 @@ class Database {
       const tx = this.db.transaction('media', 'readonly');
       const index = tx.objectStore('media').index('chatId');
       const req = index.getAll(IDBKeyRange.only(chatId));
-      req.onsuccess = () => resolve(req.result || []);
+      req.onsuccess = () => {
+        const media = req.result || [];
+        media.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        resolve(media);
+      };
       req.onerror = () => reject(tx.error);
     });
   }
@@ -464,7 +475,11 @@ class Database {
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction('media', 'readonly');
       const req = tx.objectStore('media').getAll();
-      req.onsuccess = () => resolve(req.result || []);
+      req.onsuccess = () => {
+        const media = req.result || [];
+        media.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        resolve(media);
+      };
       req.onerror = () => reject(tx.error);
     });
   }
@@ -499,8 +514,38 @@ class Database {
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction('calls', 'readonly');
       const req = tx.objectStore('calls').getAll();
-      req.onsuccess = () => {
-        const calls = req.result || [];
+      req.onsuccess = async () => {
+        let calls = req.result || [];
+        // If calls store is empty, scan messages for any callInfo records and backfill indexed calls
+        if (calls.length === 0) {
+          try {
+            const allChats = await this.getChats();
+            const backfilled = [];
+            for (const chat of allChats) {
+              const msgs = await this.getMessages(chat.id);
+              for (const m of msgs) {
+                if (m.callInfo && m.callInfo.isCall) {
+                  backfilled.push({
+                    id: 'call_' + m.timestamp + '_' + Math.random().toString(36).substr(2, 6),
+                    chatId: chat.id,
+                    contactName: chat.name,
+                    timestamp: m.timestamp,
+                    callType: m.callInfo.callType || 'voice',
+                    direction: m.callInfo.direction || 'incoming',
+                    isMissed: !!m.callInfo.isMissed,
+                    messageId: m.id
+                  });
+                }
+              }
+            }
+            if (backfilled.length > 0) {
+              await this.saveCallsBatch(backfilled);
+              calls = backfilled;
+            }
+          } catch (syncErr) {
+            console.warn('[db.getCalls] Fallback sync check failed:', syncErr);
+          }
+        }
         calls.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         resolve(calls);
       };

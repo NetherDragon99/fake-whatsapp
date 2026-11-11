@@ -484,6 +484,19 @@ export class ImportModal {
     const mediaIdMap = new Map(); // cleanName -> mediaId
     const mediaDurationMap = new Map(); // cleanName -> duration seconds
 
+    // Index message timestamps by normalized mediaName for authentic media dating
+    const msgTimestampByMediaName = new Map();
+    if (this.rawParseResult && this.rawParseResult.messages) {
+      for (const m of this.rawParseResult.messages) {
+        if (m.mediaName && m.timestamp) {
+          const norm = this.parser.normalizeFilename(m.mediaName);
+          if (!msgTimestampByMediaName.has(norm)) {
+            msgTimestampByMediaName.set(norm, m.timestamp);
+          }
+        }
+      }
+    }
+
     // Process media files and PDF thumbnails in advance
     let processedCount = 0;
     const totalMedia = this.extractedMediaFiles.size;
@@ -491,6 +504,7 @@ export class ImportModal {
     for (const [cleanName, fileItem] of this.extractedMediaFiles.entries()) {
       const mediaId = 'media_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
       mediaIdMap.set(cleanName, mediaId);
+      const itemTimestamp = msgTimestampByMediaName.get(cleanName) || Date.now();
 
       const type = this.parser.categorizeMedia(cleanName);
       let mimeType = 'application/octet-stream';
@@ -557,12 +571,14 @@ export class ImportModal {
         id: mediaId,
         chatId,
         filename: cleanName,
+        type,
         mimeType,
         blob,
         thumbnailBlob,
         size: fileItem.size,
         duration: audioDuration,
-        pageCount
+        pageCount,
+        timestamp: itemTimestamp
       });
 
       processedCount++;
