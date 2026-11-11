@@ -183,7 +183,20 @@ export class VirtualMessageScroller {
             ${Icons.lock('lock-icon', 13)}
             <span>Messages and calls are end-to-end encrypted. No one outside of this chat, not even WhatsApp, can read or listen to them.</span>
           </div>
+          <div class="empty-chat-demo-card">
+            <p>This conversation is empty.</p>
+            <button type="button" class="empty-demo-action-btn" id="btn-load-demo-into-chat">
+              ${Icons.download('', 16)}
+              <span>Load Default Demo Messages</span>
+            </button>
+          </div>
         </div>`;
+
+      this.container.querySelector('#btn-load-demo-into-chat')?.addEventListener('click', async () => {
+        if (window.app && window.app.loadDemoDataForChat) {
+          await window.app.loadDemoDataForChat(this.chatId);
+        }
+      });
       return;
     }
 

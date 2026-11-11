@@ -76,7 +76,7 @@ export class HomeView {
         </div>
 
         <!-- Floating Action Button (FAB) -->
-        <button class="wa-fab" id="home-fab-import" title="Import WhatsApp Export">
+        <button class="wa-fab" id="home-fab-import" title="Add Chat">
           ${Icons.chatPlus('fab-icon', 26)}
         </button>
 
@@ -313,10 +313,10 @@ export class HomeView {
         emptyDiv.innerHTML = `
           <div class="empty-icon-circle">${Icons.chatsTab('', 34)}</div>
           <h3>No conversations yet</h3>
-          <p>Tap below or use the green chat button to restore your WhatsApp chat archives.</p>
+          <p>Tap below or use the green chat button to create a new chat or import an archive.</p>
           <button type="button" class="empty-state-cta-btn" id="empty-btn-start-import">
-            ${Icons.download('', 18)}
-            <span>Restore Chats</span>
+            ${Icons.chatPlus('', 18)}
+            <span>Add Chat</span>
           </button>
         `;
         emptyDiv.querySelector('#empty-btn-start-import')?.addEventListener('click', () => {

@@ -1,4 +1,4 @@
-// Smart Import Engine & Interactive Perspective Setup Modal
+// Smart Import Engine & Add Chat Modal with New Chat Creator and Archive Import
 import { Icons } from '../icons.js';
 import { db } from '../db.js';
 import { WhatsAppParser } from '../parser.js';
@@ -12,8 +12,16 @@ export class ImportModal {
   constructor(options = {}) {
     this.onComplete = options.onComplete || (() => {});
     this.overlay = null;
+    this.resizer = null;
     this.parser = new WhatsAppParser();
     this.chatAvatarBlob = null;
+    this.newChatAvatarBlob = null;
+    this.pendingOverrideName = null;
+    this.pendingOverrideAvatar = null;
+    this.isAutoCreatingDemo = false;
+    this.rawParseResult = null;
+    this.extractedMediaFiles = new Map();
+    this.existingChatId = null;
   }
 
   show() {
@@ -32,16 +40,91 @@ export class ImportModal {
           <button type="button" class="sheet-fullscreen-back-btn" id="btn-import-fullscreen-back" aria-label="Close">
             ${Icons.arrowBack('', 22)}
           </button>
-          <div class="sheet-fullscreen-title">Import WhatsApp Archive</div>
+          <div class="sheet-fullscreen-title" id="import-fullscreen-title">Add Chat</div>
         </div>
         <div class="sheet-header">
           <button class="sheet-close-btn">${Icons.close('', 22)}</button>
-          <h2 class="sheet-title">Import WhatsApp Archive</h2>
+          <h2 class="sheet-title" id="import-sheet-title">Add Chat</h2>
         </div>
 
         <div class="sheet-body" id="import-body">
-          <!-- Step 1: File Selection -->
-          <div class="import-step" id="step-file-select">
+          <!-- Step 0: Menu Selection (Default view) -->
+          <div class="import-step" id="step-menu-select">
+            <div class="add-chat-menu-list">
+              <button type="button" class="add-chat-menu-item" id="btn-menu-new-chat">
+                <div class="menu-item-icon-circle green">
+                  ${Icons.chatPlus('', 24)}
+                </div>
+                <div class="menu-item-text-group">
+                  <div class="menu-item-title">New Private Chat</div>
+                  <div class="menu-item-subtitle">Start a new conversation with custom name & photo</div>
+                </div>
+                <div class="menu-item-chevron">${Icons.chevronRight('', 18)}</div>
+              </button>
+
+              <button type="button" class="add-chat-menu-item" id="btn-menu-import-archive">
+                <div class="menu-item-icon-circle teal">
+                  ${Icons.archive('', 24)}
+                </div>
+                <div class="menu-item-text-group">
+                  <div class="menu-item-title">Import Chat Archive</div>
+                  <div class="menu-item-subtitle">Import an exported .zip or .txt WhatsApp chat</div>
+                </div>
+                <div class="menu-item-chevron">${Icons.chevronRight('', 18)}</div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Step 1: Create New Chat Form -->
+          <div class="import-step" id="step-new-chat" style="display:none;">
+            <div class="new-chat-form-wrap">
+              <button type="button" class="substep-back-btn" id="btn-back-to-menu-from-new">
+                ${Icons.arrowBack('', 18)} <span>Back to options</span>
+              </button>
+
+              <!-- Profile Avatar Picker -->
+              <div class="new-chat-avatar-section">
+                <div class="new-chat-avatar-wrap" id="new-chat-avatar-wrap" title="Set profile photo">
+                  <div class="new-chat-avatar-circle" id="new-chat-avatar-preview">
+                    ${Icons.userAvatar('', 44)}
+                  </div>
+                  <label class="new-chat-avatar-badge" title="Upload photo">
+                    <input type="file" id="new-chat-avatar-input" accept="image/*" style="display:none;" />
+                    ${Icons.camera('', 16)}
+                  </label>
+                </div>
+                <div class="new-chat-avatar-label">Add profile photo</div>
+              </div>
+
+              <!-- Contact Name Input -->
+              <div class="new-chat-field-group">
+                <label for="new-chat-name-input" class="field-label">Contact or Chat Name</label>
+                <input type="text" id="new-chat-name-input" class="wa-text-input" placeholder="e.g. John Doe" dir="auto" />
+              </div>
+
+              <!-- Preload with Demo Data Option -->
+              <div class="new-chat-demo-card">
+                <label class="toggle-card-label" for="toggle-new-chat-demo">
+                  <div class="toggle-card-texts">
+                    <span class="toggle-card-title">Fill with default demo data</span>
+                    <span class="toggle-card-desc">Pre-load conversation with realistic messages, photos, voice notes, and calls</span>
+                  </div>
+                  <input type="checkbox" id="toggle-new-chat-demo" class="wa-checkbox" />
+                </label>
+              </div>
+
+              <!-- Submit Create Button -->
+              <button type="button" class="sheet-primary-btn" id="btn-submit-create-chat">
+                Create Chat
+              </button>
+            </div>
+          </div>
+
+          <!-- Step 2: File Selection (Import) -->
+          <div class="import-step" id="step-file-select" style="display:none;">
+            <button type="button" class="substep-back-btn" id="btn-back-to-menu-from-import">
+              ${Icons.arrowBack('', 18)} <span>Back to options</span>
+            </button>
             <div class="import-dropzone" id="import-dropzone">
               <div class="dropzone-icon">${Icons.archive('', 48)}</div>
               <h3>Select WhatsApp Export</h3>
@@ -50,14 +133,11 @@ export class ImportModal {
                 <span>Browse Files</span>
                 <input type="file" id="archive-file-input" accept=".zip,.txt" style="display:none;" />
               </label>
-              <button type="button" class="demo-archive-btn" id="btn-load-demo-archive">
-                Try with Built-in Demo Archive
-              </button>
               <div class="support-hint">Supports Android & iOS exports in English & Arabic</div>
             </div>
           </div>
 
-          <!-- Step 2: Unpacking & Progress -->
+          <!-- Step 3: Unpacking & Progress -->
           <div class="import-step" id="step-progress" style="display:none;">
             <div class="progress-wrap">
               <div class="progress-spinner"></div>
@@ -69,7 +149,7 @@ export class ImportModal {
             </div>
           </div>
 
-          <!-- Step 3: Perspective & Setup Form -->
+          <!-- Step 4: Perspective & Setup Form -->
           <div class="import-step" id="step-setup" style="display:none;">
             <div class="setup-form-wrap">
               <h3 class="setup-section-title">Who is "Me" in this conversation?</h3>
@@ -153,6 +233,10 @@ export class ImportModal {
       maxVh: 80,
       onClose: () => {
         this.chatAvatarBlob = null;
+        this.newChatAvatarBlob = null;
+        this.pendingOverrideName = null;
+        this.pendingOverrideAvatar = null;
+        this.isAutoCreatingDemo = false;
         if (this.overlay) {
           this.overlay.remove();
           this.overlay = null;
@@ -172,26 +256,78 @@ export class ImportModal {
       if (e.target === this.overlay) this.close();
     });
 
+    // --- Menu Selection Navigation ---
+    const menuSelectStep = this.overlay.querySelector('#step-menu-select');
+    const newChatStep = this.overlay.querySelector('#step-new-chat');
+    const fileSelectStep = this.overlay.querySelector('#step-file-select');
+
+    this.overlay.querySelector('#btn-menu-new-chat').addEventListener('click', () => {
+      this.showStep('step-new-chat');
+      this.setTitle('New Private Chat');
+      setTimeout(() => {
+        this.overlay.querySelector('#new-chat-name-input')?.focus();
+      }, 100);
+    });
+
+    this.overlay.querySelector('#btn-menu-import-archive').addEventListener('click', () => {
+      this.showStep('step-file-select');
+      this.setTitle('Import Chat Archive');
+    });
+
+    this.overlay.querySelector('#btn-back-to-menu-from-new').addEventListener('click', () => {
+      this.showStep('step-menu-select');
+      this.setTitle('Add Chat');
+    });
+
+    this.overlay.querySelector('#btn-back-to-menu-from-import').addEventListener('click', () => {
+      this.showStep('step-menu-select');
+      this.setTitle('Add Chat');
+    });
+
+    // --- New Chat Form Events ---
+    const newAvatarWrap = this.overlay.querySelector('#new-chat-avatar-wrap');
+    const newAvatarInput = this.overlay.querySelector('#new-chat-avatar-input');
+    const newAvatarPreview = this.overlay.querySelector('#new-chat-avatar-preview');
+
+    newAvatarWrap.addEventListener('click', () => {
+      newAvatarInput.click();
+    });
+
+    newAvatarInput.addEventListener('change', async (e) => {
+      if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        try {
+          const cropped = await openImageCropper(file);
+          if (cropped) {
+            this.newChatAvatarBlob = cropped;
+            newAvatarPreview.innerHTML = `<img src="${URL.createObjectURL(cropped)}" alt="Avatar" />`;
+          }
+        } catch (cropErr) {
+          console.warn('Avatar cropping failed or cancelled:', cropErr);
+        }
+        newAvatarInput.value = '';
+      }
+    });
+
+    this.overlay.querySelector('#btn-submit-create-chat').addEventListener('click', async () => {
+      const nameInput = this.overlay.querySelector('#new-chat-name-input');
+      const chatName = (nameInput.value || '').trim() || 'New Chat';
+      const isDemo = this.overlay.querySelector('#toggle-new-chat-demo').checked;
+
+      if (!isDemo) {
+        await this.createEmptyChat(chatName, this.newChatAvatarBlob);
+      } else {
+        await this.createChatWithDemo(chatName, this.newChatAvatarBlob);
+      }
+    });
+
+    // --- File Selection & Import Events ---
     const fileInput = this.overlay.querySelector('#archive-file-input');
     fileInput.addEventListener('change', (e) => {
       if (e.target.files && e.target.files[0]) {
         this.processSelectedFile(e.target.files[0]);
       }
     });
-
-    const demoBtn = this.overlay.querySelector('#btn-load-demo-archive');
-    if (demoBtn) {
-      demoBtn.addEventListener('click', async () => {
-        try {
-          const resp = await fetch(assetUrl('assets/demo_whatsapp_archive.zip'));
-          const blob = await resp.blob();
-          const file = new File([blob], 'demo_whatsapp_archive.zip', { type: 'application/zip' });
-          this.processSelectedFile(file);
-        } catch (err) {
-          showAlert({ title: 'Error Loading Demo', message: 'Could not load demo archive: ' + err.message });
-        }
-      });
-    }
 
     // Drag and drop handling
     const dropzone = this.overlay.querySelector('#import-dropzone');
@@ -209,18 +345,73 @@ export class ImportModal {
     });
   }
 
+  setTitle(title) {
+    const sheetTitle = this.overlay?.querySelector('#import-sheet-title');
+    const fsTitle = this.overlay?.querySelector('#import-fullscreen-title');
+    if (sheetTitle) sheetTitle.textContent = title;
+    if (fsTitle) fsTitle.textContent = title;
+  }
+
+  async createEmptyChat(name, avatarBlob) {
+    const chatId = 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+    const chatRecord = {
+      id: chatId,
+      name: name.trim() || 'New Chat',
+      avatarBlob: avatarBlob || null,
+      participantNames: [name.trim() || 'Contact', 'You'],
+      meParticipant: 'You',
+      isGroup: false,
+      isSelfChat: false,
+      isPinned: false,
+      isArchived: false,
+      isLocked: false,
+      unreadCount: 0,
+      lastMessage: null,
+      customFilterIds: [],
+      updatedAt: Date.now()
+    };
+
+    await db.saveChat(chatRecord);
+    Toast.show(`Chat created: ${chatRecord.name}`);
+    this.close();
+    if (this.onComplete) {
+      this.onComplete(chatId);
+    }
+  }
+
+  async createChatWithDemo(name, avatarBlob) {
+    this.pendingOverrideName = name;
+    this.pendingOverrideAvatar = avatarBlob;
+    this.isAutoCreatingDemo = true;
+    this.showStep('step-progress');
+    this.setTitle('Creating Chat...');
+    this.updateProgress(15, 'Loading built-in demo archive...');
+
+    try {
+      const resp = await fetch(assetUrl('assets/demo_whatsapp_archive.zip'));
+      const blob = await resp.blob();
+      const file = new File([blob], 'demo_whatsapp_archive.zip', { type: 'application/zip' });
+      await this.processSelectedFile(file);
+    } catch (err) {
+      console.error('Demo loading failed:', err);
+      showAlert({ title: 'Error Loading Demo', message: 'Could not load demo archive: ' + err.message });
+      this.showStep('step-new-chat');
+      this.setTitle('New Private Chat');
+    }
+  }
+
   updateProgress(percent, title, sub = '') {
-    const fill = this.overlay.querySelector('#progress-fill');
-    const titleEl = this.overlay.querySelector('#progress-title');
-    const subEl = this.overlay.querySelector('#progress-sub');
+    const fill = this.overlay?.querySelector('#progress-fill');
+    const titleEl = this.overlay?.querySelector('#progress-title');
+    const subEl = this.overlay?.querySelector('#progress-sub');
     if (fill) fill.style.width = `${percent}%`;
     if (titleEl) titleEl.textContent = title;
     if (subEl) subEl.textContent = sub;
   }
 
   showStep(stepId) {
-    this.overlay.querySelectorAll('.import-step').forEach((s) => (s.style.display = 'none'));
-    const target = this.overlay.querySelector(`#${stepId}`);
+    this.overlay?.querySelectorAll('.import-step').forEach((s) => (s.style.display = 'none'));
+    const target = this.overlay?.querySelector(`#${stepId}`);
     if (target) target.style.display = 'block';
   }
 
@@ -325,11 +516,19 @@ export class ImportModal {
       console.error('Import failed:', err);
       showAlert({ title: 'Import Failed', message: 'Import error: ' + (err.message || 'Failed to parse file') });
       this.showStep('step-file-select');
+      this.setTitle('Import Chat Archive');
     }
   }
 
   async showSetupStep(parseResult) {
+    if (this.isAutoCreatingDemo) {
+      // Direct automatic import with user's chosen custom name and avatar
+      await this.executeFinalImport();
+      return;
+    }
+
     this.showStep('step-setup');
+    this.setTitle('Chat Setup');
     const participantsList = this.overlay.querySelector('#participants-list');
     participantsList.innerHTML = '';
 
@@ -463,18 +662,32 @@ export class ImportModal {
     });
 
     // Wire Finish Button
-    const finishBtn = this.overlay.querySelector('#btn-finish-import');
-    finishBtn.onclick = () => this.executeFinalImport();
+    this.overlay.querySelector('#btn-finish-import').onclick = () => {
+      this.executeFinalImport();
+    };
   }
 
   async executeFinalImport() {
-    const selectedMeRadio = this.overlay.querySelector('input[name="me-selector"]:checked');
-    const meName = selectedMeRadio ? selectedMeRadio.value : '';
-    const isSelfChat = this.overlay.querySelector('#toggle-self-chat').checked;
-    const isGroup = this.overlay.querySelector('#toggle-group-chat').checked;
-    const chatName = this.overlay.querySelector('#chat-display-name').value.trim() || 'WhatsApp Chat';
+    let meName = '';
+    let isSelfChat = false;
+    let isGroup = false;
+    let chatName = 'WhatsApp Chat';
+    let overlapChoice = 'new';
 
-    const overlapChoice = this.overlay.querySelector('input[name="overlap-choice"]:checked')?.value || 'new';
+    if (this.isAutoCreatingDemo) {
+      chatName = this.pendingOverrideName || 'Demo Chat';
+      meName = (this.rawParseResult && this.rawParseResult.participants && this.rawParseResult.participants[0]) || 'You';
+      isSelfChat = false;
+      isGroup = false;
+      overlapChoice = 'new';
+    } else {
+      const selectedMeRadio = this.overlay.querySelector('input[name="me-selector"]:checked');
+      meName = selectedMeRadio ? selectedMeRadio.value : '';
+      isSelfChat = this.overlay.querySelector('#toggle-self-chat').checked;
+      isGroup = this.overlay.querySelector('#toggle-group-chat').checked;
+      chatName = this.overlay.querySelector('#chat-display-name').value.trim() || 'WhatsApp Chat';
+      overlapChoice = this.overlay.querySelector('input[name="overlap-choice"]:checked')?.value || 'new';
+    }
 
     this.showStep('step-progress');
     this.updateProgress(75, 'Processing media & PDF previews...');
@@ -552,15 +765,14 @@ export class ImportModal {
           pageCount = pdfDoc.numPages;
 
           const page = await pdfDoc.getPage(1);
-          const viewport = page.getViewport({ scale: 1.2 });
+          const viewport = page.getViewport({ scale: 0.5 });
           const canvas = document.createElement('canvas');
-          canvas.width = viewport.width;
+          const context = canvas.getContext('2d');
           canvas.height = viewport.height;
-          const ctx = canvas.getContext('2d');
+          canvas.width = viewport.width;
 
-          await page.render({ canvasContext: ctx, viewport }).promise;
-
-          thumbnailBlob = await new Promise((res) => canvas.toBlob(res, 'image/png', 0.85));
+          await page.render({ canvasContext: context, viewport: viewport }).promise;
+          thumbnailBlob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.8));
         } catch (pdfErr) {
           console.warn('[PDF.js fallback] Failed to render thumbnail for:', cleanName, pdfErr);
           thumbnailBlob = null;
@@ -630,10 +842,11 @@ export class ImportModal {
 
     // Save Chat metadata
     const lastMsg = messages[messages.length - 1] || null;
+    const finalAvatar = this.pendingOverrideAvatar || this.chatAvatarBlob || null;
     const chatRecord = {
       id: chatId,
       name: chatName,
-      avatarBlob: this.chatAvatarBlob || null,
+      avatarBlob: finalAvatar,
       participantNames: this.rawParseResult.participants,
       meParticipant: meName,
       isGroup,
@@ -654,8 +867,8 @@ export class ImportModal {
 
     await db.saveChat(chatRecord);
 
-    this.updateProgress(100, 'Restoration complete!');
-    Toast.show(`Chat restored: ${chatName}`);
+    this.updateProgress(100, 'Creation complete!');
+    Toast.show(`Chat ready: ${chatName}`);
 
     setTimeout(() => {
       this.close();
@@ -667,6 +880,10 @@ export class ImportModal {
 
   close() {
     this.chatAvatarBlob = null;
+    this.newChatAvatarBlob = null;
+    this.pendingOverrideName = null;
+    this.pendingOverrideAvatar = null;
+    this.isAutoCreatingDemo = false;
     if (this.resizer && this.resizer.isOpen) {
       this.resizer.close();
       return;
