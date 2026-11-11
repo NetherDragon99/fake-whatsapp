@@ -13,6 +13,8 @@ export class Router {
 
     window.addEventListener('hashchange', () => {
       if (!this.isInternalNavigating) {
+        const newHash = window.location.hash || '#/chats';
+        this.syncHistoryStack(newHash);
         this.handleRoute();
       }
     });
@@ -21,14 +23,77 @@ export class Router {
       if (this.isInternalNavigating) {
         return;
       }
-      this.handleBack(true);
+      this.handlePopState(e);
     });
   }
 
+  saveHistoryStack() {
+    try {
+      sessionStorage.setItem('wa_history_stack', JSON.stringify(this.historyStack));
+    } catch (e) {}
+  }
+
+  loadHistoryStack() {
+    try {
+      const raw = sessionStorage.getItem('wa_history_stack');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.filter(item => typeof item === 'string' && item.startsWith('#/'));
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  setupRootGuard() {
+    try {
+      const currentHash = (window.location.hash || '#/chats').split('?')[0];
+      if (currentHash === '#/chats') {
+        if (!window.history.state || window.history.state.guard !== 'active') {
+          window.history.replaceState({ guard: 'root' }, '');
+          window.history.pushState({ guard: 'active' }, '');
+        }
+      }
+    } catch (e) {}
+  }
+
   init() {
-    const currentHash = window.location.hash || '#/chats';
-    this.historyStack = [currentHash];
-    if (!window.location.hash) {
+    const rawHash = window.location.hash;
+    const currentHash = rawHash || '#/chats';
+
+    const savedStack = this.loadHistoryStack();
+    if (savedStack && savedStack.length > 0) {
+      const lastIndex = savedStack.lastIndexOf(currentHash);
+      if (lastIndex !== -1) {
+        this.historyStack = savedStack.slice(0, lastIndex + 1);
+      } else {
+        if (savedStack[0] === '#/chats') {
+          this.historyStack = [...savedStack, currentHash];
+        } else {
+          this.historyStack = ['#/chats', currentHash];
+        }
+      }
+    } else {
+      if (currentHash === '#/chats') {
+        this.historyStack = ['#/chats'];
+      } else if (currentHash.startsWith('#/chat/') && currentHash.endsWith('/info')) {
+        const baseChat = currentHash.replace('/info', '');
+        this.historyStack = ['#/chats', baseChat, currentHash];
+      } else {
+        this.historyStack = ['#/chats', currentHash];
+      }
+    }
+
+    // Guarantee that '#/chats' is always the absolute foundation of the history stack
+    if (this.historyStack.length === 0 || this.historyStack[0] !== '#/chats') {
+      this.historyStack.unshift('#/chats');
+    }
+
+    this.saveHistoryStack();
+    this.setupRootGuard();
+
+    if (!rawHash) {
       this.isInternalNavigating = true;
       window.location.hash = '#/chats';
       this.handleRoute().finally(() => {
@@ -40,15 +105,24 @@ export class Router {
   }
 
   async navigate(hash) {
+    if (!hash) return;
+    const cleanHash = hash.split('?')[0];
     const current = this.historyStack[this.historyStack.length - 1];
+
     if (current !== hash) {
-      if (hash === '#/chats') {
+      if (cleanHash === '#/chats') {
         this.historyStack = ['#/chats'];
-      } else if (hash === '#/calls' || hash === '#/settings') {
+      } else if (cleanHash === '#/calls' || cleanHash === '#/settings') {
         this.historyStack = ['#/chats', hash];
       } else {
-        this.historyStack.push(hash);
+        if (this.historyStack.length === 0 || this.historyStack[0] !== '#/chats') {
+          this.historyStack.unshift('#/chats');
+        }
+        if (this.historyStack[this.historyStack.length - 1] !== hash) {
+          this.historyStack.push(hash);
+        }
       }
+      this.saveHistoryStack();
     }
 
     this.isInternalNavigating = true;
@@ -60,6 +134,40 @@ export class Router {
         this.isInternalNavigating = false;
       }, 50);
     }
+  }
+
+  syncHistoryStack(newHash) {
+    if (!newHash) newHash = '#/chats';
+    const cleanHash = newHash.split('?')[0];
+
+    if (cleanHash === '#/chats') {
+      this.historyStack = ['#/chats'];
+      this.saveHistoryStack();
+      return;
+    }
+
+    // If newHash is the previous item in stack (user navigated back in browser)
+    if (this.historyStack.length > 1 && this.historyStack[this.historyStack.length - 2] === newHash) {
+      this.historyStack.pop();
+      this.saveHistoryStack();
+      return;
+    }
+
+    // If already at top of stack, do nothing
+    if (this.historyStack[this.historyStack.length - 1] === newHash) {
+      return;
+    }
+
+    // Otherwise, push newHash ensuring root foundation
+    if (cleanHash === '#/calls' || cleanHash === '#/settings') {
+      this.historyStack = ['#/chats', newHash];
+    } else {
+      if (this.historyStack.length === 0 || this.historyStack[0] !== '#/chats') {
+        this.historyStack.unshift('#/chats');
+      }
+      this.historyStack.push(newHash);
+    }
+    this.saveHistoryStack();
   }
 
   pushOverlay(id, closeFn) {
@@ -75,67 +183,21 @@ export class Router {
     this.handleBack(false);
   }
 
-  async handleBack(fromPopState = false) {
-    // 1. Check open registered overlays / drawers / modals
-    if (this.overlayStack.length > 0) {
-      const topOverlay = this.overlayStack.pop();
-      if (typeof topOverlay.closeFn === 'function') {
-        try {
-          topOverlay.closeFn();
-        } catch (e) {
-          console.warn('[Router] Error closing registered overlay:', e);
-        }
-      }
-      return true;
-    }
-
-    // 2. Fallback DOM inspection for active modals/drawers
-    const closedDomOverlay = this.closeActiveDomOverlay();
-    if (closedDomOverlay) {
-      return true;
-    }
-
-    // 3. Selection mode in HomeView
-    if (this.currentViewInstance && this.currentViewInstance.isSelectionMode) {
-      this.currentViewInstance.exitSelectionMode();
-      return true;
-    }
-
-    // 4. Subpage / page navigation back
-    if (this.historyStack.length > 1) {
-      this.historyStack.pop();
-      const targetHash = this.historyStack[this.historyStack.length - 1];
-      this.isInternalNavigating = true;
-      try {
-        window.location.hash = targetHash;
-        await this.handleRoute();
-      } finally {
-        setTimeout(() => {
-          this.isInternalNavigating = false;
-        }, 50);
-      }
-      return true;
-    }
-
-    // 5. If on bottom tab #/calls or #/settings, return to #/chats
-    const currentHash = (window.location.hash || '#/chats').split('?')[0];
-    if (currentHash === '#/calls' || currentHash === '#/settings') {
-      this.historyStack = ['#/chats'];
-      this.isInternalNavigating = true;
-      try {
-        window.location.hash = '#/chats';
-        await this.handleRoute();
-      } finally {
-        setTimeout(() => {
-          this.isInternalNavigating = false;
-        }, 50);
-      }
-      return true;
-    }
-
-    // 6. At root #/chats screen: Prompt with exit dialog
-    this.showExitDialog();
-    return true;
+  hasActiveDomOverlay() {
+    return Boolean(
+      document.querySelector('.media-editor-modal') ||
+      document.querySelector('.sticker-drawer-overlay.active, .wa-sticker-drawer-overlay.active, .wa-sticker-drawer-overlay') ||
+      document.querySelector('.wa-lightbox-overlay') ||
+      document.querySelector('.stacked-album-overlay') ||
+      (document.querySelector('.custom-dialog-overlay.active') && !this.isExitDialogVisible) ||
+      document.querySelector('.pin-dialog-overlay') ||
+      document.querySelector('.cropper-modal-overlay.active') ||
+      document.querySelector('.floating-profile-modal-overlay.active') ||
+      document.querySelector('.wa-export-dialog-overlay.active') ||
+      document.querySelector('.wa-modal-overlay') ||
+      document.querySelector('.preview-color-bottom-sheet.open') ||
+      (this.currentViewInstance && this.currentViewInstance.isSelectionMode)
+    );
   }
 
   closeActiveDomOverlay() {
@@ -156,8 +218,8 @@ export class Router {
       return true;
     }
 
-    // Lightbox
-    const lightbox = document.querySelector('.wa-lightbox-overlay');
+    // Lightbox & Stacked Album
+    const lightbox = document.querySelector('.wa-lightbox-overlay') || document.querySelector('.stacked-album-overlay');
     if (lightbox) {
       const closeBtn = lightbox.querySelector('.lightbox-back-btn');
       if (closeBtn) closeBtn.click();
@@ -165,7 +227,7 @@ export class Router {
       return true;
     }
 
-    // Custom dialog
+    // Custom dialog (not the exit dialog)
     const customDialog = document.querySelector('.custom-dialog-overlay.active');
     if (customDialog && !this.isExitDialogVisible) {
       const cancelBtn = customDialog.querySelector('.dialog-btn-cancel');
@@ -237,6 +299,129 @@ export class Router {
     return false;
   }
 
+  handlePopState(e) {
+    // 1. If an overlay / modal / drawer is open, dismiss it and stay on the current view
+    if (this.overlayStack.length > 0 || this.hasActiveDomOverlay()) {
+      this.handleBack(true);
+      return;
+    }
+
+    // 2. If exit dialog is already showing, cancel it
+    if (this.isExitDialogVisible) {
+      const exitDialog = document.querySelector('.custom-dialog-overlay.active');
+      if (exitDialog) {
+        const cancelBtn = exitDialog.querySelector('.dialog-btn-cancel');
+        if (cancelBtn) cancelBtn.click();
+        else exitDialog.remove();
+      }
+      this.isExitDialogVisible = false;
+      this.setupRootGuard();
+      return;
+    }
+
+    const currentHash = (window.location.hash || '#/chats').split('?')[0];
+
+    // 3. Check if user was already at root '#/chats' when back was pressed
+    if (
+      currentHash === '#/chats' &&
+      this.historyStack.length === 1 &&
+      this.historyStack[0] === '#/chats'
+    ) {
+      // User pressed back at the root home chats screen -> Prompt with exit confirmation dialog
+      this.showExitDialog();
+      return;
+    }
+
+    // 4. Normal route popstate: synchronize stack and render view
+    this.syncHistoryStack(window.location.hash || '#/chats');
+    this.handleRoute();
+  }
+
+  async handleBack(fromPopState = false) {
+    // 1. Check open registered overlays / drawers / modals
+    if (this.overlayStack.length > 0) {
+      const topOverlay = this.overlayStack.pop();
+      if (typeof topOverlay.closeFn === 'function') {
+        try {
+          topOverlay.closeFn();
+        } catch (e) {
+          console.warn('[Router] Error closing registered overlay:', e);
+        }
+      }
+      return true;
+    }
+
+    // 2. Fallback DOM inspection for active modals/drawers
+    const closedDomOverlay = this.closeActiveDomOverlay();
+    if (closedDomOverlay) {
+      return true;
+    }
+
+    // 3. Selection mode in HomeView
+    if (this.currentViewInstance && this.currentViewInstance.isSelectionMode) {
+      this.currentViewInstance.exitSelectionMode();
+      return true;
+    }
+
+    const currentHash = (window.location.hash || '#/chats').split('?')[0];
+    const fullCurrentHash = window.location.hash || '#/chats';
+
+    // 4. Subpage / page navigation back
+    if (this.historyStack.length > 1) {
+      this.historyStack.pop();
+      let targetHash = this.historyStack[this.historyStack.length - 1];
+
+      // Avoid looping if targetHash matches the current active hash
+      while (
+        this.historyStack.length > 1 &&
+        (targetHash === fullCurrentHash || targetHash.split('?')[0] === currentHash)
+      ) {
+        this.historyStack.pop();
+        targetHash = this.historyStack[this.historyStack.length - 1];
+      }
+
+      // If targetHash is still same as current or invalid, fallback to '#/chats'
+      if (!targetHash || targetHash === fullCurrentHash || targetHash.split('?')[0] === currentHash) {
+        targetHash = '#/chats';
+        this.historyStack = ['#/chats'];
+      }
+
+      this.saveHistoryStack();
+      this.isInternalNavigating = true;
+      try {
+        window.location.hash = targetHash;
+        await this.handleRoute();
+      } finally {
+        setTimeout(() => {
+          this.isInternalNavigating = false;
+        }, 50);
+      }
+      return true;
+    }
+
+    // 5. CRITICAL BACKUP NAVIGATION:
+    // If anywhere other than '#/chats' (e.g. chat, info, calls, settings, etc.)
+    // and history was missing, depleted or corrupted, the backup navigation MUST ALWAYS be '#/chats'!
+    if (currentHash !== '#/chats') {
+      this.historyStack = ['#/chats'];
+      this.saveHistoryStack();
+      this.isInternalNavigating = true;
+      try {
+        window.location.hash = '#/chats';
+        await this.handleRoute();
+      } finally {
+        setTimeout(() => {
+          this.isInternalNavigating = false;
+        }, 50);
+      }
+      return true;
+    }
+
+    // 6. ONLY at root '#/chats' screen: Prompt with exit dialog
+    this.showExitDialog();
+    return true;
+  }
+
   async showExitDialog() {
     if (this.isExitDialogVisible) return;
     this.isExitDialogVisible = true;
@@ -253,29 +438,48 @@ export class Router {
     this.isExitDialogVisible = false;
     if (confirmed) {
       this.exitApp();
+    } else {
+      this.setupRootGuard();
     }
   }
 
   exitApp() {
+    // 1. Cordova/Capacitor/PhoneGap/Android WebAPK support if available
+    try {
+      if (window.navigator && window.navigator.app && typeof window.navigator.app.exitApp === 'function') {
+        window.navigator.app.exitApp();
+        return;
+      }
+    } catch (e) {}
+
+    // 2. Direct window.close()
     try {
       window.close();
     } catch (e) {}
-    
-    // Display clean native exit fallback screen if window.close() is blocked by browser policy
-    document.body.innerHTML = `
-      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:#0b141a; color:#e9edef; font-family:sans-serif; text-align:center; padding:24px;">
-        <div style="margin-bottom:20px;">
-          <svg viewBox="0 0 24 24" width="64" height="64" fill="#25d366">
-            <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2z"/>
-          </svg>
-        </div>
-        <h2 style="font-size:20px; font-weight:600; margin-bottom:8px;">WhatsApp Closed</h2>
-        <p style="color:#8696a0; font-size:14px; max-width:280px; margin-bottom:24px;">You can now safely close this browser tab or window.</p>
-        <button type="button" onclick="window.location.reload()" style="padding:10px 24px; border-radius:20px; border:none; background:#25d366; color:#0b141a; font-weight:600; cursor:pointer;">
-          Reopen WhatsApp
-        </button>
-      </div>
-    `;
+
+    // 3. Self-window script-opened trick
+    try {
+      window.open('', '_self', '');
+      window.close();
+    } catch (e) {}
+
+    // 4. In browsers where window.close() is blocked:
+    // Do NOT render any "WhatsApp Closed - You can now safely close this browser tab" screen.
+    // Cleanly navigate history back or replace with about:blank and blank the viewport.
+    setTimeout(() => {
+      try {
+        if (window.history.length > 1) {
+          window.history.back();
+        }
+      } catch (e) {}
+
+      try {
+        window.location.replace('about:blank');
+      } catch (e) {
+        document.documentElement.innerHTML = '';
+        document.body.style.background = '#000000';
+      }
+    }, 100);
   }
 
   async handleRoute() {
@@ -307,6 +511,11 @@ export class Router {
     if (!matchedRoute) {
       this.navigate('#/chats');
       return;
+    }
+
+    // Re-arm root guard if entering '#/chats'
+    if (pathPart === '/chats' || pathPart === 'chats') {
+      this.setupRootGuard();
     }
 
     // Cleanup previous view if needed
