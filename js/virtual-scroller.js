@@ -707,7 +707,14 @@ export class VirtualMessageScroller {
     // Audio Voice Note
     if (type === 'audio') {
       if (mediaUrl) {
-        return audioManager.createVoiceNoteCard(mediaItem || { filename: msg.mediaName }, mediaUrl);
+        const item = mediaItem || { filename: msg.mediaName, duration: msg.duration };
+        if (item && !item.duration && msg.duration) {
+          item.duration = msg.duration;
+        }
+        if (item && !item.filename && msg.mediaName) {
+          item.filename = msg.mediaName;
+        }
+        return audioManager.createVoiceNoteCard(item, mediaUrl);
       } else {
         const audioHolder = document.createElement('div');
         audioHolder.className = 'media-placeholder';

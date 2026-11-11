@@ -482,6 +482,7 @@ export class ImportModal {
     const chatId = (overlapChoice === 'merge' && this.existingChatId) ? this.existingChatId : 'chat_' + Date.now();
     const mediaBatch = [];
     const mediaIdMap = new Map(); // cleanName -> mediaId
+    const mediaDurationMap = new Map(); // cleanName -> duration seconds
 
     // Process media files and PDF thumbnails in advance
     let processedCount = 0;
@@ -496,8 +497,33 @@ export class ImportModal {
       if (type === 'sticker') mimeType = 'image/webp';
       if (type === 'image') mimeType = 'image/jpeg';
       if (type === 'video') mimeType = 'video/mp4';
-      if (type === 'audio') mimeType = 'audio/ogg';
       if (type === 'pdf') mimeType = 'application/pdf';
+      if (type === 'audio') {
+        if (/\.(opus|ogg)$/i.test(cleanName)) mimeType = 'audio/ogg; codecs=opus';
+        else if (/\.(m4a|aac)$/i.test(cleanName)) mimeType = 'audio/mp4';
+        else if (/\.mp3$/i.test(cleanName)) mimeType = 'audio/mpeg';
+        else if (/\.wav$/i.test(cleanName)) mimeType = 'audio/wav';
+        else if (/\.webm$/i.test(cleanName)) mimeType = 'audio/webm';
+        else mimeType = 'audio/ogg';
+      }
+
+      let audioDuration = 0;
+      if (type === 'audio') {
+        try {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) {
+            const ctx = new AudioContextClass();
+            const decoded = await ctx.decodeAudioData(fileItem.data.buffer.slice(0));
+            if (decoded && isFinite(decoded.duration)) {
+              audioDuration = Math.max(1, Math.round(decoded.duration));
+            }
+            try { ctx.close(); } catch (e) {}
+          }
+        } catch (decErr) {
+          audioDuration = 0;
+        }
+        mediaDurationMap.set(cleanName, audioDuration);
+      }
 
       const blob = new Blob([fileItem.data], { type: mimeType });
       let thumbnailBlob = null;
@@ -535,6 +561,7 @@ export class ImportModal {
         blob,
         thumbnailBlob,
         size: fileItem.size,
+        duration: audioDuration,
         pageCount
       });
 
@@ -551,19 +578,25 @@ export class ImportModal {
     const messages = this.rawParseResult.messages.map((m) => {
       const isOutgoing = isSelfChat || (m.sender === meName);
       let linkedMediaId = null;
+      let cleanMediaName = null;
 
       if (m.mediaName) {
-        const clean = this.parser.normalizeFilename(m.mediaName);
-        if (mediaIdMap.has(clean)) {
-          linkedMediaId = mediaIdMap.get(clean);
+        cleanMediaName = this.parser.normalizeFilename(m.mediaName);
+        if (mediaIdMap.has(cleanMediaName)) {
+          linkedMediaId = mediaIdMap.get(cleanMediaName);
         }
       }
+
+      const isVoice = m.mediaType === 'audio' || (cleanMediaName && /\.(opus|ogg|m4a|aac|mp3|wav)$/i.test(cleanMediaName));
+      const mediaDur = cleanMediaName ? (mediaDurationMap.get(cleanMediaName) || 0) : 0;
 
       return {
         ...m,
         chatId,
         isOutgoing,
-        mediaId: linkedMediaId
+        mediaId: linkedMediaId,
+        isVoiceNote: isVoice,
+        duration: m.duration || mediaDur || 0
       };
     });
 

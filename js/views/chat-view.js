@@ -539,7 +539,15 @@ export class ChatView {
       holdingTimer.textContent = '0:00';
       sendBtn.classList.add('recording-active');
 
-      await this.voiceRecorder.start();
+      const started = await this.voiceRecorder.start();
+      if (!started) {
+        this.resetVoiceUI();
+        isHolding = false;
+        try {
+          sendBtn.releasePointerCapture(e.pointerId);
+        } catch (err) {}
+        return;
+      }
     };
 
     const onPointerMove = async (e) => {
@@ -602,7 +610,8 @@ export class ChatView {
       } catch (err) {}
 
       if (this.voiceRecorder.isRecording) {
-        if (this.voiceRecorder.elapsedSeconds >= 1) {
+        const recordingDuration = (Date.now() - this.voiceRecorder.startTime) / 1000;
+        if (recordingDuration >= 0.8) {
           await this.voiceRecorder.stop(true);
         } else {
           await this.voiceRecorder.stop(false);
@@ -636,7 +645,7 @@ export class ChatView {
     });
 
     // Pause / Resume button in locked panel
-    pauseResumeBtn.addEventListener('click', () => {
+    pauseResumeBtn.addEventListener('click', async () => {
       if (this.voiceRecorder.isPaused) {
         // Resume recording
         this.stopPreviewAudio();
@@ -650,7 +659,7 @@ export class ChatView {
         pauseResumeBtn.innerHTML = '<span class="pause-bars">▶</span> <span class="pause-label">Resume</span>';
         if (waveformRow) waveformRow.style.display = 'none';
         if (previewRow) previewRow.style.display = 'flex';
-        this.setupPreviewAudio();
+        await this.setupPreviewAudio();
       }
     });
 
@@ -662,28 +671,31 @@ export class ChatView {
     });
   }
 
-  setupPreviewAudio() {
+  async setupPreviewAudio() {
     this.stopPreviewAudio();
-    const blob = this.voiceRecorder ? this.voiceRecorder.getPreviewBlob() : null;
-    if (!blob) return;
+    const blob = this.voiceRecorder ? await this.voiceRecorder.getPreviewBlob() : null;
+    if (!blob || blob.size === 0) return;
 
     try {
       const url = URL.createObjectURL(blob);
       this.previewAudio = new Audio(url);
+      const totalSeconds = this.voiceRecorder.elapsedSeconds || 1;
 
       const playBtn = this.container.querySelector('#btn-voice-preview-play');
       const playIconSvg = this.container.querySelector('#icon-preview-play-svg');
       const progressBar = this.container.querySelector('#voice-preview-progress');
       const timeEl = this.container.querySelector('#voice-preview-time');
 
-      if (timeEl) timeEl.textContent = VoiceRecorder.formatDuration(this.voiceRecorder.elapsedSeconds);
+      if (timeEl) timeEl.textContent = VoiceRecorder.formatDuration(totalSeconds);
       if (progressBar) progressBar.style.width = '0%';
       if (playIconSvg) playIconSvg.innerHTML = '<path d="M8 5v14l11-7z"/>';
 
       this.previewAudio.ontimeupdate = () => {
         if (!this.previewAudio) return;
         const cur = this.previewAudio.currentTime;
-        const dur = this.previewAudio.duration || this.voiceRecorder.elapsedSeconds;
+        const dur = (isFinite(this.previewAudio.duration) && this.previewAudio.duration > 0)
+          ? this.previewAudio.duration
+          : totalSeconds;
         if (timeEl) timeEl.textContent = VoiceRecorder.formatDuration(Math.floor(cur));
         if (progressBar && dur > 0) {
           const pct = Math.min(100, (cur / dur) * 100);
@@ -694,13 +706,13 @@ export class ChatView {
       this.previewAudio.onended = () => {
         if (playIconSvg) playIconSvg.innerHTML = '<path d="M8 5v14l11-7z"/>';
         if (progressBar) progressBar.style.width = '0%';
-        if (timeEl) timeEl.textContent = VoiceRecorder.formatDuration(this.voiceRecorder.elapsedSeconds);
+        if (timeEl) timeEl.textContent = VoiceRecorder.formatDuration(totalSeconds);
       };
 
       playBtn.onclick = () => {
         if (!this.previewAudio) return;
         if (this.previewAudio.paused) {
-          this.previewAudio.play();
+          this.previewAudio.play().catch(e => console.warn('[PreviewAudio] Play error:', e));
           if (playIconSvg) playIconSvg.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
         } else {
           this.previewAudio.pause();
@@ -887,13 +899,38 @@ export class ChatView {
     this.scroller.scrollToBottom(true);
   }
 
+  generatePttFilename(extension = 'opus') {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const seq = String(Math.floor(1000 + Math.random() * 9000));
+    return `PTT-${year}${month}${day}-WA${seq}.${extension}`;
+  }
+
   async sendVoiceNoteMessage(audioBlob, duration) {
+    if (!audioBlob || audioBlob.size === 0) {
+      Toast.show('No audio recorded');
+      return;
+    }
+
     const mediaId = db.generateUUID();
+    let ext = 'opus';
+    if (audioBlob.type) {
+      if (audioBlob.type.includes('mp4') || audioBlob.type.includes('aac')) ext = 'm4a';
+      else if (audioBlob.type.includes('ogg')) ext = 'opus';
+      else if (audioBlob.type.includes('webm')) ext = 'opus';
+      else if (audioBlob.type.includes('wav')) ext = 'wav';
+    }
+
+    const pttFilename = this.generatePttFilename(ext);
+
     const mediaItem = {
       id: mediaId,
       chatId: this.chatId,
-      filename: `voice_note_${Date.now()}.opus`,
+      filename: pttFilename,
       type: 'audio',
+      mimeType: audioBlob.type || 'audio/ogg; codecs=opus',
       size: audioBlob.size,
       blob: audioBlob,
       duration: duration,
@@ -910,7 +947,7 @@ export class ChatView {
       isOutgoing: true,
       text: '',
       mediaId: mediaId,
-      mediaName: `voice_note_${Date.now()}.opus`,
+      mediaName: pttFilename,
       mediaType: 'audio',
       isVoiceNote: true,
       duration: duration

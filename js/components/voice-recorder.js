@@ -1,4 +1,6 @@
-// Voice Recording Controller: Press & Hold, Swipe Up to Lock, Pause/Resume, Waveform & Discard
+// Voice Recording Controller: Real Microphone Capture, Swipe Up to Lock, Pause/Resume, Waveform & Discard
+import { Toast } from './toast.js';
+
 export class VoiceRecorder {
   constructor(options = {}) {
     this.onLocked = options.onLocked || (() => {});
@@ -15,60 +17,89 @@ export class VoiceRecorder {
     this.isRecording = false;
     this.isLocked = false;
     this.isPaused = false;
-    this.isSimulated = false;
-
-    this.startY = 0;
-    this.startX = 0;
-    this.longPressTimer = null;
     this.hasStartedRecording = false;
+  }
+
+  getSupportedMimeType() {
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/ogg;codecs=opus',
+      'audio/ogg',
+      'audio/mp4',
+      'audio/aac',
+      ''
+    ];
+    for (const c of candidates) {
+      if (!c) return '';
+      if (typeof MediaRecorder !== 'undefined' && typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported(c)) {
+        return c;
+      }
+    }
+    return '';
   }
 
   async start() {
     this.audioChunks = [];
     this.elapsedSeconds = 0;
-    this.isRecording = true;
+    this.isRecording = false;
     this.isPaused = false;
-    this.hasStartedRecording = true;
+    this.hasStartedRecording = false;
 
-    try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        this.audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        
-        let mimeType = 'audio/webm;codecs=opus';
-        if (!MediaRecorder.isTypeSupported(mimeType)) {
-          mimeType = MediaRecorder.isTypeSupported('audio/ogg;codecs=opus') ? 'audio/ogg;codecs=opus' : '';
-        }
-
-        this.mediaRecorder = mimeType ? new MediaRecorder(this.audioStream, { mimeType }) : new MediaRecorder(this.audioStream);
-
-        this.mediaRecorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) {
-            this.audioChunks.push(e.data);
-          }
-        };
-
-        this.mediaRecorder.start(100);
-        this.isSimulated = false;
-      } else {
-        this.isSimulated = true;
-      }
-    } catch (err) {
-      console.warn('[VoiceRecorder] Microphone permission denied or unavailable, using high-fidelity simulated note:', err);
-      this.isSimulated = true;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      Toast.show('Audio recording is not supported in this browser');
+      return false;
     }
 
-    this.startTime = Date.now();
-    this.startTimer();
+    try {
+      this.audioStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+    } catch (err) {
+      console.warn('[VoiceRecorder] getUserMedia failed or denied:', err);
+      Toast.show('Microphone permission denied. Please allow microphone access in your browser settings');
+      return false;
+    }
+
+    try {
+      const mimeType = this.getSupportedMimeType();
+      this.mediaRecorder = mimeType
+        ? new MediaRecorder(this.audioStream, { mimeType })
+        : new MediaRecorder(this.audioStream);
+
+      this.mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          this.audioChunks.push(e.data);
+        }
+      };
+
+      // Deliver audio data every 100ms
+      this.mediaRecorder.start(100);
+      this.isRecording = true;
+      this.hasStartedRecording = true;
+      this.startTime = Date.now();
+      this.startTimer();
+      return true;
+    } catch (recErr) {
+      console.error('[VoiceRecorder] Failed to start MediaRecorder:', recErr);
+      this.cleanupStream();
+      Toast.show('Failed to start microphone recording');
+      return false;
+    }
   }
 
   startTimer() {
     clearInterval(this.timerInterval);
     this.timerInterval = setInterval(() => {
       if (!this.isPaused) {
-        this.elapsedSeconds++;
+        this.elapsedSeconds = Math.max(1, Math.round((Date.now() - this.startTime) / 1000));
         this.onUpdateTimer(this.elapsedSeconds);
       }
-    }, 1000);
+    }, 500);
     this.onUpdateTimer(this.elapsedSeconds);
   }
 
@@ -81,7 +112,9 @@ export class VoiceRecorder {
           this.mediaRecorder.requestData();
         }
         this.mediaRecorder.pause();
-      } catch (e) {}
+      } catch (e) {
+        console.warn('[VoiceRecorder] Error pausing recorder:', e);
+      }
     }
   }
 
@@ -91,13 +124,25 @@ export class VoiceRecorder {
     if (this.mediaRecorder && this.mediaRecorder.state === 'paused') {
       try {
         this.mediaRecorder.resume();
-      } catch (e) {}
+      } catch (e) {
+        console.warn('[VoiceRecorder] Error resuming recorder:', e);
+      }
     }
   }
 
-  getPreviewBlob() {
-    if (this.isSimulated || !this.mediaRecorder || this.audioChunks.length === 0) {
-      return this.createSyntheticVoiceBlob(Math.max(1, this.elapsedSeconds));
+  async getPreviewBlob() {
+    if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+      try {
+        if (typeof this.mediaRecorder.requestData === 'function') {
+          this.mediaRecorder.requestData();
+        }
+      } catch (e) {}
+    }
+    // Small microtask delay to allow ondataavailable to deliver buffered chunks
+    await new Promise((r) => setTimeout(r, 60));
+
+    if (!this.audioChunks || this.audioChunks.length === 0) {
+      return null;
     }
     const mimeType = (this.mediaRecorder && this.mediaRecorder.mimeType) || 'audio/webm';
     return new Blob(this.audioChunks, { type: mimeType });
@@ -110,7 +155,7 @@ export class VoiceRecorder {
 
   async stop(shouldSend = true) {
     clearInterval(this.timerInterval);
-    const duration = Math.max(1, this.elapsedSeconds);
+    const duration = Math.max(1, Math.round((Date.now() - this.startTime) / 1000));
     const wasRecording = this.isRecording;
 
     this.isRecording = false;
@@ -118,44 +163,55 @@ export class VoiceRecorder {
     this.isPaused = false;
     this.hasStartedRecording = false;
 
-    if (!wasRecording) return;
+    if (!wasRecording) return null;
 
     if (!shouldSend) {
       this.cleanupStream();
       this.onDiscard();
-      return;
+      return null;
     }
 
-    if (this.isSimulated || !this.mediaRecorder || this.audioChunks.length === 0) {
+    if (!this.mediaRecorder) {
       this.cleanupStream();
-      const mockBlob = this.createSyntheticVoiceBlob(duration);
-      this.onSend(mockBlob, duration);
-      return;
+      this.onDiscard();
+      return null;
     }
 
     return new Promise((resolve) => {
       this.mediaRecorder.onstop = () => {
-        const mimeType = this.mediaRecorder.mimeType || 'audio/webm';
+        const mimeType = (this.mediaRecorder && this.mediaRecorder.mimeType) || 'audio/webm';
         const audioBlob = new Blob(this.audioChunks, { type: mimeType });
         this.cleanupStream();
-        this.onSend(audioBlob, duration);
-        resolve(audioBlob);
+
+        if (audioBlob.size > 0) {
+          this.onSend(audioBlob, duration);
+          resolve(audioBlob);
+        } else {
+          Toast.show('No audio recorded');
+          this.onDiscard();
+          resolve(null);
+        }
       };
 
       try {
         if (this.mediaRecorder.state !== 'inactive') {
           this.mediaRecorder.stop();
         } else {
+          const mimeType = (this.mediaRecorder && this.mediaRecorder.mimeType) || 'audio/webm';
+          const audioBlob = new Blob(this.audioChunks, { type: mimeType });
           this.cleanupStream();
-          const fallbackBlob = this.createSyntheticVoiceBlob(duration);
-          this.onSend(fallbackBlob, duration);
-          resolve(fallbackBlob);
+          if (audioBlob.size > 0) {
+            this.onSend(audioBlob, duration);
+            resolve(audioBlob);
+          } else {
+            this.onDiscard();
+            resolve(null);
+          }
         }
       } catch (e) {
+        console.error('[VoiceRecorder] Error stopping MediaRecorder:', e);
         this.cleanupStream();
-        const fallbackBlob = this.createSyntheticVoiceBlob(duration);
-        this.onSend(fallbackBlob, duration);
-        resolve(fallbackBlob);
+        resolve(null);
       }
     });
   }
@@ -169,49 +225,10 @@ export class VoiceRecorder {
     }
   }
 
-  /**
-   * Generates a valid silent/tonal WAV audio blob for simulated fallback
-   */
-  createSyntheticVoiceBlob(durationSeconds) {
-    const sampleRate = 8000;
-    const numSamples = Math.floor(sampleRate * durationSeconds);
-    const buffer = new ArrayBuffer(44 + numSamples * 2);
-    const view = new DataView(buffer);
-
-    // RIFF identifier
-    this.writeString(view, 0, 'RIFF');
-    view.setUint32(4, 36 + numSamples * 2, true);
-    this.writeString(view, 8, 'WAVE');
-    this.writeString(view, 12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true); // PCM
-    view.setUint16(22, 1, true); // Mono
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * 2, true);
-    view.setUint16(32, 2, true);
-    view.setUint16(34, 16, true);
-    this.writeString(view, 36, 'data');
-    view.setUint32(40, numSamples * 2, true);
-
-    // Subtle gentle hum waveform
-    for (let i = 0; i < numSamples; i++) {
-      const sample = Math.sin((i / sampleRate) * 440 * Math.PI * 2) * 2000;
-      view.setInt16(44 + i * 2, sample, true);
-    }
-
-    return new Blob([buffer], { type: 'audio/wav' });
-  }
-
-  writeString(view, offset, string) {
-    for (let i = 0; i < string.length; i++) {
-      view.setUint8(offset + i, string.charCodeAt(i));
-    }
-  }
-
   static formatDuration(sec) {
+    if (isNaN(sec) || !isFinite(sec) || sec < 0) return '0:00';
     const m = Math.floor(sec / 60);
     const s = Math.floor(sec % 60);
     return `${m}:${s.toString().padStart(2, '0')}`;
   }
 }
-

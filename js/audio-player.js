@@ -11,7 +11,9 @@ class AudioManager {
 
   stopCurrent() {
     if (this.currentAudio) {
-      this.currentAudio.pause();
+      try {
+        this.currentAudio.pause();
+      } catch (e) {}
       if (this.currentCard) {
         this.updatePlayState(this.currentCard, false);
       }
@@ -21,7 +23,7 @@ class AudioManager {
   }
 
   formatTime(seconds) {
-    if (isNaN(seconds) || seconds < 0) return '0:00';
+    if (isNaN(seconds) || !isFinite(seconds) || seconds < 0) return '0:00';
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
@@ -30,14 +32,14 @@ class AudioManager {
   // Generate deterministic peaks for voice notes based on filename/string hash
   generateWaveformPeaks(seedString, count = 35) {
     let hash = 0;
-    for (let i = 0; i < seedString.length; i++) {
-      hash = (hash << 5) - hash + seedString.charCodeAt(i);
+    const str = String(seedString || 'voice_note');
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash << 5) - hash + str.charCodeAt(i);
       hash |= 0;
     }
     const peaks = [];
     for (let i = 0; i < count; i++) {
       const pseudo = Math.abs(Math.sin((hash + i * 37) * 0.1));
-      // Clamp between 0.15 and 0.95
       peaks.push(Math.max(0.15, Math.min(0.95, pseudo)));
     }
     return peaks;
@@ -47,7 +49,14 @@ class AudioManager {
     const card = document.createElement('div');
     card.className = 'wa-voice-card';
 
-    const peaks = this.generateWaveformPeaks(mediaItem.filename || 'voice_note');
+    const filename = mediaItem.filename || 'voice_note';
+    const peaks = this.generateWaveformPeaks(filename);
+
+    const knownDuration = (typeof mediaItem.duration === 'number' && mediaItem.duration > 0)
+      ? mediaItem.duration
+      : 0;
+
+    let effectiveDuration = knownDuration;
 
     card.innerHTML = `
       <div class="voice-avatar-mic">
@@ -65,7 +74,7 @@ class AudioManager {
             .join('')}
         </div>
         <div class="voice-footer">
-          <span class="voice-duration">0:00</span>
+          <span class="voice-duration">${this.formatTime(knownDuration)}</span>
           <button class="voice-speed-pill" title="Playback speed">1x</button>
         </div>
       </div>
@@ -79,9 +88,21 @@ class AudioManager {
     const waveform = card.querySelector('.voice-waveform');
     const bars = card.querySelectorAll('.wave-bar');
 
-    // Load duration
+    // Load duration when metadata is ready
     audio.addEventListener('loadedmetadata', () => {
-      durationSpan.textContent = this.formatTime(audio.duration);
+      if (isFinite(audio.duration) && audio.duration > 0) {
+        effectiveDuration = Math.round(audio.duration);
+        durationSpan.textContent = this.formatTime(effectiveDuration);
+      } else if (knownDuration > 0) {
+        durationSpan.textContent = this.formatTime(knownDuration);
+      }
+    });
+
+    audio.addEventListener('durationchange', () => {
+      if (isFinite(audio.duration) && audio.duration > 0) {
+        effectiveDuration = Math.round(audio.duration);
+        durationSpan.textContent = this.formatTime(effectiveDuration);
+      }
     });
 
     // Play/Pause button
@@ -91,7 +112,10 @@ class AudioManager {
         if (this.currentAudio && this.currentAudio !== audio) {
           this.stopCurrent();
         }
-        audio.play().catch((err) => console.warn('Audio play failed:', err));
+        audio.play().catch((err) => {
+          console.warn('[AudioPlayer] Audio play failed:', err);
+          this.updatePlayState(card, false);
+        });
         this.currentAudio = audio;
         this.currentCard = card;
         this.updatePlayState(card, true);
@@ -103,7 +127,9 @@ class AudioManager {
 
     // Time update & waveform filling
     audio.addEventListener('timeupdate', () => {
-      const progress = audio.currentTime / (audio.duration || 1);
+      const cur = audio.currentTime;
+      const total = (isFinite(audio.duration) && audio.duration > 0) ? audio.duration : (effectiveDuration || 1);
+      const progress = Math.min(1, Math.max(0, cur / total));
       const activeBarCount = Math.floor(progress * bars.length);
       bars.forEach((bar, idx) => {
         if (idx <= activeBarCount) {
@@ -112,13 +138,13 @@ class AudioManager {
           bar.classList.remove('played');
         }
       });
-      durationSpan.textContent = this.formatTime(audio.currentTime);
+      durationSpan.textContent = this.formatTime(Math.floor(cur));
     });
 
     // Audio ended
     audio.addEventListener('ended', () => {
       this.updatePlayState(card, false);
-      durationSpan.textContent = this.formatTime(audio.duration);
+      durationSpan.textContent = this.formatTime(effectiveDuration || knownDuration);
       bars.forEach((bar) => bar.classList.remove('played'));
       this.currentAudio = null;
       this.currentCard = null;
@@ -139,8 +165,10 @@ class AudioManager {
       const rect = waveform.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
       const ratio = Math.max(0, Math.min(1, clickX / rect.width));
-      if (audio.duration) {
-        audio.currentTime = ratio * audio.duration;
+      const total = (isFinite(audio.duration) && audio.duration > 0) ? audio.duration : effectiveDuration;
+      if (total > 0) {
+        audio.currentTime = ratio * total;
+        durationSpan.textContent = this.formatTime(Math.floor(audio.currentTime));
       }
     });
 
