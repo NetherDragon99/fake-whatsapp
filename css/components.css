@@ -1145,6 +1145,12 @@ input:checked + .switch-slider::before {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+  transition: opacity 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.wa-modal-overlay.closing {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .wa-modal-sheet {
@@ -1156,6 +1162,7 @@ input:checked + .switch-slider::before {
   flex-direction: column;
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.6);
   animation: slideUp 0.25s ease-out;
+  overflow: hidden;
 }
 
 .sheet-drag-handle {
@@ -2386,7 +2393,19 @@ input:checked + .switch-slider::before {
   border-top-right-radius: 0 !important;
   top: 0 !important;
   bottom: 0 !important;
-  z-index: 60 !important;
+  z-index: 105 !important;
+}
+
+.is-fullscreen .sheet-drag-handle-bar,
+.is-fullscreen .bottom-sheet-handle-bar,
+.is-fullscreen .drawer-drag-header,
+.is-fullscreen > .sheet-header,
+.is-fullscreen #import-sheet-handle {
+  display: none !important;
+}
+
+.is-fullscreen .sheet-fullscreen-header {
+  display: flex !important;
 }
 
 .sheet-fullscreen-header {

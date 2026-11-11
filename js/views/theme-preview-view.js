@@ -341,7 +341,7 @@ export class ThemePreviewView {
       overlayId: 'preview-color-sheet',
       defaultHeightVh: 48,
       minVh: 20,
-      maxVh: 90
+      maxVh: 80
     });
 
     // Color picker sheet toggle button

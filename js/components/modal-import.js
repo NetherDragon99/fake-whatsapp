@@ -27,6 +27,13 @@ export class ImportModal {
         <div class="sheet-drag-handle-bar" id="import-sheet-handle">
           <div class="sheet-drag-handle"></div>
         </div>
+        <!-- Fullscreen Header (active when dragged > 80%) -->
+        <div class="sheet-fullscreen-header" id="import-fullscreen-header" style="display:none;">
+          <button type="button" class="sheet-fullscreen-back-btn" id="btn-import-fullscreen-back" aria-label="Close">
+            ${Icons.arrowBack('', 22)}
+          </button>
+          <div class="sheet-fullscreen-title">Import WhatsApp Archive</div>
+        </div>
         <div class="sheet-header">
           <button class="sheet-close-btn">${Icons.close('', 22)}</button>
           <h2 class="sheet-title">Import WhatsApp Archive</h2>
@@ -139,15 +146,28 @@ export class ImportModal {
       sheet: this.overlay.querySelector('#import-sheet'),
       handle: this.overlay.querySelector('#import-sheet-handle'),
       backdrop: this.overlay,
+      fullscreenHeader: this.overlay.querySelector('#import-fullscreen-header'),
       overlayId: 'import-sheet',
       defaultHeightVh: 75,
       minVh: 20,
-      maxVh: 90,
-      onClose: () => this.close()
+      maxVh: 80,
+      onClose: () => {
+        this.chatAvatarBlob = null;
+        if (this.overlay) {
+          this.overlay.remove();
+          this.overlay = null;
+        }
+      }
     });
 
-    // Close button
+    this.resizer.open(75);
+
+    // Close buttons (standard header & fullscreen header)
     this.overlay.querySelector('.sheet-close-btn').addEventListener('click', () => this.close());
+    const fsBackBtn = this.overlay.querySelector('#btn-import-fullscreen-back');
+    if (fsBackBtn) {
+      fsBackBtn.addEventListener('click', () => this.close());
+    }
     this.overlay.addEventListener('click', (e) => {
       if (e.target === this.overlay) this.close();
     });
@@ -598,6 +618,10 @@ export class ImportModal {
 
   close() {
     this.chatAvatarBlob = null;
+    if (this.resizer && this.resizer.isOpen) {
+      this.resizer.close();
+      return;
+    }
     if (this.overlay) {
       this.overlay.remove();
       this.overlay = null;

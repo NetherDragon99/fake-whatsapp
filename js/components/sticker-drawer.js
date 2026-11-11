@@ -28,6 +28,10 @@ export class StickerDrawer {
     if (notifyRouter && window.router) {
       window.router.removeOverlay('sticker-drawer');
     }
+    if (this.resizer && this.resizer.isOpen) {
+      this.resizer.close(false);
+      return;
+    }
     if (this.container) {
       this.container.classList.remove('active');
       setTimeout(() => {
@@ -139,12 +143,25 @@ export class StickerDrawer {
       overlayId: 'sticker-drawer',
       defaultHeightVh: this.currentHeightVh || 40,
       minVh: 20,
-      maxVh: 90,
-      onClose: () => this.close(false),
+      maxVh: 80,
+      onClose: () => {
+        if (this.container) {
+          this.container.classList.remove('active');
+          setTimeout(() => {
+            if (this.container) {
+              this.container.remove();
+              this.container = null;
+            }
+          }, 280);
+        }
+        this.isOpen = false;
+      },
       onResize: (px, vh) => {
         this.currentHeightVh = Math.round(vh);
       }
     });
+
+    this.resizer.open(this.currentHeightVh || 40);
 
     // Close when tapping outside the sheet
     overlay.addEventListener('click', (e) => {

@@ -209,9 +209,15 @@ export class Router {
     // Import sheet
     const importSheet = document.querySelector('.wa-modal-overlay');
     if (importSheet) {
+      const fsBackBtn = importSheet.querySelector('.sheet-fullscreen-back-btn');
       const closeBtn = importSheet.querySelector('.sheet-close-btn');
-      if (closeBtn) closeBtn.click();
-      else importSheet.remove();
+      if (fsBackBtn && importSheet.querySelector('.is-fullscreen')) {
+        fsBackBtn.click();
+      } else if (closeBtn) {
+        closeBtn.click();
+      } else {
+        importSheet.remove();
+      }
       return true;
     }
 
