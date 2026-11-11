@@ -1,6 +1,7 @@
 // Main Application Coordinator & Service Worker Lifecycle
 import { db } from './db.js';
 import { Router } from './router.js';
+import { MainPagerView } from './views/main-pager-view.js';
 import { HomeView } from './views/home-view.js';
 import { NewListView } from './views/new-list-view.js';
 import { GalleryView } from './views/gallery-view.js';
@@ -84,13 +85,13 @@ class Application {
 
     // 2. Setup Router
     const routes = [
-      { pattern: '/chats', viewClass: HomeView },
+      { pattern: '/chats', viewClass: MainPagerView, defaultParams: { initialTab: 'chats' } },
+      { pattern: '/calls', viewClass: MainPagerView, defaultParams: { initialTab: 'calls' } },
+      { pattern: '/settings', viewClass: MainPagerView, defaultParams: { initialTab: 'settings' } },
       { pattern: '/new-list', viewClass: NewListView },
       { pattern: '/gallery', viewClass: GalleryView },
       { pattern: '/chat/:id/info', viewClass: ContactInfoView },
       { pattern: '/chat/:id', viewClass: ChatView },
-      { pattern: '/calls', viewClass: CallsView },
-      { pattern: '/settings', viewClass: SettingsView },
       { pattern: '/settings/appearance/theme', viewClass: AppearanceView, defaultParams: { subRoute: 'theme' } },
       { pattern: '/settings/appearance/app-icon', viewClass: AppIconView },
       { pattern: '/settings/appearance', viewClass: AppearanceView, defaultParams: { subRoute: '' } },
@@ -107,85 +108,8 @@ class Application {
     this.router = new Router(routes, appRoot);
     this.router.init();
 
-    // 3. Setup Swipe Navigation Between Main Tabs (Chats <-> Calls <-> Settings)
-    this.initSwipeNavigation(appRoot);
-
-    // 4. Register Service Worker with relative path
+    // 3. Register Service Worker with relative path
     this.initServiceWorker();
-  }
-
-  initSwipeNavigation(appRoot) {
-    let startX = 0;
-    let startY = 0;
-    let currentX = 0;
-    let currentY = 0;
-    let isSwiping = false;
-
-    const mainTabs = ['#/chats', '#/calls', '#/settings'];
-
-    appRoot.addEventListener('touchstart', (e) => {
-      // Ignore gesture if inside horizontal scroll containers or modals
-      if (
-        e.target.closest('#filter-chips-bar') ||
-        e.target.closest('.info-media-chips') ||
-        e.target.closest('.gallery-type-chips') ||
-        e.target.closest('.album-slider-scroller') ||
-        e.target.closest('.modal-overlay') ||
-        e.target.closest('.wa-lightbox-overlay') ||
-        e.target.closest('.stacked-album-overlay')
-      ) {
-        isSwiping = false;
-        return;
-      }
-
-      const hash = window.location.hash || '#/chats';
-      const isMainTab = mainTabs.some((tab) => hash.startsWith(tab));
-      if (!isMainTab) {
-        isSwiping = false;
-        return;
-      }
-
-      const touch = e.touches[0];
-      startX = touch.clientX;
-      startY = touch.clientY;
-      currentX = startX;
-      currentY = startY;
-      isSwiping = true;
-    }, { passive: true });
-
-    appRoot.addEventListener('touchmove', (e) => {
-      if (!isSwiping || !e.touches || !e.touches[0]) return;
-      currentX = e.touches[0].clientX;
-      currentY = e.touches[0].clientY;
-    }, { passive: true });
-
-    appRoot.addEventListener('touchend', () => {
-      if (!isSwiping) return;
-      isSwiping = false;
-
-      const deltaX = currentX - startX;
-      const deltaY = currentY - startY;
-
-      // Ensure predominant horizontal swipe with distance threshold
-      if (Math.abs(deltaX) > 65 && Math.abs(deltaX) > 1.7 * Math.abs(deltaY)) {
-        const hash = window.location.hash || '#/chats';
-        if (deltaX < 0) {
-          // Swipe Left -> next tab
-          if (hash.startsWith('#/chats')) {
-            this.router.navigate('#/calls');
-          } else if (hash.startsWith('#/calls')) {
-            this.router.navigate('#/settings');
-          }
-        } else {
-          // Swipe Right -> previous tab
-          if (hash.startsWith('#/settings')) {
-            this.router.navigate('#/calls');
-          } else if (hash.startsWith('#/calls')) {
-            this.router.navigate('#/chats');
-          }
-        }
-      }
-    }, { passive: true });
   }
 
   showImportModal() {

@@ -136,6 +136,29 @@ export class Router {
     }
   }
 
+  syncTab(hash) {
+    if (!hash) return;
+    const cleanHash = hash.split('?')[0];
+    const current = (window.location.hash || '#/chats').split('?')[0];
+    if (current === cleanHash) return;
+
+    if (cleanHash === '#/chats') {
+      this.historyStack = ['#/chats'];
+    } else if (cleanHash === '#/calls' || cleanHash === '#/settings') {
+      this.historyStack = ['#/chats', cleanHash];
+    }
+    this.saveHistoryStack();
+
+    this.isInternalNavigating = true;
+    try {
+      window.location.hash = cleanHash;
+    } finally {
+      setTimeout(() => {
+        this.isInternalNavigating = false;
+      }, 50);
+    }
+  }
+
   syncHistoryStack(newHash) {
     if (!newHash) newHash = '#/chats';
     const cleanHash = newHash.split('?')[0];
@@ -196,7 +219,7 @@ export class Router {
       document.querySelector('.wa-export-dialog-overlay.active') ||
       document.querySelector('.wa-modal-overlay') ||
       document.querySelector('.preview-color-bottom-sheet.open') ||
-      (this.currentViewInstance && this.currentViewInstance.isSelectionMode)
+      (this.currentViewInstance && (this.currentViewInstance.isSelectionMode || this.currentViewInstance.homeView?.isSelectionMode))
     );
   }
 
@@ -358,8 +381,12 @@ export class Router {
     }
 
     // 3. Selection mode in HomeView
-    if (this.currentViewInstance && this.currentViewInstance.isSelectionMode) {
-      this.currentViewInstance.exitSelectionMode();
+    if (this.currentViewInstance && (this.currentViewInstance.isSelectionMode || this.currentViewInstance.homeView?.isSelectionMode)) {
+      if (typeof this.currentViewInstance.exitSelectionMode === 'function') {
+        this.currentViewInstance.exitSelectionMode();
+      } else if (this.currentViewInstance.homeView?.exitSelectionMode) {
+        this.currentViewInstance.homeView.exitSelectionMode();
+      }
       return true;
     }
 
@@ -516,6 +543,14 @@ export class Router {
     // Re-arm root guard if entering '#/chats'
     if (pathPart === '/chats' || pathPart === 'chats') {
       this.setupRootGuard();
+    }
+
+    // If the main pager is already mounted and the target route is also one of the main tabs,
+    // smoothly switch the pager tab without destroying/recreating the DOM!
+    if (this.currentViewInstance && this.currentViewInstance.isMainPager && (matchedRoute.pattern === '/chats' || matchedRoute.pattern === '/calls' || matchedRoute.pattern === '/settings')) {
+      const targetTab = routeParams.initialTab || (pathPart.includes('calls') ? 'calls' : (pathPart.includes('settings') ? 'settings' : 'chats'));
+      this.currentViewInstance.switchToTab(targetTab);
+      return;
     }
 
     // Cleanup previous view if needed

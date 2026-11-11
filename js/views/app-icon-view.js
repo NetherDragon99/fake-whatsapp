@@ -177,7 +177,7 @@ export class AppIconView {
           <div class="app-icon-step-item">
             <span class="app-icon-step-num">1</span>
             <div class="app-icon-step-text">
-              <strong>Remove Old Shortcut:</strong> Touch and hold the WhatsApp clone icon on your home screen, then tap <strong>Remove</strong> or <strong>Uninstall</strong>.
+              <strong>Remove Old Shortcut:</strong> Touch and hold the WhatsApp clone icon on your home screen, then tap <strong>Uninstall</strong> or go to the app info to unistall the app.
             </div>
           </div>
           <div class="app-icon-step-item">

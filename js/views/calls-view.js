@@ -12,7 +12,14 @@ export class CallsView {
 
   async render(rootEl) {
     this.container = rootEl;
-    const calls = await db.getCalls();
+    let calls = [];
+    try {
+      calls = await db.getCalls();
+    } catch (err) {
+      console.warn('[CallsView] Failed to fetch calls:', err);
+    }
+
+    if (!this.container) return;
 
     rootEl.innerHTML = `
       <div class="screen-view calls-screen">
@@ -29,7 +36,7 @@ export class CallsView {
           <!-- Populated dynamically -->
         </div>
 
-        <!-- Bottom Navigation Bar -->
+        <!-- Bottom Navigation Bar (Shown when rendered standalone) -->
         <nav class="wa-bottom-nav">
           <a href="#/chats" class="nav-tab">
             <div class="tab-icon-wrap">${Icons.chatsTab('', 22)}</div>
@@ -53,30 +60,51 @@ export class CallsView {
     this.bindEvents(calls);
   }
 
-  bindEvents(calls) {
+  async refresh() {
+    if (!this.container) return;
+    try {
+      const calls = await db.getCalls();
+      this.bindEvents(calls);
+    } catch (err) {
+      console.warn('[CallsView] Error refreshing calls:', err);
+    }
+  }
+
+  bindEvents(calls = []) {
+    if (!this.container) return;
     const listWrap = this.container.querySelector('#calls-list-wrap');
+    if (!listWrap) return;
 
-    // Clear calls
-    this.container.querySelector('#btn-clear-calls').addEventListener('click', async () => {
-      if (calls.length === 0) return;
-      const confirmed = await showConfirm({
-        title: 'Clear call log?',
-        message: 'Do you want to clear your entire call history?',
-        confirmText: 'Clear',
-        cancelText: 'Cancel',
-        isDanger: true
-      });
-      if (confirmed) {
-        const tx = db.db.transaction('calls', 'readwrite');
-        tx.objectStore('calls').clear();
-        tx.oncomplete = () => {
-          Toast.show('Call log cleared');
-          this.render(this.container);
-        };
-      }
-    });
+    // Clear calls button with safe null check
+    const clearBtn = this.container.querySelector('#btn-clear-calls');
+    if (clearBtn) {
+      clearBtn.onclick = async () => {
+        if (!calls || calls.length === 0) return;
+        const confirmed = await showConfirm({
+          title: 'Clear call log?',
+          message: 'Do you want to clear your entire call history?',
+          confirmText: 'Clear',
+          cancelText: 'Cancel',
+          isDanger: true
+        });
+        if (confirmed) {
+          try {
+            const tx = db.db.transaction('calls', 'readwrite');
+            tx.objectStore('calls').clear();
+            tx.oncomplete = () => {
+              Toast.show('Call log cleared');
+              this.refresh();
+            };
+          } catch (e) {
+            console.error('[CallsView] Failed to clear call log:', e);
+          }
+        }
+      };
+    }
 
-    if (calls.length === 0) {
+    listWrap.innerHTML = '';
+
+    if (!calls || calls.length === 0) {
       listWrap.innerHTML = `
         <div class="empty-calls-state">
           <div class="empty-icon-circle">${Icons.callVoice('', 34)}</div>
@@ -146,7 +174,7 @@ export class CallsView {
       listWrap.appendChild(item);
     });
 
-    // Bottom Navigation explicit routing (Task 2)
+    // Bottom Navigation explicit routing (when rendered standalone)
     this.container.querySelectorAll('.wa-bottom-nav .nav-tab').forEach((tab) => {
       tab.addEventListener('click', (e) => {
         e.preventDefault();
@@ -154,29 +182,5 @@ export class CallsView {
         if (href) this.router.navigate(href);
       });
     });
-
-    // Swipe navigation between main tabs (Task 11):
-    // Swiping left goes to #/settings, swiping right goes to #/chats
-    let touchStartX = 0;
-    let touchStartY = 0;
-    const screenEl = this.container.querySelector('.calls-screen');
-    if (screenEl) {
-      screenEl.addEventListener('touchstart', (e) => {
-        touchStartX = e.touches[0].clientX;
-        touchStartY = e.touches[0].clientY;
-      }, { passive: true });
-
-      screenEl.addEventListener('touchend', (e) => {
-        const deltaX = e.changedTouches[0].clientX - touchStartX;
-        const deltaY = e.changedTouches[0].clientY - touchStartY;
-        if (Math.abs(deltaX) > 75 && Math.abs(deltaX) > 1.8 * Math.abs(deltaY)) {
-          if (deltaX < 0) {
-            this.router.navigate('#/settings');
-          } else {
-            this.router.navigate('#/chats');
-          }
-        }
-      }, { passive: true });
-    }
   }
 }

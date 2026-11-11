@@ -337,7 +337,7 @@ export class SettingsView {
       }
     });
 
-    // Bottom Navigation explicit routing (Task 2)
+    // Bottom Navigation explicit routing (Task 2 - fallback when standalone)
     this.container.querySelectorAll('.wa-bottom-nav .nav-tab').forEach((tab) => {
       tab.addEventListener('click', (e) => {
         e.preventDefault();
@@ -345,24 +345,5 @@ export class SettingsView {
         if (href) this.router.navigate(href);
       });
     });
-
-    // Swipe navigation between main tabs (Task 11): Settings -> swipe right goes to Calls
-    let touchStartX = 0;
-    let touchStartY = 0;
-    const screenEl = this.container.querySelector('.settings-screen');
-    if (screenEl) {
-      screenEl.addEventListener('touchstart', (e) => {
-        touchStartX = e.touches[0].clientX;
-        touchStartY = e.touches[0].clientY;
-      }, { passive: true });
-
-      screenEl.addEventListener('touchend', (e) => {
-        const deltaX = e.changedTouches[0].clientX - touchStartX;
-        const deltaY = e.changedTouches[0].clientY - touchStartY;
-        if (deltaX > 75 && Math.abs(deltaX) > 1.8 * Math.abs(deltaY)) {
-          this.router.navigate('#/calls');
-        }
-      }, { passive: true });
-    }
   }
 }

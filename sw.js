@@ -1,5 +1,5 @@
-// WhatsApp Android Clone Service Worker v1.0.0
-const CACHE_NAME = 'wa-clone-v1.0.0';
+// WhatsApp Android Clone Service Worker v1.0.1
+const CACHE_NAME = 'wa-clone-v1.0.1';
 
 const STICKER_FILES = [
   './assets/stickers/sticker-1.svg',
@@ -95,6 +95,7 @@ const PRECACHE_ASSETS = [
   './js/components/media-editor-modal.js',
   './js/components/sticker-drawer.js',
   './js/components/chat-exporter.js',
+  './js/views/main-pager-view.js',
   './js/views/home-view.js',
   './js/views/new-list-view.js',
   './js/views/gallery-view.js',

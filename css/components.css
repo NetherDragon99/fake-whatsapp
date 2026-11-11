@@ -247,6 +247,67 @@
   transform: scale(0.92);
 }
 
+/* --- Main ViewPager (Fluid Continuous Swipe Between Chats, Calls, Settings) --- */
+.main-pager-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--wa-bg-main);
+  touch-action: pan-x pan-y;
+}
+
+.main-pager-viewport {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y;
+  position: relative;
+}
+
+.main-pager-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.main-pager-page {
+  flex: 0 0 100%;
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+  height: 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  overflow: hidden;
+  position: relative;
+  box-sizing: border-box;
+  touch-action: pan-x pan-y;
+}
+
+.main-pager-page .screen-view {
+  width: 100%;
+  height: 100%;
+}
+
+/* Hide duplicate bottom navs inside pages when hosted in pager */
+.main-pager-page .wa-bottom-nav {
+  display: none !important;
+}
+
+/* Ensure horizontal filter chips do not accidentally drag the main pager */
+#filter-chips-bar {
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+}
+
 /* Bottom Navigation Bar (3 Tabs Only - Material 3 Flat with Pill Indicator) */
 .wa-bottom-nav {
   position: absolute;

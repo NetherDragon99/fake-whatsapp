@@ -152,7 +152,7 @@ export class HomeView {
     this.container.querySelector('#btn-mark-unread').addEventListener('click', () => this.toggleSelectedUnread());
     this.container.querySelector('#btn-fav-selected').addEventListener('click', () => this.toggleFavSelected());
 
-    // Bottom Navigation explicit routing (Task 2)
+    // Bottom Navigation explicit routing (Task 2 - fallback when standalone)
     this.container.querySelectorAll('.wa-bottom-nav .nav-tab').forEach((tab) => {
       tab.addEventListener('click', (e) => {
         e.preventDefault();
@@ -160,27 +160,6 @@ export class HomeView {
         if (href) this.router.navigate(href);
       });
     });
-
-    // Swipe navigation between main tabs (Task 11): Chats -> swipe left goes to Calls
-    let touchStartX = 0;
-    let touchStartY = 0;
-    const screenEl = this.container.querySelector('.home-screen');
-    if (screenEl) {
-      screenEl.addEventListener('touchstart', (e) => {
-        if (e.target.closest('#filter-chips-bar')) return;
-        touchStartX = e.touches[0].clientX;
-        touchStartY = e.touches[0].clientY;
-      }, { passive: true });
-
-      screenEl.addEventListener('touchend', (e) => {
-        if (e.target.closest('#filter-chips-bar')) return;
-        const deltaX = e.changedTouches[0].clientX - touchStartX;
-        const deltaY = e.changedTouches[0].clientY - touchStartY;
-        if (deltaX < -75 && Math.abs(deltaX) > 1.8 * Math.abs(deltaY)) {
-          this.router.navigate('#/calls');
-        }
-      }, { passive: true });
-    }
   }
 
   async loadFilterChips() {
@@ -549,6 +528,9 @@ export class HomeView {
   // --- Selection Mode ---
   enterSelectionMode(chatId) {
     this.isSelectionMode = true;
+    if (typeof window.setPagerSwipeEnabled === 'function') {
+      window.setPagerSwipeEnabled(false);
+    }
     this.selectedChatIds.clear();
     this.selectedChatIds.add(chatId);
     if (window.router) {
@@ -620,6 +602,9 @@ export class HomeView {
       window.router.removeOverlay('selection-mode');
     }
     this.isSelectionMode = false;
+    if (typeof window.setPagerSwipeEnabled === 'function') {
+      window.setPagerSwipeEnabled(true);
+    }
     this.selectedChatIds.clear();
 
     const defaultBar = this.container.querySelector('#home-default-bar');
