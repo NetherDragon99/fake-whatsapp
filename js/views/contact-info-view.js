@@ -262,7 +262,7 @@ export class ContactInfoView {
         const file = e.target.files[0];
         const croppedBlob = await openImageCropper(file);
         if (croppedBlob) {
-          await db.updateChat(this.chatId, { avatarBlob: croppedBlob });
+          await db.updateChat(this.chatId, { avatarBlob: croppedBlob, updatedAt: Date.now() });
           this.chat.avatarBlob = croppedBlob;
           const url = URL.createObjectURL(croppedBlob);
           const heroImg = this.container.querySelector('.hero-avatar-wrap img');
@@ -523,7 +523,7 @@ export class ContactInfoView {
     });
     if (newName && newName.trim()) {
       const trimmed = newName.trim();
-      await db.updateChat(this.chatId, { name: trimmed });
+      await db.updateChat(this.chatId, { name: trimmed, updatedAt: Date.now() });
       this.chat.name = trimmed;
       const heroName = this.container.querySelector('#contact-hero-name');
       if (heroName) heroName.textContent = trimmed;

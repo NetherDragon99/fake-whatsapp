@@ -622,7 +622,7 @@ export class HomeView {
     for (const id of this.selectedChatIds) {
       const chat = await db.getChat(id);
       if (chat) {
-        await db.updateChat(id, { isPinned: !chat.isPinned });
+        await db.updateChat(id, { isPinned: !chat.isPinned, updatedAt: Date.now() });
       }
     }
     this.exitSelectionMode();

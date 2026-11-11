@@ -1445,7 +1445,7 @@ export class ChatView {
       cancelText: 'Cancel'
     });
     if (newName && newName.trim()) {
-      await db.updateChat(this.chatId, { name: newName.trim() });
+      await db.updateChat(this.chatId, { name: newName.trim(), updatedAt: Date.now() });
       this.chat.name = newName.trim();
       const titleEl = this.container.querySelector('.chat-header-title');
       if (titleEl) titleEl.textContent = newName.trim();
