@@ -3175,12 +3175,18 @@ input:checked+.switch-slider::before {
   justify-content: center;
   cursor: pointer;
   z-index: 10;
-  transition: background 0.2s;
+  transition: opacity 0.2s ease, background 0.2s, visibility 0.2s ease;
   border: none;
 }
 
 .album-nav-arrow:hover {
   background: rgba(60, 60, 60, 0.9);
+}
+
+.album-nav-arrow.nav-hidden {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
 }
 
 .album-nav-arrow.prev-arrow {

@@ -132,8 +132,8 @@ class Lightbox {
           <!-- Populated dynamically -->
         </div>
         ${totalCount > 1 ? `
-          <button type="button" class="album-nav-arrow prev-arrow" id="btn-album-prev" aria-label="Previous">${Icons.chevronDown('rotate-90', 24)}</button>
-          <button type="button" class="album-nav-arrow next-arrow" id="btn-album-next" aria-label="Next">${Icons.chevronDown('rotate-270', 24)}</button>
+          <button type="button" class="album-nav-arrow prev-arrow" id="btn-album-prev" aria-label="Previous">${Icons.chevronLeft('', 24)}</button>
+          <button type="button" class="album-nav-arrow next-arrow" id="btn-album-next" aria-label="Next">${Icons.chevronRight('', 24)}</button>
         ` : ''}
       </div>
     `;
@@ -168,12 +168,37 @@ class Lightbox {
       track.appendChild(slide);
     }
 
+    // Arrow buttons
+    const prevBtn = this.overlay.querySelector('#btn-album-prev');
+    const nextBtn = this.overlay.querySelector('#btn-album-next');
+
+    const updateArrows = () => {
+      if (prevBtn) {
+        if (currentIndex <= 0) {
+          prevBtn.classList.add('nav-hidden');
+        } else {
+          prevBtn.classList.remove('nav-hidden');
+        }
+      }
+      if (nextBtn) {
+        if (currentIndex >= totalCount - 1) {
+          nextBtn.classList.add('nav-hidden');
+        } else {
+          nextBtn.classList.remove('nav-hidden');
+        }
+      }
+    };
+
     const updateCurrentIndex = (newIdx) => {
       currentIndex = Math.max(0, Math.min(totalCount - 1, newIdx));
       if (counterSub) {
         counterSub.textContent = `${currentIndex + 1} of ${totalCount}`;
       }
+      updateArrows();
     };
+
+    // Initialize arrows state for initial photo index
+    updateArrows();
 
     // Scroll to initial selected index
     requestAnimationFrame(() => {
@@ -198,10 +223,7 @@ class Lightbox {
       }
     }, { passive: true });
 
-    // Arrow buttons
-    const prevBtn = this.overlay.querySelector('#btn-album-prev');
-    const nextBtn = this.overlay.querySelector('#btn-album-next');
-
+    // Arrow button event listeners
     if (prevBtn) {
       prevBtn.addEventListener('click', () => {
         if (currentIndex > 0) {
