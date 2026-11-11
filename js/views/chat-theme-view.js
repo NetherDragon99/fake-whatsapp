@@ -21,27 +21,53 @@ export class ChatThemeView {
       console.warn('[ChatThemeView] Could not fetch chat-themes.json, using bundled presets:', e);
     }
 
-    // Bundled fallback presets
+    // Bundled fallback presets (keep in sync with assets/data/chat-themes.json v1.1.0)
     this.themeData = {
       categories: [
         {
           id: 'featured',
           name: 'Featured',
           items: [
-            { id: 'feat-1', name: 'Golden Horizon', wallpaper: 'assets/wallpapers/nature-8.webp', bubbleColor: '#8c3d23' },
-            { id: 'feat-2', name: 'Lush Tropic', wallpaper: 'assets/wallpapers/nature-1.webp', bubbleColor: '#2d6a4f' },
-            { id: 'feat-3', name: 'Sunny Glow', wallpaper: 'assets/wallpapers/vibrant-2.webp', bubbleColor: '#205068' },
-            { id: 'feat-4', name: 'Cosmic Fluid', wallpaper: 'assets/wallpapers/vibrant-10.webp', bubbleColor: '#55585f' }
+            { id: 'feat-1', name: 'Dark Waves',     wallpaper: 'assets/wallpapers/vibrant-14.webp', bubbleColor: '#1a3a5c' },
+            { id: 'feat-2', name: 'Joshua Tree',    wallpaper: 'assets/wallpapers/nature-8.webp',   bubbleColor: '#7c3a1e' },
+            { id: 'feat-3', name: 'Orange Leaves',  wallpaper: 'assets/wallpapers/nature-1.webp',   bubbleColor: '#c2410c' },
+            { id: 'feat-4', name: 'Sunny Glow',     wallpaper: 'assets/wallpapers/vibrant-2.webp',  bubbleColor: '#1d244e' },
+            { id: 'feat-5', name: 'Cosmic Fluid',   wallpaper: 'assets/wallpapers/vibrant-10.webp', bubbleColor: '#55585f' },
+            { id: 'feat-6', name: 'Neon City',      wallpaper: 'assets/wallpapers/vibrant-13.webp', bubbleColor: '#1a1a3e' },
+            { id: 'feat-7', name: 'Aurora Bloom',   wallpaper: 'assets/wallpapers/vibrant-15.webp', bubbleColor: '#3b1f5e' },
+            { id: 'feat-8', name: 'Fire Gradient',  wallpaper: 'assets/wallpapers/vibrant-16.webp', bubbleColor: '#7c1a1a' }
           ]
         },
         {
           id: 'nature',
           name: 'Nature',
           items: [
-            { id: 'nat-1', name: 'Monument Valley', wallpaper: 'assets/wallpapers/nature-5.webp', bubbleColor: '#8c3d23' },
-            { id: 'nat-2', name: 'Sunset Shore', wallpaper: 'assets/wallpapers/nature-6.webp', bubbleColor: '#5b21b6' },
-            { id: 'nat-3', name: 'Glacier Peaks', wallpaper: 'assets/wallpapers/nature-4.webp', bubbleColor: '#3b6998' },
-            { id: 'nat-4', name: 'Autumn Ridge', wallpaper: 'assets/wallpapers/nature-3.webp', bubbleColor: '#660c14' }
+            { id: 'nat-1',  name: 'Palms Coast',        wallpaper: 'assets/wallpapers/nature-5.webp',  bubbleColor: '#57a2a5' },
+            { id: 'nat-2',  name: 'Desert Pyramid',     wallpaper: 'assets/wallpapers/nature-6.webp',  bubbleColor: '#632a71' },
+            { id: 'nat-3',  name: 'Mountain Sunset',    wallpaper: 'assets/wallpapers/nature-4.webp',  bubbleColor: '#394380' },
+            { id: 'nat-4',  name: 'Pink Autumn Tree',   wallpaper: 'assets/wallpapers/nature-3.webp',  bubbleColor: '#6d0f27' },
+            { id: 'nat-5',  name: 'Canyon Desert',      wallpaper: 'assets/wallpapers/nature-13.webp', bubbleColor: '#8b2635' },
+            { id: 'nat-6',  name: 'Orange Sun Eclipse', wallpaper: 'assets/wallpapers/nature-14.webp', bubbleColor: '#7a3010' },
+            { id: 'nat-7',  name: 'Ocean Coast',        wallpaper: 'assets/wallpapers/nature-15.webp', bubbleColor: '#0e4f6b' },
+            { id: 'nat-8',  name: 'Desert Highway',     wallpaper: 'assets/wallpapers/nature-16.webp', bubbleColor: '#1a3a6b' },
+            { id: 'nat-9',  name: 'Emerald Forest',     wallpaper: 'assets/wallpapers/nature-17.webp', bubbleColor: '#1a4d2e' },
+            { id: 'nat-10', name: 'Lavender Fields',    wallpaper: 'assets/wallpapers/nature-18.webp', bubbleColor: '#4a235a' },
+            { id: 'nat-11', name: 'Golden Savanna',     wallpaper: 'assets/wallpapers/nature-19.webp', bubbleColor: '#7a4a10' },
+            { id: 'nat-12', name: 'Arctic Dawn',        wallpaper: 'assets/wallpapers/nature-20.webp', bubbleColor: '#1c3a5e' }
+          ]
+        },
+        {
+          id: 'vibrant',
+          name: 'Vibrant',
+          items: [
+            { id: 'vib-1', name: 'Purple Haze',    wallpaper: 'assets/wallpapers/vibrant-17.webp', bubbleColor: '#4a1570' },
+            { id: 'vib-2', name: 'Crimson Storm',  wallpaper: 'assets/wallpapers/vibrant-18.webp', bubbleColor: '#7c1a1a' },
+            { id: 'vib-3', name: 'Teal Surge',     wallpaper: 'assets/wallpapers/vibrant-19.webp', bubbleColor: '#0a4a45' },
+            { id: 'vib-4', name: 'Golden Rush',    wallpaper: 'assets/wallpapers/vibrant-20.webp', bubbleColor: '#7a5000' },
+            { id: 'vib-5', name: 'Midnight Blue',  wallpaper: 'assets/wallpapers/vibrant-21.webp', bubbleColor: '#0d2b6b' },
+            { id: 'vib-6', name: 'Rose Quartz',    wallpaper: 'assets/wallpapers/vibrant-22.webp', bubbleColor: '#7a1a4a' },
+            { id: 'vib-7', name: 'Electric Lime',  wallpaper: 'assets/wallpapers/vibrant-23.webp', bubbleColor: '#2a5a00' },
+            { id: 'vib-8', name: 'Copper Fusion',  wallpaper: 'assets/wallpapers/vibrant-24.webp', bubbleColor: '#5a2a00' }
           ]
         },
         {
@@ -49,19 +75,23 @@ export class ChatThemeView {
           name: 'Minimal',
           items: [
             { id: 'min-1', name: 'Midnight Slate', wallpaper: 'color:#111b21', bubbleColor: '#3b6998' },
-            { id: 'min-2', name: 'Berry Velvet', wallpaper: 'color:#121212', bubbleColor: '#be123c' },
-            { id: 'min-3', name: 'Emerald Night', wallpaper: 'color:#0b141a', bubbleColor: '#2d6a4f' },
-            { id: 'min-4', name: 'Terracotta Dark', wallpaper: 'color:#1f1b18', bubbleColor: '#c2410c' }
+            { id: 'min-2', name: 'Berry Velvet',   wallpaper: 'color:#121212', bubbleColor: '#a32653' },
+            { id: 'min-3', name: 'Indigo Void',    wallpaper: 'color:#0b141a', bubbleColor: '#3b3178' },
+            { id: 'min-4', name: 'Plum Night',     wallpaper: 'color:#1a1225', bubbleColor: '#612c74' },
+            { id: 'min-5', name: 'Warm Ash',       wallpaper: 'color:#1a1612', bubbleColor: '#6b3a1e' },
+            { id: 'min-6', name: 'Steel Grey',     wallpaper: 'color:#1c1c1c', bubbleColor: '#4a4a5a' },
+            { id: 'min-7', name: 'Forest Shadow',  wallpaper: 'color:#0d1a0f', bubbleColor: '#1a4d2e' },
+            { id: 'min-8', name: 'Crimson Dusk',   wallpaper: 'color:#1a0a0a', bubbleColor: '#7c1a1a' }
           ]
         },
         {
           id: 'doodle',
           name: 'Doodle',
           items: [
-            { id: 'doodle-1', name: 'Classic Forest', wallpaper: 'default', bubbleColor: '#25d366' },
-            { id: 'doodle-2', name: 'Teal Lagoon', wallpaper: 'default', bubbleColor: '#0d9488' },
-            { id: 'doodle-3', name: 'Warm Spice', wallpaper: 'default', bubbleColor: '#c2410c' },
-            { id: 'doodle-4', name: 'Olive Mist', wallpaper: 'default', bubbleColor: '#4d7c0f' }
+            { id: 'doodle-1', name: 'Purple Doodle', wallpaper: 'default', bubbleColor: '#3c307a' },
+            { id: 'doodle-2', name: 'Blue Doodle',   wallpaper: 'default', bubbleColor: '#043f81' },
+            { id: 'doodle-3', name: 'Pink Doodle',   wallpaper: 'default', bubbleColor: '#a32652' },
+            { id: 'doodle-4', name: 'Grey Doodle',   wallpaper: 'default', bubbleColor: '#4a4a5a' }
           ]
         }
       ]

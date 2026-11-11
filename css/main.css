@@ -80,9 +80,40 @@
   padding: 0;
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 
-html, body {
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+  /* حواف دائرية بالكامل */
+  transition: background-color 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.35);
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+html,
+body {
   width: 100%;
   height: var(--app-height);
   background-color: var(--wa-bg-main);
@@ -98,7 +129,11 @@ html, body {
   -webkit-touch-callout: none;
 }
 
-body, .msg-bubble, .msg-text, .msg-row, .chat-list-item {
+body,
+.msg-bubble,
+.msg-text,
+.msg-row,
+.chat-list-item {
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
@@ -106,7 +141,9 @@ body, .msg-bubble, .msg-text, .msg-row, .chat-list-item {
   -webkit-touch-callout: none;
 }
 
-input, textarea, [contenteditable] {
+input,
+textarea,
+[contenteditable] {
   -webkit-user-select: auto;
   -moz-user-select: auto;
   -ms-user-select: auto;
@@ -145,7 +182,9 @@ button {
   justify-content: center;
 }
 
-input, textarea, select {
+input,
+textarea,
+select {
   font: inherit;
   color: var(--wa-text-primary);
   background: transparent;
@@ -168,12 +207,21 @@ input, textarea, select {
 }
 
 /* Fluid Material 3 Transitions (60fps) */
-button, .filter-chip, .app-bar-icon-btn, .fab, .option-row, .chat-list-item, .nav-tab {
+button,
+.filter-chip,
+.app-bar-icon-btn,
+.fab,
+.option-row,
+.chat-list-item,
+.nav-tab {
   transition: all 0.2s ease-in-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -245,7 +293,8 @@ button, .filter-chip, .app-bar-icon-btn, .fab, .option-row, .chat-list-item, .na
   color: var(--wa-danger) !important;
 }
 
-.call-incoming-green, .call-outgoing-green {
+.call-incoming-green,
+.call-outgoing-green {
   color: var(--wa-green) !important;
 }
 
