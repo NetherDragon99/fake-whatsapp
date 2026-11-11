@@ -77,6 +77,9 @@ export class VoiceRecorder {
     this.isPaused = true;
     if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
       try {
+        if (typeof this.mediaRecorder.requestData === 'function') {
+          this.mediaRecorder.requestData();
+        }
         this.mediaRecorder.pause();
       } catch (e) {}
     }
@@ -90,6 +93,14 @@ export class VoiceRecorder {
         this.mediaRecorder.resume();
       } catch (e) {}
     }
+  }
+
+  getPreviewBlob() {
+    if (this.isSimulated || !this.mediaRecorder || this.audioChunks.length === 0) {
+      return this.createSyntheticVoiceBlob(Math.max(1, this.elapsedSeconds));
+    }
+    const mimeType = (this.mediaRecorder && this.mediaRecorder.mimeType) || 'audio/webm';
+    return new Blob(this.audioChunks, { type: mimeType });
   }
 
   lock() {

@@ -157,14 +157,60 @@ export class ChatView {
           </button>
         </footer>
 
-        <!-- Locked Voice Recording Bar (@refrance Image 1) -->
+        <!-- Holding Voice Recording Bar (@refrance 1 & 2) -->
+        <div class="chat-voice-holding-bar" id="chat-voice-holding-bar" style="display: none;">
+          <div class="voice-holding-left">
+            <span class="voice-red-mic-icon">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="#ef4444">
+                <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+              </svg>
+            </span>
+            <span class="voice-holding-timer" id="voice-holding-timer">0:00</span>
+          </div>
+          <div class="voice-holding-slide" id="voice-holding-slide">
+            <span class="slide-chevron">&lt;</span>
+            <span class="slide-text">Slide to cancel</span>
+          </div>
+          <div class="voice-holding-mic-space"></div>
+        </div>
+
+        <!-- Floating Lock Capsule above mic button (@refrance 1 & 2) -->
+        <div class="voice-lock-capsule" id="voice-lock-capsule" style="display: none;">
+          <div class="lock-icon-wrap">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+              <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+            </svg>
+          </div>
+          <div class="lock-chevron-wrap">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+              <path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"/>
+            </svg>
+          </div>
+        </div>
+
+        <!-- Locked Voice Recording Bar (@refrance 3) -->
         <div class="chat-voice-locked-bar" id="chat-voice-locked-bar" style="display: none;">
           <div class="voice-locked-top">
             <div class="voice-locked-timer" id="voice-locked-timer">0:00</div>
-            <div class="voice-locked-waveform">
+            <div class="voice-locked-waveform" id="voice-locked-waveform">
               <span class="v-dot"></span><span class="v-dot"></span><span class="v-dot"></span><span class="v-dot"></span>
               <span class="v-dot"></span><span class="v-dot"></span><span class="v-dot"></span><span class="v-dot"></span>
               <span class="v-dot"></span><span class="v-dot"></span><span class="v-dot"></span><span class="v-dot"></span>
+              <span class="v-dot"></span><span class="v-dot"></span><span class="v-dot"></span><span class="v-dot"></span>
+              <span class="v-dot"></span><span class="v-dot"></span><span class="v-dot"></span><span class="v-dot"></span>
+            </div>
+            <!-- Audio Playback Preview while Paused -->
+            <div class="voice-locked-preview" id="voice-locked-preview" style="display: none;">
+              <button type="button" class="voice-preview-play-btn" id="btn-voice-preview-play" aria-label="Play recording preview">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" id="icon-preview-play-svg">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+              </button>
+              <div class="voice-preview-track-wrap" id="voice-preview-track">
+                <div class="voice-preview-progress-bar" id="voice-preview-progress" style="width: 0%;"></div>
+              </div>
+              <span class="voice-preview-time" id="voice-preview-time">0:00</span>
             </div>
           </div>
           <div class="voice-locked-bottom">
@@ -423,26 +469,41 @@ export class ChatView {
     const sendBtn = this.container.querySelector('#btn-mic-send');
     const textarea = this.container.querySelector('#chat-input-textarea');
     const normalBar = this.container.querySelector('#chat-default-input-bar');
+    const holdingBar = this.container.querySelector('#chat-voice-holding-bar');
+    const holdingTimer = this.container.querySelector('#voice-holding-timer');
+    const holdingSlide = this.container.querySelector('#voice-holding-slide');
+    const lockCapsule = this.container.querySelector('#voice-lock-capsule');
     const lockedBar = this.container.querySelector('#chat-voice-locked-bar');
-    const timerEl = this.container.querySelector('#voice-locked-timer');
+    const lockedTimer = this.container.querySelector('#voice-locked-timer');
+    const waveformRow = this.container.querySelector('#voice-locked-waveform');
+    const previewRow = this.container.querySelector('#voice-locked-preview');
     const discardBtn = this.container.querySelector('#btn-voice-discard');
     const pauseResumeBtn = this.container.querySelector('#btn-voice-pause-resume');
     const lockedSendBtn = this.container.querySelector('#btn-voice-send');
 
-    let pressTimer = null;
+    let startX = 0;
     let startY = 0;
     let isHolding = false;
     let isLocked = false;
+    let isCancelled = false;
 
     this.voiceRecorder = new VoiceRecorder({
       onLocked: () => {
         isLocked = true;
+        isHolding = false;
         normalBar.style.display = 'none';
+        holdingBar.style.display = 'none';
+        lockCapsule.style.display = 'none';
         lockedBar.style.display = 'flex';
+        this.stopPreviewAudio();
+        if (previewRow) previewRow.style.display = 'none';
+        if (waveformRow) waveformRow.style.display = 'flex';
         pauseResumeBtn.innerHTML = '<span class="pause-bars">||</span> <span class="pause-label">Pause</span>';
       },
       onUpdateTimer: (sec) => {
-        if (timerEl) timerEl.textContent = VoiceRecorder.formatDuration(sec);
+        const formatted = VoiceRecorder.formatDuration(sec);
+        if (holdingTimer) holdingTimer.textContent = formatted;
+        if (lockedTimer) lockedTimer.textContent = formatted;
       },
       onSend: async (audioBlob, duration) => {
         this.resetVoiceUI();
@@ -450,42 +511,95 @@ export class ChatView {
       },
       onDiscard: () => {
         this.resetVoiceUI();
-        Toast.show('Recording discarded');
       }
     });
 
-    const onPointerDown = (e) => {
-      if (textarea.value.trim().length > 0) return;
-      startY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+    const onPointerDown = async (e) => {
+      // If textarea has text, sendBtn acts as regular text send button
+      if (sendBtn.classList.contains('is-send') || textarea.value.trim().length > 0) return;
+      if (e.button !== 0 && e.pointerType === 'mouse') return;
+
+      e.preventDefault();
+      try {
+        sendBtn.setPointerCapture(e.pointerId);
+      } catch (err) {}
+
+      startX = e.clientX;
+      startY = e.clientY;
       isHolding = true;
       isLocked = false;
+      isCancelled = false;
 
-      pressTimer = setTimeout(async () => {
-        if (isHolding && !isLocked) {
-          await this.voiceRecorder.start();
-          this.showLockTooltip();
-        }
-      }, 180);
+      // Switch UI immediately into holding recording state
+      normalBar.style.display = 'none';
+      holdingBar.style.display = 'flex';
+      lockCapsule.style.display = 'flex';
+      lockCapsule.classList.remove('active');
+      holdingSlide.style.transform = '';
+      holdingTimer.textContent = '0:00';
+      sendBtn.classList.add('recording-active');
+
+      await this.voiceRecorder.start();
     };
 
-    const onPointerMove = (e) => {
-      if (!isHolding || isLocked || !this.voiceRecorder.isRecording) return;
-      const currentY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
-      const deltaY = startY - currentY;
-      if (deltaY > 50) {
-        this.removeLockTooltip();
-        this.voiceRecorder.lock();
+    const onPointerMove = async (e) => {
+      if (!isHolding || isLocked || isCancelled || !this.voiceRecorder.isRecording) return;
+      const currentX = e.clientX;
+      const currentY = e.clientY;
+      const deltaX = currentX - startX;
+      const deltaY = startY - currentY; // Upward drag is positive
+
+      // Slide left to cancel
+      if (deltaX < 0) {
+        const clampedTranslate = Math.max(-80, deltaX);
+        holdingSlide.style.transform = `translateX(${clampedTranslate}px)`;
+
+        // Cancel threshold: dragged left by 65px or more
+        if (deltaX <= -65) {
+          isCancelled = true;
+          isHolding = false;
+          try {
+            sendBtn.releasePointerCapture(e.pointerId);
+          } catch (err) {}
+          await this.voiceRecorder.stop(false);
+          this.resetVoiceUI();
+          Toast.show('Recording cancelled');
+          return;
+        }
+      } else {
+        holdingSlide.style.transform = '';
+      }
+
+      // Slide up to lock
+      if (deltaY > 0) {
+        if (deltaY >= 35) {
+          lockCapsule.classList.add('active');
+        } else {
+          lockCapsule.classList.remove('active');
+        }
+
+        // Lock threshold: dragged up by 48px or more
+        if (deltaY >= 48) {
+          isHolding = false;
+          isLocked = true;
+          try {
+            sendBtn.releasePointerCapture(e.pointerId);
+          } catch (err) {}
+          this.voiceRecorder.lock();
+          return;
+        }
+      } else {
+        lockCapsule.classList.remove('active');
       }
     };
 
-    const onPointerUp = async () => {
-      clearTimeout(pressTimer);
-      this.removeLockTooltip();
-
-      if (!isHolding) return;
+    const onPointerUp = async (e) => {
+      if (!isHolding || isLocked || isCancelled) return;
       isHolding = false;
 
-      if (isLocked) return;
+      try {
+        sendBtn.releasePointerCapture(e.pointerId);
+      } catch (err) {}
 
       if (this.voiceRecorder.isRecording) {
         if (this.voiceRecorder.elapsedSeconds >= 1) {
@@ -495,56 +609,140 @@ export class ChatView {
           Toast.show('Hold to record, release to send');
         }
       }
+      this.resetVoiceUI();
+    };
+
+    const onPointerCancel = async (e) => {
+      if (!isHolding || isLocked) return;
+      isHolding = false;
+      try {
+        sendBtn.releasePointerCapture(e.pointerId);
+      } catch (err) {}
+      await this.voiceRecorder.stop(false);
+      this.resetVoiceUI();
     };
 
     sendBtn.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('pointermove', onPointerMove);
-    document.addEventListener('pointerup', onPointerUp);
+    sendBtn.addEventListener('pointermove', onPointerMove);
+    sendBtn.addEventListener('pointerup', onPointerUp);
+    sendBtn.addEventListener('pointercancel', onPointerCancel);
 
+    // Discard button in locked panel
     discardBtn.addEventListener('click', async () => {
+      this.stopPreviewAudio();
       await this.voiceRecorder.stop(false);
+      this.resetVoiceUI();
+      Toast.show('Recording discarded');
     });
 
+    // Pause / Resume button in locked panel
     pauseResumeBtn.addEventListener('click', () => {
       if (this.voiceRecorder.isPaused) {
+        // Resume recording
+        this.stopPreviewAudio();
         this.voiceRecorder.resume();
+        if (previewRow) previewRow.style.display = 'none';
+        if (waveformRow) waveformRow.style.display = 'flex';
         pauseResumeBtn.innerHTML = '<span class="pause-bars">||</span> <span class="pause-label">Pause</span>';
       } else {
+        // Pause recording & show playback preview
         this.voiceRecorder.pause();
         pauseResumeBtn.innerHTML = '<span class="pause-bars">▶</span> <span class="pause-label">Resume</span>';
+        if (waveformRow) waveformRow.style.display = 'none';
+        if (previewRow) previewRow.style.display = 'flex';
+        this.setupPreviewAudio();
       }
     });
 
+    // Send button in locked panel
     lockedSendBtn.addEventListener('click', async () => {
+      this.stopPreviewAudio();
       await this.voiceRecorder.stop(true);
+      this.resetVoiceUI();
     });
   }
 
-  showLockTooltip() {
-    this.removeLockTooltip();
-    const tooltip = document.createElement('div');
-    tooltip.className = 'voice-lock-tooltip';
-    tooltip.id = 'voice-lock-tooltip';
-    tooltip.innerHTML = `
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-        <path d="M12 17a2 2 0 0 0 2-2V9a2 2 0 0 0-4 0v6a2 2 0 0 0 2 2zm6-9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h1V6a5 5 0 0 1 10 0v2h1zm-6-5a3 3 0 0 0-3 3v2h6V6a3 3 0 0 0-3-3z"/>
-      </svg>
-      <span>Swipe up to lock</span>
-    `;
-    this.container.appendChild(tooltip);
+  setupPreviewAudio() {
+    this.stopPreviewAudio();
+    const blob = this.voiceRecorder ? this.voiceRecorder.getPreviewBlob() : null;
+    if (!blob) return;
+
+    try {
+      const url = URL.createObjectURL(blob);
+      this.previewAudio = new Audio(url);
+
+      const playBtn = this.container.querySelector('#btn-voice-preview-play');
+      const playIconSvg = this.container.querySelector('#icon-preview-play-svg');
+      const progressBar = this.container.querySelector('#voice-preview-progress');
+      const timeEl = this.container.querySelector('#voice-preview-time');
+
+      if (timeEl) timeEl.textContent = VoiceRecorder.formatDuration(this.voiceRecorder.elapsedSeconds);
+      if (progressBar) progressBar.style.width = '0%';
+      if (playIconSvg) playIconSvg.innerHTML = '<path d="M8 5v14l11-7z"/>';
+
+      this.previewAudio.ontimeupdate = () => {
+        if (!this.previewAudio) return;
+        const cur = this.previewAudio.currentTime;
+        const dur = this.previewAudio.duration || this.voiceRecorder.elapsedSeconds;
+        if (timeEl) timeEl.textContent = VoiceRecorder.formatDuration(Math.floor(cur));
+        if (progressBar && dur > 0) {
+          const pct = Math.min(100, (cur / dur) * 100);
+          progressBar.style.width = `${pct}%`;
+        }
+      };
+
+      this.previewAudio.onended = () => {
+        if (playIconSvg) playIconSvg.innerHTML = '<path d="M8 5v14l11-7z"/>';
+        if (progressBar) progressBar.style.width = '0%';
+        if (timeEl) timeEl.textContent = VoiceRecorder.formatDuration(this.voiceRecorder.elapsedSeconds);
+      };
+
+      playBtn.onclick = () => {
+        if (!this.previewAudio) return;
+        if (this.previewAudio.paused) {
+          this.previewAudio.play();
+          if (playIconSvg) playIconSvg.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
+        } else {
+          this.previewAudio.pause();
+          if (playIconSvg) playIconSvg.innerHTML = '<path d="M8 5v14l11-7z"/>';
+        }
+      };
+    } catch (err) {
+      console.warn('[ChatView] Preview audio setup error:', err);
+    }
   }
 
-  removeLockTooltip() {
-    const tip = this.container.querySelector('#voice-lock-tooltip');
-    if (tip) tip.remove();
+  stopPreviewAudio() {
+    if (this.previewAudio) {
+      try {
+        this.previewAudio.pause();
+      } catch (e) {}
+      this.previewAudio = null;
+    }
   }
 
   resetVoiceUI() {
+    this.stopPreviewAudio();
     const normalBar = this.container.querySelector('#chat-default-input-bar');
+    const holdingBar = this.container.querySelector('#chat-voice-holding-bar');
     const lockedBar = this.container.querySelector('#chat-voice-locked-bar');
+    const lockCapsule = this.container.querySelector('#voice-lock-capsule');
+    const holdingSlide = this.container.querySelector('#voice-holding-slide');
+    const holdingTimer = this.container.querySelector('#voice-holding-timer');
+    const lockedTimer = this.container.querySelector('#voice-locked-timer');
+    const sendBtn = this.container.querySelector('#btn-mic-send');
+
     if (normalBar) normalBar.style.display = 'flex';
+    if (holdingBar) holdingBar.style.display = 'none';
     if (lockedBar) lockedBar.style.display = 'none';
-    this.removeLockTooltip();
+    if (lockCapsule) {
+      lockCapsule.style.display = 'none';
+      lockCapsule.classList.remove('active');
+    }
+    if (holdingSlide) holdingSlide.style.transform = '';
+    if (holdingTimer) holdingTimer.textContent = '0:00';
+    if (lockedTimer) lockedTimer.textContent = '0:00';
+    if (sendBtn) sendBtn.classList.remove('recording-active');
   }
 
   openMediaEditor(files) {
