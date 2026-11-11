@@ -1308,20 +1308,13 @@ export class ChatView {
   }
 
   toggleMessageSelection(msgId, rowEl) {
+    const row = rowEl || (this.scroller ? this.scroller.findMessageElement(msgId) : this.container.querySelector(`.msg-row[data-msg-id="${msgId}"]`));
     if (this.selectedMessageIds.has(msgId)) {
       this.selectedMessageIds.delete(msgId);
-      if (rowEl) rowEl.classList.remove('is-msg-selected');
-      else {
-        const row = this.container.querySelector(`.msg-row[data-msg-id="${msgId}"]`);
-        if (row) row.classList.remove('is-msg-selected');
-      }
+      if (row) row.classList.remove('is-msg-selected');
     } else {
       this.selectedMessageIds.add(msgId);
-      if (rowEl) rowEl.classList.add('is-msg-selected');
-      else {
-        const row = this.container.querySelector(`.msg-row[data-msg-id="${msgId}"]`);
-        if (row) row.classList.add('is-msg-selected');
-      }
+      if (row) row.classList.add('is-msg-selected');
     }
 
     if (this.selectedMessageIds.size === 0) {

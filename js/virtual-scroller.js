@@ -202,7 +202,11 @@ export class VirtualMessageScroller {
     }
 
     if (targetMessageId) {
-      const foundIdx = this.allMessages.findIndex((m) => m.id === targetMessageId);
+      const targetStr = String(targetMessageId);
+      const foundIdx = this.allMessages.findIndex((m) =>
+        String(m.id) === targetStr ||
+        (m.mediaId && String(m.mediaId) === targetStr)
+      );
       const targetIdx = foundIdx !== -1 ? foundIdx : this.allMessages.length - 1;
       this.visibleStartIndex = Math.max(0, targetIdx - Math.floor(this.CHUNK_SIZE / 2));
       this.visibleEndIndex = Math.min(this.allMessages.length, this.visibleStartIndex + this.CHUNK_SIZE);
@@ -214,7 +218,9 @@ export class VirtualMessageScroller {
     await this.renderBatch(this.visibleStartIndex, this.visibleEndIndex, 'replace');
 
     if (targetMessageId) {
-      this.scrollToMessage(targetMessageId);
+      setTimeout(() => {
+        this.scrollToMessage(targetMessageId);
+      }, 60);
     } else {
       this.container.scrollTop = this.container.scrollHeight;
       requestAnimationFrame(() => {
@@ -519,8 +525,10 @@ export class VirtualMessageScroller {
     const row = document.createElement('div');
     row.className = `msg-row ${firstMsg.isOutgoing ? 'outgoing' : 'incoming'} album-msg-row`;
     row.id = `msg-${firstMsg.id}`;
-    row.dataset.msgId = firstMsg.id;
+    row.dataset.msgId = String(firstMsg.id);
     row.dataset.msgCount = String(albumMsgs.length);
+    row.dataset.albumIds = albumMsgs.map((m) => m.id).join(',');
+    row.dataset.mediaIds = albumMsgs.map((m) => m.mediaId).filter(Boolean).join(',');
 
     const bubble = document.createElement('div');
     bubble.className = `msg-bubble ${firstMsg.isOutgoing ? 'bubble-outgoing' : 'bubble-incoming'} ${this.outgoingTheme === 'green' && firstMsg.isOutgoing ? 'theme-green' : ''} media-album-bubble`;
@@ -552,7 +560,9 @@ export class VirtualMessageScroller {
     // Individual image focus is then achieved from within the stacked view.
     const openStacked = () => {
       mediaLightbox.showStackedAlbum(albumMsgs, this.chat.name, (chatId, msgId) => {
-        this.scrollToMessage(msgId);
+        setTimeout(() => {
+          this.scrollToMessage(msgId);
+        }, 50);
       });
     };
 
@@ -580,6 +590,8 @@ export class VirtualMessageScroller {
 
       const thumbWrap = document.createElement('div');
       thumbWrap.className = 'album-thumb-wrap';
+      thumbWrap.dataset.msgId = String(itemMsg.id);
+      if (itemMsg.mediaId) thumbWrap.dataset.mediaId = String(itemMsg.mediaId);
 
       if (mediaUrl) {
         if (itemMsg.mediaType === 'video' || (itemMsg.mediaName && /\.(mp4|mov|webm)$/i.test(itemMsg.mediaName))) {
@@ -721,7 +733,8 @@ export class VirtualMessageScroller {
     const row = document.createElement('div');
     row.className = `msg-row ${msg.isOutgoing ? 'outgoing' : 'incoming'}`;
     row.id = `msg-${msg.id}`;
-    row.dataset.msgId = msg.id;
+    row.dataset.msgId = String(msg.id);
+    if (msg.mediaId) row.dataset.mediaId = String(msg.mediaId);
     row.dataset.msgCount = '1';
 
     if (msg.isSystem) {
@@ -1026,28 +1039,81 @@ export class VirtualMessageScroller {
     }, smooth ? 400 : 60);
   }
 
+  findMessageElement(messageId) {
+    if (!messageId) return null;
+    const targetStr = String(messageId);
+
+    // 1. Direct row match by id or dataset.msgId
+    let el = this.container.querySelector(`.msg-row[data-msg-id="${targetStr}"], .msg-row#msg-${targetStr}`);
+    if (el) return el;
+
+    // 2. Direct row match by dataset.mediaId
+    el = this.container.querySelector(`.msg-row[data-media-id="${targetStr}"]`);
+    if (el) return el;
+
+    // 3. Child match (e.g. thumb inside album or media card)
+    const child = this.container.querySelector(`[data-msg-id="${targetStr}"], [data-media-id="${targetStr}"]`);
+    if (child) {
+      const row = child.closest('.msg-row');
+      if (row) return row;
+    }
+
+    // 4. Album row lookup via data-album-ids and data-media-ids
+    const albumRows = this.container.querySelectorAll('.album-msg-row');
+    for (const aRow of albumRows) {
+      const albumIds = (aRow.dataset.albumIds || '').split(',');
+      if (albumIds.includes(targetStr)) return aRow;
+      const mediaIds = (aRow.dataset.mediaIds || '').split(',');
+      if (mediaIds.includes(targetStr)) return aRow;
+    }
+
+    return null;
+  }
+
   async scrollToMessage(messageId) {
+    if (!messageId) return;
     clearTimeout(this.autoScrollTimer);
     this.isAutoScrolling = true;
 
-    let el = this.container.querySelector(`[data-msg-id="${messageId}"]`) ||
-      this.container.querySelector(`#msg-${messageId}`);
+    const targetStr = String(messageId);
+    let el = this.findMessageElement(targetStr);
 
     if (!el) {
-      const foundIdx = this.allMessages.findIndex((m) => m.id === messageId);
+      let foundIdx = this.allMessages.findIndex(
+        (m) => String(m.id) === targetStr || (m.mediaId && String(m.mediaId) === targetStr)
+      );
+
+      if (foundIdx === -1) {
+        const fresh = await db.getMessages(this.chatId);
+        if (fresh && fresh.length) {
+          this.allMessages = fresh;
+          foundIdx = this.allMessages.findIndex(
+            (m) => String(m.id) === targetStr || (m.mediaId && String(m.mediaId) === targetStr)
+          );
+        }
+      }
+
       if (foundIdx !== -1) {
         this.visibleStartIndex = Math.max(0, foundIdx - Math.floor(this.CHUNK_SIZE / 2));
         this.visibleEndIndex = Math.min(this.allMessages.length, this.visibleStartIndex + this.CHUNK_SIZE);
         await this.renderBatch(this.visibleStartIndex, this.visibleEndIndex, 'replace');
-        el = this.container.querySelector(`[data-msg-id="${messageId}"]`) ||
-          this.container.querySelector(`#msg-${messageId}`);
+        el = this.findMessageElement(targetStr);
       }
     }
 
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('highlight-flash');
-      setTimeout(() => el.classList.remove('highlight-flash'), 2500);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.classList.add('highlight-flash');
+          const bubble = el.querySelector('.msg-bubble');
+          if (bubble) bubble.classList.add('highlight-flash');
+          setTimeout(() => {
+            el.classList.remove('highlight-flash');
+            if (bubble) bubble.classList.remove('highlight-flash');
+          }, 2500);
+        });
+      });
     }
 
     this.autoScrollTimer = setTimeout(() => {
@@ -1061,8 +1127,7 @@ export class VirtualMessageScroller {
     this.isAutoScrolling = true;
 
     // Check if target message is already in DOM
-    let el = this.container.querySelector(`[data-msg-id="${targetMsg.id}"]`) ||
-      this.container.querySelector(`#msg-${targetMsg.id}`);
+    let el = this.findMessageElement(targetMsg.id);
 
     const foundIdx = this.allMessages.findIndex((m) => m.id === targetMsg.id);
     const curCenterIdx = Math.floor((this.visibleStartIndex + this.visibleEndIndex) / 2);
@@ -1074,8 +1139,7 @@ export class VirtualMessageScroller {
         this.visibleEndIndex = Math.min(this.allMessages.length, this.visibleStartIndex + this.CHUNK_SIZE);
         await this.renderBatch(this.visibleStartIndex, this.visibleEndIndex, 'replace');
 
-        el = this.container.querySelector(`[data-msg-id="${targetMsg.id}"]`) ||
-          this.container.querySelector(`#msg-${targetMsg.id}`);
+        el = this.findMessageElement(targetMsg.id);
       }
     }
 
@@ -1136,8 +1200,7 @@ export class VirtualMessageScroller {
     const found = this.allMessages.find((m) => m.id === msgId);
     if (found) found.reaction = reaction;
 
-    const row = this.container.querySelector(`#msg-${msgId}`) ||
-      this.container.querySelector(`[data-msg-id="${msgId}"]`);
+    const row = this.findMessageElement(msgId);
     if (!row) return;
 
     const bubble = row.querySelector('.msg-bubble');

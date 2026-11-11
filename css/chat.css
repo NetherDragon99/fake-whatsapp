@@ -431,17 +431,26 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-.highlight-flash {
-  animation: flashYellow 2s ease-out;
+.highlight-flash,
+.msg-row.highlight-flash .msg-bubble,
+.msg-bubble.highlight-flash {
+  animation: flashHighlight 2.4s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
-@keyframes flashYellow {
+@keyframes flashHighlight {
   0% {
-    background-color: rgba(255, 215, 0, 0.4);
+    background-color: rgba(0, 168, 132, 0.45) !important;
+    outline: 2px solid rgba(0, 168, 132, 0.7);
+  }
+
+  35% {
+    background-color: rgba(0, 168, 132, 0.28);
+    outline: 2px solid rgba(0, 168, 132, 0.4);
   }
 
   100% {
     background-color: transparent;
+    outline: 2px solid transparent;
   }
 }
 

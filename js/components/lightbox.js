@@ -70,7 +70,7 @@ class Lightbox {
 
     this.overlay.querySelector('.lightbox-show-in-chat').addEventListener('click', () => {
       const targetChatId = msg.chatId;
-      const targetMsgId = msg.id;
+      const targetMsgId = msg.id || msg.mediaId || (mediaItem && mediaItem.id);
       this.close();
       if (this.onShowInChat) {
         this.onShowInChat(targetChatId, targetMsgId);
@@ -239,9 +239,9 @@ class Lightbox {
 
     // Show in chat
     this.overlay.querySelector('#album-btn-show-in-chat').addEventListener('click', () => {
-      const currentMsg = albumMsgs[currentIndex];
-      const targetChatId = currentMsg.chatId;
-      const targetMsgId = currentMsg.id;
+      const currentMsg = albumMsgs[currentIndex] || albumMsgs[0];
+      const targetChatId = currentMsg ? currentMsg.chatId : null;
+      const targetMsgId = currentMsg ? (currentMsg.id || currentMsg.mediaId) : null;
       this.close();
       if (this.onShowInChat) {
         this.onShowInChat(targetChatId, targetMsgId);
@@ -391,6 +391,8 @@ class Lightbox {
   };
 
   close(triggerBack = true) {
+    const hadStacked = !!(this.stackedOverlay && this.stackedOverlay.isConnected);
+
     // Close album overlay
     if (this.overlay) {
       const closingEl = this.overlay;
@@ -420,7 +422,11 @@ class Lightbox {
     }
     window.removeEventListener('popstate', this.handlePopState);
     if (triggerBack && history.state && (history.state.modal === 'lightbox' || history.state.modal === 'stacked-album')) {
-      history.back();
+      if (hadStacked && history.state.modal === 'lightbox') {
+        history.go(-2);
+      } else {
+        history.back();
+      }
     }
   }
 }

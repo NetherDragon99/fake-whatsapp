@@ -320,16 +320,18 @@ export class ContactInfoView {
           `;
           thumb.addEventListener('click', () => {
             const parentMsg = msgs.find((m) => m.mediaId === med.id) || {};
-            mediaLightbox.show(med, parentMsg, () => {
-              this.router.navigate(`#/chat/${this.chatId}`);
+            mediaLightbox.show(med, parentMsg, (targetChatId, targetMsgId) => {
+              const mId = targetMsgId || parentMsg.id || med.id;
+              this.router.navigate(`#/chat/${this.chatId}?msgId=${mId}`);
             });
           });
         } else {
           thumb.innerHTML = `<img src="${url}" class="strip-thumb-img" alt="media" />`;
           thumb.addEventListener('click', () => {
             const parentMsg = msgs.find((m) => m.mediaId === med.id) || {};
-            mediaLightbox.show(med, parentMsg, () => {
-              this.router.navigate(`#/chat/${this.chatId}`);
+            mediaLightbox.show(med, parentMsg, (targetChatId, targetMsgId) => {
+              const mId = targetMsgId || parentMsg.id || med.id;
+              this.router.navigate(`#/chat/${this.chatId}?msgId=${mId}`);
             });
           });
         }

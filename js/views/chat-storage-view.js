@@ -35,6 +35,7 @@ export class ChatStorageView {
     this.chat = await db.getChat(this.chatId);
     if (!this.chat) return;
     this.stats = await db.getChatDetailedStorage(this.chatId);
+    this.msgs = await db.getMessages(this.chatId);
   }
 
   renderUI() {
@@ -302,7 +303,11 @@ export class ChatStorageView {
           this.toggleSelectMedia(med.id);
         } else {
           // Open lightbox
-          mediaLightbox.show(med, {}, () => {});
+          const parentMsg = (this.msgs || []).find((m) => m.mediaId === med.id) || {};
+          mediaLightbox.show(med, parentMsg.id ? parentMsg : { chatId: this.chatId, id: med.id }, (targetChatId, targetMsgId) => {
+            const mId = targetMsgId || parentMsg.id || med.id;
+            this.router.navigate(`#/chat/${this.chatId}?msgId=${mId}`);
+          });
         }
       });
 
