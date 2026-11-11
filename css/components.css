@@ -1727,6 +1727,14 @@ input:checked + .switch-slider::before {
   gap: 16px;
 }
 
+.swap-loading-card {
+  user-select: none;
+}
+
+.swap-loading-card .progress-spinner {
+  flex-shrink: 0;
+}
+
 .custom-dialog-overlay.active .custom-dialog-card {
   transform: scale(1);
   opacity: 1;

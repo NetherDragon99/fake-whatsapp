@@ -4,7 +4,7 @@ import { db } from '../db.js';
 import { VirtualMessageScroller } from '../virtual-scroller.js';
 import { mediaLightbox } from '../components/lightbox.js';
 import { Toast } from '../components/toast.js';
-import { showConfirm, showAlert, showPrompt } from '../components/custom-dialog.js';
+import { showConfirm, showAlert, showPrompt, showLoadingDialog } from '../components/custom-dialog.js';
 import { WALLPAPER_PRESETS } from '../config/wallpapers.js';
 import { assetUrl } from '../config/base-path.js';
 import { VoiceRecorder } from '../components/voice-recorder.js';
@@ -777,30 +777,56 @@ export class ChatView {
   }
 
   async flipPerspective() {
-    const updatedChat = await db.swapChatPerspective(this.chatId);
-    if (!updatedChat) return;
+    const controller = new AbortController();
+    const loading = showLoadingDialog({
+      title: 'Swapping sender / receiver...',
+      message: 'Please wait',
+      cancelText: 'Cancel',
+      onCancel: () => controller.abort()
+    });
 
-    this.chat = updatedChat;
+    // Give DOM a frame to paint the loading dialog before starting DB tasks
+    await new Promise((r) => setTimeout(r, 60));
 
-    // Update Header Name
-    const titleEl = this.container.querySelector('.chat-header-title');
-    if (titleEl) {
-      titleEl.textContent = this.chat.name;
+    try {
+      const updatedChat = await db.swapChatPerspective(this.chatId, { signal: controller.signal });
+      if (controller.signal.aborted || !updatedChat) {
+        loading.close();
+        Toast.show('Swap cancelled. No changes made.');
+        return;
+      }
+
+      this.chat = updatedChat;
+
+      // Update Header Name
+      const titleEl = this.container.querySelector('.chat-header-title');
+      if (titleEl) {
+        titleEl.textContent = this.chat.name;
+      }
+
+      // Update Header Avatar
+      const avatarWrap = this.container.querySelector('.chat-header-avatar');
+      if (avatarWrap) {
+        avatarWrap.innerHTML = this.chat.avatarBlob
+          ? `<img src="${URL.createObjectURL(this.chat.avatarBlob)}" class="chat-avatar-img" alt="Avatar" />`
+          : (this.chat.isGroup ? Icons.groupAvatar('', 38) : Icons.userAvatar('', 38));
+      }
+
+      // Refresh Virtual Scroller with updated chat
+      this.scroller.chat = this.chat;
+      await this.scroller.loadInitial();
+
+      loading.close();
+      Toast.show(`Perspective swapped with ${this.chat.name}`);
+    } catch (err) {
+      loading.close();
+      if (controller.signal.aborted) {
+        Toast.show('Swap cancelled. No changes made.');
+      } else {
+        console.error('Error swapping perspective:', err);
+        Toast.show('Failed to swap perspective');
+      }
     }
-
-    // Update Header Avatar
-    const avatarWrap = this.container.querySelector('.chat-header-avatar');
-    if (avatarWrap) {
-      avatarWrap.innerHTML = this.chat.avatarBlob
-        ? `<img src="${URL.createObjectURL(this.chat.avatarBlob)}" class="chat-avatar-img" alt="Avatar" />`
-        : (this.chat.isGroup ? Icons.groupAvatar('', 38) : Icons.userAvatar('', 38));
-    }
-
-    // Refresh Virtual Scroller with updated chat
-    this.scroller.chat = this.chat;
-    await this.scroller.loadInitial();
-
-    Toast.show(`Perspective swapped with ${this.chat.name}`);
   }
 
   async jumpToSelectedDate(dateString) {

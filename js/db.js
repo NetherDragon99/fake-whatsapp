@@ -126,10 +126,13 @@ class Database {
     return this.saveChat(updated);
   }
 
-  async swapChatPerspective(chatId) {
+  async swapChatPerspective(chatId, { signal } = {}) {
+    if (signal?.aborted) return null;
     await this.init();
+    if (signal?.aborted) return null;
+
     const chat = await this.getChat(chatId);
-    if (!chat) return null;
+    if (!chat || signal?.aborted) return null;
 
     const ownerName = await this.getSetting('ownerName', 'You');
     const userProfileAvatar = await this.getSetting('userProfileAvatar', null);
@@ -153,13 +156,25 @@ class Database {
       }
     }
 
+    if (signal?.aborted) return null;
+
     // Avatar swap between chat contact and user profile
     const newChatAvatar = userProfileAvatar;
     const newUserAvatar = currentChatAvatar;
 
     // Flip all messages
     const msgs = await this.getMessages(chatId);
-    for (const m of msgs) {
+    if (signal?.aborted) return null;
+
+    // Yield in chunks to keep UI responsive and allow user to cancel
+    const chunkSize = 150;
+    for (let i = 0; i < msgs.length; i++) {
+      if (signal?.aborted) return null;
+      if (i > 0 && i % chunkSize === 0) {
+        await new Promise((r) => setTimeout(r, 0));
+        if (signal?.aborted) return null;
+      }
+      const m = msgs[i];
       if (!m.isSystem) {
         m.isOutgoing = !m.isOutgoing;
         if (m.sender === currentChatName) {
@@ -169,7 +184,11 @@ class Database {
         }
       }
     }
+
+    if (signal?.aborted) return null;
+
     await this.saveMessages(msgs);
+    if (signal?.aborted) return null;
 
     // Flip calls
     try {
@@ -183,6 +202,8 @@ class Database {
     } catch (callErr) {
       console.warn('[DB] Error updating calls during perspective swap:', callErr);
     }
+
+    if (signal?.aborted) return null;
 
     // Update chat metadata
     chat.name = newChatName;

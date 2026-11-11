@@ -4,7 +4,7 @@ import { db } from '../db.js';
 import { PinDialog } from '../components/pin-dialog.js';
 import { mediaLightbox } from '../components/lightbox.js';
 import { Toast } from '../components/toast.js';
-import { showConfirm, showAlert, showPrompt } from '../components/custom-dialog.js';
+import { showConfirm, showAlert, showPrompt, showLoadingDialog } from '../components/custom-dialog.js';
 import { openImageCropper } from '../components/image-cropper.js';
 import { ChatExporter } from '../components/chat-exporter.js';
 
@@ -478,19 +478,38 @@ export class ContactInfoView {
       Toast.show('No messages in this chat');
       return;
     }
-    const confirmed = await showConfirm({
-      title: 'Swap perspective?',
-      message: 'This will reverse sender and receiver for all messages in this conversation so your messages appear on the right.',
-      confirmText: 'Swap',
-      cancelText: 'Cancel'
+
+    const controller = new AbortController();
+    const loading = showLoadingDialog({
+      title: 'Swapping sender / receiver...',
+      message: 'Please wait',
+      cancelText: 'Cancel',
+      onCancel: () => controller.abort()
     });
-    if (!confirmed) return;
 
-    const updatedChat = await db.swapChatPerspective(this.chatId);
-    if (!updatedChat) return;
+    // Give DOM a frame to paint the loading dialog before starting DB tasks
+    await new Promise((r) => setTimeout(r, 60));
 
-    Toast.show(`Perspective swapped with ${updatedChat.name}!`);
-    this.router.navigate(`#/chat/${this.chatId}`);
+    try {
+      const updatedChat = await db.swapChatPerspective(this.chatId, { signal: controller.signal });
+      if (controller.signal.aborted || !updatedChat) {
+        loading.close();
+        Toast.show('Swap cancelled. No changes made.');
+        return;
+      }
+
+      loading.close();
+      Toast.show(`Perspective swapped with ${updatedChat.name}!`);
+      this.router.navigate(`#/chat/${this.chatId}`);
+    } catch (err) {
+      loading.close();
+      if (controller.signal.aborted) {
+        Toast.show('Swap cancelled. No changes made.');
+      } else {
+        console.error('Error swapping perspective:', err);
+        Toast.show('Failed to swap perspective');
+      }
+    }
   }
 
   async openEditChatModal() {

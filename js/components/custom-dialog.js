@@ -186,6 +186,78 @@ export function showPrompt({ title, message = '', defaultValue = '', placeholder
   });
 }
 
+/**
+ * Shows a centered loading dialog with spinner, status text, and optional cancel button.
+ * @param {Object} options
+ * @param {string} options.title - Dialog heading (e.g. 'Swapping sender / receiver...')
+ * @param {string} [options.message='Please wait'] - Subtitle
+ * @param {string} [options.cancelText='Cancel'] - Cancel button label
+ * @param {Function} [options.onCancel] - Callback invoked when cancel is clicked
+ * @returns {{ close: Function, isCancelled: () => boolean, update: (title: string, sub?: string) => void }}
+ */
+export function showLoadingDialog({
+  title = 'Loading...',
+  message = 'Please wait',
+  cancelText = 'Cancel',
+  onCancel = null
+} = {}) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay custom-dialog-overlay active';
+
+  let isCancelled = false;
+
+  overlay.innerHTML = `
+    <div class="custom-dialog-card swap-loading-card" role="dialog" aria-modal="true" style="padding: 24px; max-width: 320px;">
+      <div style="display: flex; align-items: center; gap: 18px;">
+        <div class="progress-spinner" style="width: 38px; height: 38px; min-width: 38px; border-width: 3.5px; border-color: rgba(255, 255, 255, 0.12); border-top-color: var(--wa-green, #00a884);"></div>
+        <div style="display: flex; flex-direction: column; gap: 4px; overflow: hidden;">
+          <h3 class="custom-dialog-title" id="loading-dialog-title" style="font-size: 16px; font-weight: 500; margin: 0; color: var(--wa-text-primary, #e9edef);">${escapeHtml(title)}</h3>
+          <div class="custom-dialog-body" id="loading-dialog-sub" style="font-size: 13.5px; margin: 0; color: var(--wa-text-secondary, #8696a0);">${escapeHtml(message)}</div>
+        </div>
+      </div>
+      ${cancelText ? `
+        <div class="custom-dialog-actions" style="margin-top: 14px; margin-bottom: -4px;">
+          <button type="button" class="dialog-btn dialog-btn-cancel" id="btn-dialog-cancel" style="color: var(--wa-green, #00a884); font-size: 14px; font-weight: 600; background: none; border: none; padding: 6px 14px; cursor: pointer;">${escapeHtml(cancelText)}</button>
+        </div>
+      ` : ''}
+    </div>
+  `;
+
+  const cancelBtn = overlay.querySelector('#btn-dialog-cancel');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => {
+      if (isCancelled) return;
+      isCancelled = true;
+      cancelBtn.disabled = true;
+      cancelBtn.style.opacity = '0.5';
+      const sub = overlay.querySelector('#loading-dialog-sub');
+      if (sub) sub.textContent = 'Cancelling...';
+      if (typeof onCancel === 'function') {
+        onCancel();
+      }
+    });
+  }
+
+  document.body.appendChild(overlay);
+
+  return {
+    isCancelled: () => isCancelled,
+    update: (newTitle, newSub) => {
+      const titleEl = overlay.querySelector('#loading-dialog-title');
+      const subEl = overlay.querySelector('#loading-dialog-sub');
+      if (titleEl && newTitle) titleEl.textContent = newTitle;
+      if (subEl && newSub !== undefined) subEl.textContent = newSub;
+    },
+    close: () => {
+      overlay.classList.remove('active');
+      overlay.style.opacity = '0';
+      setTimeout(() => {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      }, 200);
+    }
+  };
+}
+
 function escapeHtml(str) {
   if (!str) return '';
   return String(str)
