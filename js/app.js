@@ -235,7 +235,7 @@ class Application {
             isOutgoing: lastMsg.isOutgoing,
             mediaType: lastMsg.mediaType
           } : null,
-          updatedAt: lastMsg ? lastMsg.timestamp : Date.now()
+          updatedAt: Date.now()
         });
       }
 

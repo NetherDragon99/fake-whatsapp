@@ -862,7 +862,7 @@ export class ImportModal {
         mediaType: lastMsg.mediaType
       } : null,
       customFilterIds: [],
-      updatedAt: lastMsg ? lastMsg.timestamp : Date.now()
+      updatedAt: Date.now()
     };
 
     await db.saveChat(chatRecord);

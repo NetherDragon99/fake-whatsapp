@@ -875,8 +875,7 @@ class Database {
         timestamp: lastMsg.timestamp,
         isOutgoing: lastMsg.isOutgoing,
         mediaType: lastMsg.mediaType
-      } : null,
-      updatedAt: lastMsg ? lastMsg.timestamp : Date.now()
+      } : null
     });
 
     return true;
