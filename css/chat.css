@@ -1806,3 +1806,23 @@
 .chat-header.selection-bar {
   background-color: var(--wa-surface-secondary, #1f2c34);
 }
+
+/* Message Selection Mode Highlight & Actions */
+.msg-row.is-msg-selected {
+  background-color: rgba(37, 211, 102, 0.18) !important;
+  position: relative;
+}
+
+.msg-row.is-msg-selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background-color: var(--app-accent, #25d366);
+}
+
+.chat-header.selection-bar {
+  background-color: var(--wa-surface-secondary, #1f2c34);
+}

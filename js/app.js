@@ -241,7 +241,9 @@ class Application {
 
       Toast.show('Demo data loaded successfully!');
       if (this.router.currentViewInstance && typeof this.router.currentViewInstance.render === 'function') {
-        const root = document.getElementById('app-root');
+        const appRootEl = document.getElementById('app-root');
+        const layers = appRootEl.querySelectorAll(':scope > .page-layer');
+        const root = layers.length ? layers[layers.length - 1] : appRootEl;
         await this.router.currentViewInstance.render(root, { id: chatId });
       }
     } catch (err) {

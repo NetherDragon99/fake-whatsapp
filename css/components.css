@@ -72,7 +72,8 @@
   flex-direction: column;
   overflow-y: auto;
   background-color: var(--wa-bg-main);
-  padding-bottom: 70px; /* accommodate bottom nav */
+  padding-bottom: 70px;
+  /* accommodate bottom nav */
 }
 
 .special-chat-row {
@@ -119,7 +120,8 @@
   transition: background-color 0.15s;
 }
 
-.chat-list-item:active, .chat-list-item.selected {
+.chat-list-item:active,
+.chat-list-item.selected {
   background-color: rgba(255, 255, 255, 0.06);
 }
 
@@ -832,11 +834,11 @@
   transition: 0.2s;
 }
 
-input:checked + .switch-slider {
+input:checked+.switch-slider {
   background-color: var(--wa-green);
 }
 
-input:checked + .switch-slider::before {
+input:checked+.switch-slider::before {
   transform: translateX(20px);
   background-color: #0b141a;
 }
@@ -897,6 +899,7 @@ input:checked + .switch-slider::before {
     opacity: 0;
     transform: translateY(12px) scale(0.97);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -1579,7 +1582,9 @@ input:checked + .switch-slider::before {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .progress-status-title {
@@ -1855,9 +1860,19 @@ input:checked + .switch-slider::before {
 }
 
 @keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-10px); }
-  75% { transform: translateX(10px); }
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  25% {
+    transform: translateX(-10px);
+  }
+
+  75% {
+    transform: translateX(10px);
+  }
 }
 
 .pin-error-msg {
@@ -2526,7 +2541,7 @@ input:checked + .switch-slider::before {
   pointer-events: none;
 }
 
-.preview-bottom-bar > * {
+.preview-bottom-bar>* {
   pointer-events: auto;
 }
 
@@ -2729,7 +2744,7 @@ input:checked + .switch-slider::before {
 .is-fullscreen .sheet-drag-handle-bar,
 .is-fullscreen .bottom-sheet-handle-bar,
 .is-fullscreen .drawer-drag-header,
-.is-fullscreen > .sheet-header,
+.is-fullscreen>.sheet-header,
 .is-fullscreen #import-sheet-handle {
   display: none !important;
 }
@@ -3127,6 +3142,7 @@ input:checked + .switch-slider::before {
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
+
 .album-slider-scroller::-webkit-scrollbar {
   display: none;
 }
@@ -3162,12 +3178,15 @@ input:checked + .switch-slider::before {
   transition: background 0.2s;
   border: none;
 }
+
 .album-nav-arrow:hover {
   background: rgba(60, 60, 60, 0.9);
 }
+
 .album-nav-arrow.prev-arrow {
   left: 12px;
 }
+
 .album-nav-arrow.next-arrow {
   right: 12px;
 }
@@ -3247,6 +3266,7 @@ input:checked + .switch-slider::before {
   border: none;
   transition: background-color 0.15s;
 }
+
 .floating-action-btn:hover {
   background-color: rgba(255, 255, 255, 0.08);
 }

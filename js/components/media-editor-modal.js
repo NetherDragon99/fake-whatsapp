@@ -248,7 +248,9 @@ export class MediaEditorModal {
           URL.revokeObjectURL(item.url);
         } catch (e) {}
       });
-      this.container.remove();
+      const closingEl = this.container;
+      closingEl.classList.add('overlay-closing');
+      setTimeout(() => closingEl.remove(), 210);
       this.container = null;
     }
   }

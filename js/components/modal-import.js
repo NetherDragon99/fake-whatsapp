@@ -889,7 +889,9 @@ export class ImportModal {
       return;
     }
     if (this.overlay) {
-      this.overlay.remove();
+      const closingEl = this.overlay;
+      closingEl.classList.add('closing');
+      setTimeout(() => closingEl.remove(), 260);
       this.overlay = null;
     }
   }

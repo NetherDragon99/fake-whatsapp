@@ -10,6 +10,7 @@ import { assetUrl } from '../config/base-path.js';
 import { VoiceRecorder } from '../components/voice-recorder.js';
 import { MediaEditorModal } from '../components/media-editor-modal.js';
 import { StickerDrawer } from '../components/sticker-drawer.js';
+import { Motion } from '../ui-motion.js';
 
 export class ChatView {
   constructor(router) {
@@ -387,27 +388,27 @@ export class ChatView {
     if (moreMenuBtn && dropdownMenu) {
       moreMenuBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        dropdownMenu.style.display = dropdownMenu.style.display === 'none' ? 'block' : 'none';
+        if (Motion.isMenuOpen(dropdownMenu)) Motion.closeMenu(dropdownMenu); else Motion.openMenu(dropdownMenu, moreMenuBtn);
       });
 
       document.addEventListener('click', (e) => {
         if (!e.target.closest('#chat-dropdown-menu') && !e.target.closest('#btn-chat-menu-more')) {
-          if (dropdownMenu) dropdownMenu.style.display = 'none';
+          if (dropdownMenu) Motion.closeMenu(dropdownMenu);
         }
       });
 
       this.container.querySelector('#menu-search-in-chat')?.addEventListener('click', () => {
-        dropdownMenu.style.display = 'none';
+        Motion.closeMenu(dropdownMenu);
         this.toggleSearchHeader(true);
       });
 
       this.container.querySelector('#menu-swap-perspective')?.addEventListener('click', () => {
-        dropdownMenu.style.display = 'none';
+        Motion.closeMenu(dropdownMenu);
         this.flipPerspective();
       });
 
       this.container.querySelector('#menu-jump-to-date')?.addEventListener('click', () => {
-        dropdownMenu.style.display = 'none';
+        Motion.closeMenu(dropdownMenu);
         const dp = this.container.querySelector('#chat-date-picker') || this.container.querySelector('#chat-hidden-date-picker');
         if (dp) {
           if (typeof dp.showPicker === 'function') {
@@ -419,17 +420,17 @@ export class ChatView {
       });
 
       this.container.querySelector('#menu-edit-chat-info')?.addEventListener('click', () => {
-        dropdownMenu.style.display = 'none';
+        Motion.closeMenu(dropdownMenu);
         this.openEditChatModal();
       });
 
       this.container.querySelector('#menu-chat-wallpaper')?.addEventListener('click', () => {
-        dropdownMenu.style.display = 'none';
+        Motion.closeMenu(dropdownMenu);
         this.router.navigate('#/wallpaper-picker?chatId=' + this.chatId);
       });
 
       this.container.querySelector('#menu-clear-chat')?.addEventListener('click', () => {
-        dropdownMenu.style.display = 'none';
+        Motion.closeMenu(dropdownMenu);
         this.clearChatHistory();
       });
     }
@@ -1216,7 +1217,7 @@ export class ChatView {
 
   openMessageContextMenu(msg, rowEl) {
     const overlay = this.container.querySelector('#msg-context-overlay');
-    overlay.style.display = 'flex';
+    Motion.openSheet(overlay, 'flex');
 
     // Highlight active reaction
     const reactButtons = overlay.querySelectorAll('.react-btn');
@@ -1234,7 +1235,7 @@ export class ChatView {
 
         await db.updateMessage(msg.id, { reaction: newReaction });
         msg.reaction = newReaction;
-        overlay.style.display = 'none';
+        Motion.closeSheet(overlay);
 
         // Update ONLY this message's DOM node
         this.scroller.updateMessageReactionDOM(msg.id, newReaction);
@@ -1243,7 +1244,7 @@ export class ChatView {
 
     // Copy Text
     overlay.querySelector('#ctx-star-msg').onclick = async () => {
-      overlay.style.display = 'none';
+      Motion.closeSheet(overlay);
       const isStarred = !msg.isStarred;
       await db.updateMessage(msg.id, { isStarred });
       msg.isStarred = isStarred;
@@ -1252,12 +1253,12 @@ export class ChatView {
     };
 
     overlay.querySelector('#ctx-select-msg').onclick = () => {
-      overlay.style.display = 'none';
+      Motion.closeSheet(overlay);
       this.enterSelectionMode(msg.id, rowEl);
     };
 
     overlay.querySelector('#ctx-copy-text').onclick = () => {
-      overlay.style.display = 'none';
+      Motion.closeSheet(overlay);
       if (msg.text) {
         navigator.clipboard.writeText(msg.text);
         Toast.show('Message copied to clipboard');
@@ -1266,14 +1267,14 @@ export class ChatView {
 
     // Toggle Forwarded
     overlay.querySelector('#ctx-toggle-forward').onclick = async () => {
-      overlay.style.display = 'none';
+      Motion.closeSheet(overlay);
       await db.updateMessage(msg.id, { isForwarded: !msg.isForwarded });
       this.scroller.loadInitial();
     };
 
     // Delete message (replaces native confirm with showConfirm)
     overlay.querySelector('#ctx-delete-msg').onclick = async () => {
-      overlay.style.display = 'none';
+      Motion.closeSheet(overlay);
       const confirmed = await showConfirm({
         title: 'Delete message?',
         message: 'Do you want to delete this message?',
@@ -1288,7 +1289,7 @@ export class ChatView {
     };
 
     overlay.onclick = (e) => {
-      if (e.target === overlay) overlay.style.display = 'none';
+      if (e.target === overlay) Motion.closeSheet(overlay);
     };
   }
 

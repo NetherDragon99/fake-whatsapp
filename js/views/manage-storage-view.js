@@ -352,3 +352,4 @@ export class ManageStorageView {
     this.longPressTimers.clear();
   }
 }
+

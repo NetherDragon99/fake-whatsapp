@@ -458,3 +458,4 @@ export class ChatStorageView {
     this.selectedMediaIds.clear();
   }
 }
+

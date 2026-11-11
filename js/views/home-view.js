@@ -449,8 +449,8 @@ export class HomeView {
         </div>
         <div class="floating-profile-img-wrap" id="btn-open-profile-photo" title="Open contact info">
           ${avatarUrl
-            ? `<img src="${avatarUrl}" class="floating-profile-img" alt="${chat.name}" />`
-            : (chat.isGroup ? Icons.groupAvatar('', 140) : Icons.userAvatar('', 140))}
+        ? `<img src="${avatarUrl}" class="floating-profile-img" alt="${chat.name}" />`
+        : (chat.isGroup ? Icons.groupAvatar('', 140) : Icons.userAvatar('', 140))}
         </div>
         <div class="floating-profile-actions">
           <button type="button" class="floating-action-btn" id="fp-btn-msg" title="Message">

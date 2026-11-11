@@ -8,6 +8,7 @@ export class Router {
     this.overlayStack = [];
     this.isExitDialogVisible = false;
     this.isInternalNavigating = false;
+    this._routeToken = 0;
 
     window.router = this;
 
@@ -550,8 +551,28 @@ export class Router {
     if (this.currentViewInstance && this.currentViewInstance.isMainPager && (matchedRoute.pattern === '/chats' || matchedRoute.pattern === '/calls' || matchedRoute.pattern === '/settings')) {
       const targetTab = routeParams.initialTab || (pathPart.includes('calls') ? 'calls' : (pathPart.includes('settings') ? 'settings' : 'chats'));
       this.currentViewInstance.switchToTab(targetTab);
+      this._lastStackLen = this.historyStack.length;
+      this._lastTopHash = this.historyStack[this.historyStack.length - 1] || '';
       return;
     }
+
+    // Snap any in-flight transition to its end state before starting a new one
+    this.finalizeLayers();
+    const token = ++this._routeToken;
+
+    // Work out slide direction from the history stack
+    const stackLen = this.historyStack.length;
+    const topHash = this.historyStack[stackLen - 1] || '';
+    let direction = 'none';
+    if (this._lastStackLen !== undefined) {
+      if (stackLen > this._lastStackLen) direction = 'forward';
+      else if (stackLen < this._lastStackLen) direction = 'back';
+      else if (topHash !== this._lastTopHash) direction = 'forward';
+    }
+    this._lastStackLen = stackLen;
+    this._lastTopHash = topHash;
+
+    const oldLayer = this.rootContainer.querySelector(':scope > .page-layer');
 
     // Cleanup previous view if needed
     if (this.currentViewInstance && typeof this.currentViewInstance.cleanup === 'function') {
@@ -562,13 +583,47 @@ export class Router {
       }
     }
 
+    // Every page renders into its own layer so it can slide in/out
+    const newLayer = document.createElement('div');
+    newLayer.className = 'page-layer';
+    const animate = !!oldLayer && direction !== 'none' && !this.prefersReducedMotion();
+    if (animate) {
+      if (direction === 'forward') {
+        newLayer.classList.add('page-layer-top');
+        newLayer.style.transform = 'translateX(100%)';
+      } else {
+        newLayer.classList.add('page-layer-under');
+        newLayer.style.transform = 'translateX(-24%)';
+        oldLayer.classList.add('page-layer-front');
+      }
+      oldLayer.classList.add('is-transitioning');
+    }
+    this.rootContainer.appendChild(newLayer);
+
+    let transitionStarted = false;
+    const startTransition = () => {
+      if (transitionStarted) return;
+      transitionStarted = true;
+      if (token !== this._routeToken) return;
+      if (!animate) {
+        newLayer.style.transform = '';
+        if (oldLayer && oldLayer.parentNode) oldLayer.remove();
+        if (oldLayer) {
+          newLayer.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' });
+        }
+        return;
+      }
+      this.runPageTransition(direction, oldLayer, newLayer, token);
+    };
+    const fallbackTimer = animate ? setTimeout(startTransition, 160) : null;
+
     try {
       const ViewClass = matchedRoute.viewClass;
       this.currentViewInstance = new ViewClass(this);
-      await this.currentViewInstance.render(this.rootContainer, routeParams);
+      await this.currentViewInstance.render(newLayer, routeParams);
     } catch (renderErr) {
       console.error('[Router] Error rendering view:', renderErr);
-      this.rootContainer.innerHTML = `
+      newLayer.innerHTML = `
         <div class="empty-state" style="padding: 40px 16px; text-align: center;">
           <h3 style="color: var(--wa-text-primary); margin-bottom: 8px;">Failed to load page</h3>
           <p style="color: var(--wa-text-secondary); margin-bottom: 20px;">${renderErr.message || 'An error occurred while opening this page.'}</p>
@@ -578,8 +633,79 @@ export class Router {
         </div>
       `;
     }
+
+    if (fallbackTimer) clearTimeout(fallbackTimer);
+    if (token !== this._routeToken) {
+      // A newer navigation superseded this one
+      if (newLayer.parentNode && this.rootContainer.querySelectorAll(':scope > .page-layer').length > 1) {
+        newLayer.remove();
+      }
+      return;
+    }
+    startTransition();
   }
 
+  prefersReducedMotion() {
+    return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }
+
+  finalizeLayers() {
+    const layers = Array.from(this.rootContainer.querySelectorAll(':scope > .page-layer'));
+    if (layers.length === 0) return;
+    const keep = layers[layers.length - 1];
+    for (const layer of layers) {
+      layer.getAnimations().forEach((a) => a.cancel());
+      if (layer !== keep) layer.remove();
+    }
+    keep.className = 'page-layer';
+    keep.style.transform = '';
+    keep.style.filter = '';
+  }
+
+  runPageTransition(direction, oldLayer, newLayer, token) {
+    const duration = 340;
+    const easing = 'cubic-bezier(0.22, 0.85, 0.25, 1)';
+    const finish = () => {
+      if (token !== this._routeToken) return;
+      if (oldLayer && oldLayer.parentNode) oldLayer.remove();
+      newLayer.className = 'page-layer';
+      newLayer.style.transform = '';
+      newLayer.style.filter = '';
+    };
+
+    let enter;
+    if (direction === 'forward') {
+      // New page slides in from the right; old page drifts left and dims
+      newLayer.style.transform = '';
+      enter = newLayer.animate(
+        [{ transform: 'translateX(100%)' }, { transform: 'translateX(0)' }],
+        { duration, easing, fill: 'both' }
+      );
+      oldLayer.animate(
+        [
+          { transform: 'translateX(0)', filter: 'brightness(1)' },
+          { transform: 'translateX(-24%)', filter: 'brightness(0.55)' }
+        ],
+        { duration, easing, fill: 'both' }
+      );
+    } else {
+      // Old page slides away to the right; the page below returns from the left
+      newLayer.style.transform = '';
+      newLayer.animate(
+        [
+          { transform: 'translateX(-24%)', filter: 'brightness(0.55)' },
+          { transform: 'translateX(0)', filter: 'brightness(1)' }
+        ],
+        { duration, easing, fill: 'both' }
+      );
+      enter = oldLayer.animate(
+        [{ transform: 'translateX(0)' }, { transform: 'translateX(100%)' }],
+        { duration, easing, fill: 'both' }
+      );
+    }
+    enter.onfinish = finish;
+    enter.oncancel = () => {};
+  }
   matchPattern(pattern, path) {
     const patternSegments = pattern.split('/').filter(Boolean);
     const pathSegments = path.split('/').filter(Boolean);

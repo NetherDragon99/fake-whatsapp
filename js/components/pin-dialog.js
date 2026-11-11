@@ -136,6 +136,7 @@ export class PinDialog {
         if (idx < this.enteredDigits.length) {
           dot.classList.add('filled');
         } else {
+          dot.style.animation = '';
           dot.classList.remove('filled');
         }
       });
@@ -218,8 +219,10 @@ export class PinDialog {
       this.onKeyDown = null;
     }
     if (this.overlay) {
-      this.overlay.remove();
+      const el = this.overlay;
       this.overlay = null;
+      el.classList.add('pin-closing');
+      setTimeout(() => el.remove(), 230);
     }
   }
 }

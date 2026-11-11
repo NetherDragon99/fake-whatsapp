@@ -338,7 +338,9 @@ class Lightbox {
 
   close(triggerBack = true) {
     if (this.overlay) {
-      this.overlay.remove();
+      const closingEl = this.overlay;
+      closingEl.classList.add('overlay-closing');
+      setTimeout(() => closingEl.remove(), 210);
       this.overlay = null;
       if (this.currentUrl) {
         URL.revokeObjectURL(this.currentUrl);
