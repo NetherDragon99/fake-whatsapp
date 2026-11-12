@@ -952,35 +952,33 @@
 /* --- Col-span double (portrait photo, spans 2 rows vertically) --- */
 
 /* Double-slot FIRST (left column, rows 1+2) */
-.album-grid-container.count-3.triple-layout-col.triple-pos-first
-  .album-thumb-double {
+.album-grid-container.count-3.triple-layout-col.triple-pos-first .album-thumb-double {
   grid-column: 1;
   grid-row: 1 / span 2;
 }
-.album-grid-container.count-3.triple-layout-col.triple-pos-first
-  .album-thumb-wrap:not(.album-thumb-double):nth-child(2) {
+
+.album-grid-container.count-3.triple-layout-col.triple-pos-first .album-thumb-wrap:not(.album-thumb-double):nth-child(2) {
   grid-column: 2;
   grid-row: 1;
 }
-.album-grid-container.count-3.triple-layout-col.triple-pos-first
-  .album-thumb-wrap:not(.album-thumb-double):nth-child(3) {
+
+.album-grid-container.count-3.triple-layout-col.triple-pos-first .album-thumb-wrap:not(.album-thumb-double):nth-child(3) {
   grid-column: 2;
   grid-row: 2;
 }
 
 /* Double-slot LAST (right column, rows 1+2) */
-.album-grid-container.count-3.triple-layout-col.triple-pos-last
-  .album-thumb-double {
+.album-grid-container.count-3.triple-layout-col.triple-pos-last .album-thumb-double {
   grid-column: 2;
   grid-row: 1 / span 2;
 }
-.album-grid-container.count-3.triple-layout-col.triple-pos-last
-  .album-thumb-wrap:not(.album-thumb-double):nth-child(1) {
+
+.album-grid-container.count-3.triple-layout-col.triple-pos-last .album-thumb-wrap:not(.album-thumb-double):nth-child(1) {
   grid-column: 1;
   grid-row: 1;
 }
-.album-grid-container.count-3.triple-layout-col.triple-pos-last
-  .album-thumb-wrap:not(.album-thumb-double):nth-child(2) {
+
+.album-grid-container.count-3.triple-layout-col.triple-pos-last .album-thumb-wrap:not(.album-thumb-double):nth-child(2) {
   grid-column: 1;
   grid-row: 2;
 }
@@ -988,52 +986,49 @@
 /* --- Row-span double (landscape photo, spans 2 columns horizontally) --- */
 
 /* Double-slot FIRST (top row, cols 1+2) */
-.album-grid-container.count-3.triple-layout-row.triple-pos-first
-  .album-thumb-double {
+.album-grid-container.count-3.triple-layout-row.triple-pos-first .album-thumb-double {
   grid-column: 1 / span 2;
   grid-row: 1;
 }
-.album-grid-container.count-3.triple-layout-row.triple-pos-first
-  .album-thumb-wrap:not(.album-thumb-double):nth-child(2) {
+
+.album-grid-container.count-3.triple-layout-row.triple-pos-first .album-thumb-wrap:not(.album-thumb-double):nth-child(2) {
   grid-column: 1;
   grid-row: 2;
 }
-.album-grid-container.count-3.triple-layout-row.triple-pos-first
-  .album-thumb-wrap:not(.album-thumb-double):nth-child(3) {
+
+.album-grid-container.count-3.triple-layout-row.triple-pos-first .album-thumb-wrap:not(.album-thumb-double):nth-child(3) {
   grid-column: 2;
   grid-row: 2;
 }
 
 /* Double-slot LAST (bottom row, cols 1+2) */
-.album-grid-container.count-3.triple-layout-row.triple-pos-last
-  .album-thumb-double {
+.album-grid-container.count-3.triple-layout-row.triple-pos-last .album-thumb-double {
   grid-column: 1 / span 2;
   grid-row: 2;
 }
-.album-grid-container.count-3.triple-layout-row.triple-pos-last
-  .album-thumb-wrap:not(.album-thumb-double):nth-child(1) {
+
+.album-grid-container.count-3.triple-layout-row.triple-pos-last .album-thumb-wrap:not(.album-thumb-double):nth-child(1) {
   grid-column: 1;
   grid-row: 1;
 }
-.album-grid-container.count-3.triple-layout-row.triple-pos-last
-  .album-thumb-wrap:not(.album-thumb-double):nth-child(2) {
+
+.album-grid-container.count-3.triple-layout-row.triple-pos-last .album-thumb-wrap:not(.album-thumb-double):nth-child(2) {
   grid-column: 2;
   grid-row: 1;
 }
 
 /* Fallback: no modifier classes → middle photo gets left col 2-row span */
-.album-grid-container.count-3:not([class*="triple-layout"])
-  .album-thumb-wrap:nth-child(1) {
+.album-grid-container.count-3:not([class*="triple-layout"]) .album-thumb-wrap:nth-child(1) {
   grid-column: 1;
   grid-row: 1 / span 2;
 }
-.album-grid-container.count-3:not([class*="triple-layout"])
-  .album-thumb-wrap:nth-child(2) {
+
+.album-grid-container.count-3:not([class*="triple-layout"]) .album-thumb-wrap:nth-child(2) {
   grid-column: 2;
   grid-row: 1;
 }
-.album-grid-container.count-3:not([class*="triple-layout"])
-  .album-thumb-wrap:nth-child(3) {
+
+.album-grid-container.count-3:not([class*="triple-layout"]) .album-thumb-wrap:nth-child(3) {
   grid-column: 2;
   grid-row: 2;
 }

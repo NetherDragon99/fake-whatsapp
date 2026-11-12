@@ -431,9 +431,9 @@ export class ChatStorageView {
         const category = btn.dataset.category;
         const catData = this.stats[category] || { count: 0, formatted: '0 B' };
         const label = category === 'photos' ? 'Photos' :
-                      category === 'videos' ? 'Videos' :
-                      category === 'audio' ? 'Voice Notes' :
-                      category === 'documents' ? 'Documents' : 'Text Messages';
+          category === 'videos' ? 'Videos' :
+            category === 'audio' ? 'Voice Notes' :
+              category === 'documents' ? 'Documents' : 'Text Messages';
 
         const confirmed = await showConfirm({
           title: `Clear ${label}?`,
