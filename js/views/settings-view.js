@@ -18,7 +18,7 @@ export class SettingsView {
       let ownerName = 'You';
       let userAvatarBlob = null;
       let storageStats = { formattedSize: '0 B', chatCount: 0, messageCount: 0 };
-      const appVersion = window.APP_VERSION || '2.2.2';
+      const appVersion = window.APP_VERSION || '2.2.3';
 
       try {
         ownerName = await db.getSetting('ownerName', 'You');
