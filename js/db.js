@@ -230,7 +230,7 @@ class Database {
     await this.init();
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction(['chats', 'messages', 'media', 'calls'], 'readwrite');
-      
+
       // Delete chat record
       tx.objectStore('chats').delete(id);
 
@@ -324,6 +324,65 @@ class Database {
       const req = index.count(IDBKeyRange.only(chatId));
       req.onsuccess = () => resolve(req.result || 0);
       req.onerror = () => reject(tx.error);
+    });
+  }
+
+  async getStarredMessages(chatId = null) {
+    await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction('messages', 'readonly');
+      const store = tx.objectStore('messages');
+      const results = [];
+      let cursorReq;
+
+      if (chatId) {
+        const index = store.index('chat_time');
+        cursorReq = index.openCursor(IDBKeyRange.bound([chatId, 0], [chatId, Infinity]), 'prev');
+      } else {
+        const index = store.index('timestamp');
+        cursorReq = index.openCursor(null, 'prev');
+      }
+
+      cursorReq.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          if (cursor.value && cursor.value.isStarred) {
+            results.push(cursor.value);
+          }
+          cursor.continue();
+        } else {
+          resolve(results);
+        }
+      };
+
+      cursorReq.onerror = () => reject(tx.error);
+    });
+  }
+
+  async getStarredMessageCount(chatId = null) {
+    const msgs = await this.getStarredMessages(chatId);
+    return msgs.length;
+  }
+
+  async setMessagesStarred(messageIds, isStarred = false) {
+    await this.init();
+    if (!messageIds || messageIds.length === 0) return true;
+    // IDs may arrive as strings from dataset attributes — coerce to number if parseable
+    const idSet = new Set(messageIds.map((id) => (isNaN(Number(id)) ? id : Number(id))));
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction('messages', 'readwrite');
+      const store = tx.objectStore('messages');
+      for (const id of idSet) {
+        const req = store.get(id);
+        req.onsuccess = () => {
+          if (req.result) {
+            req.result.isStarred = isStarred;
+            store.put(req.result);
+          }
+        };
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
     });
   }
 
@@ -625,6 +684,26 @@ class Database {
       tx.oncomplete = () => resolve(value);
       tx.onerror = () => reject(tx.error);
     });
+  }
+
+  // --- Pin Feature Helpers ---
+  async getPinsForChat(chatId) {
+    const raw = await this.getSetting(`pinnedMessages_${chatId}`, []);
+    if (!Array.isArray(raw)) return [];
+    const now = Date.now();
+    return raw.filter(p => p.expiresAt === null || p.expiresAt > now);
+  }
+
+  async savePinsForChat(chatId, pins) {
+    return this.setSetting(`pinnedMessages_${chatId}`, pins);
+  }
+
+  async getPinPriorityMode(chatId) {
+    return this.getSetting(`pinnedPriorityMode_${chatId}`, { mode: 'last_added', mixedDays: 7, switcherSeconds: 10 });
+  }
+
+  async savePinPriorityMode(chatId, modeObj) {
+    return this.setSetting(`pinnedPriorityMode_${chatId}`, modeObj);
   }
 
   // --- Storage & Diagnostics ---
@@ -959,7 +1038,7 @@ class Database {
     });
 
     return {
-      version: '2.0.0',
+      version: '2.2.2',
       exportedAt: Date.now(),
       chats,
       messages,
@@ -977,7 +1056,7 @@ class Database {
     }
 
     const tx = this.db.transaction(['chats', 'messages', 'media', 'calls', 'filters', 'settings'], 'readwrite');
-    
+
     // Clear existing
     tx.objectStore('chats').clear();
     tx.objectStore('messages').clear();

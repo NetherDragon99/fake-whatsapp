@@ -11,6 +11,13 @@ import { VoiceRecorder } from '../components/voice-recorder.js';
 import { MediaEditorModal } from '../components/media-editor-modal.js';
 import { StickerDrawer } from '../components/sticker-drawer.js';
 import { Motion } from '../ui-motion.js';
+import { ForwardPicker, forwardMessagesToChats } from '../components/forward-picker.js';
+import { PinDurationPicker } from '../components/pin-duration-picker.js';
+import { PinnedPanel } from '../components/pinned-panel.js';
+import { ReactionBar } from '../components/reaction-bar.js';
+import { EmojiPickerSheet } from '../components/emoji-picker-sheet.js';
+import { MessageInfoSheet } from '../components/message-info-sheet.js';
+import { ShareOptionsModal } from '../components/share-options-modal.js';
 
 export class ChatView {
   constructor(router) {
@@ -23,6 +30,17 @@ export class ChatView {
     this.currentSearchMatchIndex = -1;
     this.selectedMessageIds = new Set();
     this.isSelectionMode = false;
+    this.replyingTo = null;
+    this.chatPins = [];
+    this.pinPriorityMode = { mode: 'last_added', mixedDays: 7, switcherSeconds: 10 };
+    this.pinnedBarDismissed = false;
+    this.switcherInterval = null;
+    this.switcherIndex = 0;
+    this.reactionBar = null;
+    this.emojiPickerSheet = null;
+    this.messageInfoSheet = null;
+    this.stickerDrawer = null;
+    this._onResize = null;
   }
 
   async render(rootEl, params = {}) {
@@ -96,18 +114,23 @@ export class ChatView {
           </div>
         </header>
 
-        <!-- Chat Message Selection Bar (WhatsApp Native) -->
+        <!-- Chat Message Selection Bar (WhatsApp Native Responsive) -->
         <header class="wa-app-bar chat-header selection-bar" id="chat-selection-header" style="display: none;">
-          <div class="chat-header-left">
+          <div class="selection-header-left">
             <button type="button" class="app-bar-icon-btn" id="btn-cancel-msg-select" aria-label="Cancel selection">${Icons.arrowBack('', 24)}</button>
             <div class="selection-count-title" id="chat-select-count">1</div>
           </div>
-          <div class="chat-header-actions">
-            <button type="button" class="app-bar-icon-btn" id="btn-msg-star-selected" title="Star / Unstar">${Icons.star('', 20)}</button>
-            <button type="button" class="app-bar-icon-btn" id="btn-msg-copy-selected" title="Copy">${Icons.copy('', 20)}</button>
-            <button type="button" class="app-bar-icon-btn" id="btn-msg-forward-selected" title="Forward">${Icons.forward('', 20)}</button>
-            <button type="button" class="app-bar-icon-btn danger-icon" id="btn-msg-delete-selected" title="Delete">${Icons.trash('', 20)}</button>
-            <button type="button" class="app-bar-icon-btn" id="btn-msg-select-all" title="Select all">${Icons.moreVert('', 20)}</button>
+          <div class="selection-spacer"></div>
+          <div class="selection-tools-bar" id="selection-tools-bar">
+            <!-- Dynamically populated responsive tools -->
+          </div>
+          <div class="selection-overflow-wrap" id="selection-overflow-wrap" style="display: none;">
+            <button type="button" class="app-bar-icon-btn" id="btn-selection-overflow" title="More options" aria-label="More options">
+              ${Icons.moreVert('', 20)}
+            </button>
+            <div class="wa-dropdown-menu selection-overflow-menu" id="selection-overflow-menu" style="display: none;">
+              <!-- Dynamically populated overflow items -->
+            </div>
           </div>
         </header>
 
@@ -116,6 +139,10 @@ export class ChatView {
           <div class="dropdown-item" id="menu-search-in-chat">
             <span class="dropdown-item-icon">${Icons.search('', 20)}</span>
             <span>Search in chat</span>
+          </div>
+          <div class="dropdown-item" id="menu-pinned-messages">
+            <span class="dropdown-item-icon">${Icons.pin('', 20)}</span>
+            <span>Pinned messages</span>
           </div>
           <div class="dropdown-item" id="menu-swap-perspective">
             <span class="dropdown-item-icon">${Icons.swap('', 20)}</span>
@@ -150,6 +177,16 @@ export class ChatView {
           <button type="button" class="app-bar-icon-btn" id="btn-search-next">${Icons.chevronDown('', 20)}</button>
         </div>
 
+        <!-- Pinned Message Bar (WhatsApp Native Single Line Bar) -->
+        <div class="chat-pinned-bar" id="chat-pinned-bar" style="display:none;">
+          <div class="pinned-bar-pin-icon">${Icons.pin('', 18)}</div>
+          <div class="pinned-bar-content" id="pinned-bar-content">
+            <div class="pinned-bar-label" id="pinned-bar-label">Pinned message</div>
+            <div class="pinned-bar-snippet" id="pinned-bar-snippet"></div>
+          </div>
+          <button type="button" class="pinned-bar-close" id="pinned-bar-close" aria-label="Dismiss pinned bar">${Icons.close('', 18)}</button>
+        </div>
+
         <!-- Messages Area -->
         <div class="chat-messages-container" id="chat-messages-wrap"></div>
 
@@ -157,6 +194,9 @@ export class ChatView {
         <button type="button" class="chat-scroll-bottom" id="chat-scroll-bottom-btn" title="Scroll to bottom">
           ${Icons.chevronDown('', 22)}
         </button>
+
+        <!-- Reply Preview Banner (above input bar) -->
+        <div class="chat-reply-preview-banner" id="chat-reply-banner" style="display: none;"></div>
 
         <!-- Bottom Input Bar -->
         <footer class="chat-input-bar" id="chat-default-input-bar">
@@ -251,27 +291,6 @@ export class ChatView {
 
         <!-- Hidden Date Picker for Jump To Date -->
         <input type="date" id="chat-hidden-date-picker" style="display:none;" />
-
-        <!-- Message Context Action Sheet (Long-Press) -->
-        <div class="wa-context-sheet-overlay" id="msg-context-overlay" style="display:none;">
-          <div class="wa-context-sheet">
-            <div class="reaction-emoji-bar">
-              <span class="react-btn" data-emoji="👍">👍</span>
-              <span class="react-btn" data-emoji="❤️">❤️</span>
-              <span class="react-btn" data-emoji="😂">😂</span>
-              <span class="react-btn" data-emoji="😮">😮</span>
-              <span class="react-btn" data-emoji="😢">😢</span>
-              <span class="react-btn" data-emoji="🙏">🙏</span>
-            </div>
-            <div class="context-action-list">
-              <button type="button" class="context-item" id="ctx-star-msg">Star message</button>
-              <button type="button" class="context-item" id="ctx-select-msg">Select message</button>
-              <button type="button" class="context-item" id="ctx-copy-text">Copy text</button>
-              <button type="button" class="context-item" id="ctx-toggle-forward">Toggle "Forwarded"</button>
-              <button type="button" class="context-item danger-text" id="ctx-delete-msg">Delete message</button>
-            </div>
-          </div>
-        </div>
       </div>
     `;
 
@@ -281,6 +300,31 @@ export class ChatView {
   async bindEvents(outgoingTheme, targetMsgId, params = {}) {
     const messagesWrap = this.container.querySelector('#chat-messages-wrap');
 
+    // Initialize Floating Reaction Bar & Sheets
+    this.reactionBar = new ReactionBar({
+      onReact: async (msgId, emoji) => {
+        if (!msgId) return;
+        await db.updateMessage(msgId, { reaction: emoji });
+        const m = this.scroller?.allMessages.find((x) => String(x.id) === String(msgId));
+        if (m) m.reaction = emoji;
+        this.scroller?.updateMessageReactionDOM(msgId, emoji);
+      },
+      onOpenPicker: (msgId) => {
+        if (!msgId) return;
+        this.reactionBar?.hide();
+        this.scroller?.scrollMessageAboveSheet(msgId, 60);
+        this.emojiPickerSheet?.open(async (chosenEmoji) => {
+          await db.updateMessage(msgId, { reaction: chosenEmoji });
+          const m = this.scroller?.allMessages.find((x) => String(x.id) === String(msgId));
+          if (m) m.reaction = chosenEmoji;
+          this.scroller?.updateMessageReactionDOM(msgId, chosenEmoji);
+        });
+      }
+    });
+
+    this.emojiPickerSheet = new EmojiPickerSheet();
+    this.messageInfoSheet = new MessageInfoSheet();
+
     // Initialize Virtual Message Scroller
     this.scroller = new VirtualMessageScroller(messagesWrap, {
       chatId: this.chatId,
@@ -288,6 +332,7 @@ export class ChatView {
       outgoingTheme,
       onMediaClick: (mediaItem, msg) => {
         if (this.isSelectionMode) {
+          this.reactionBar?.hide();
           this.toggleMessageSelection(msg.id);
           return;
         }
@@ -298,19 +343,32 @@ export class ChatView {
       onMessageClick: (msg, rowEl, evt) => {
         if (this.isSelectionMode) {
           evt?.stopPropagation();
+          this.reactionBar?.hide();
           this.toggleMessageSelection(msg.id, rowEl);
         }
       },
       onMessageAction: (msg, rowEl, evt) => {
-        if (this.isSelectionMode) {
-          this.toggleMessageSelection(msg.id, rowEl);
-        } else {
-          this.openMessageContextMenu(msg, rowEl);
-        }
+        this._handleMessageLongPress(msg, rowEl, evt);
+      },
+      onMessageLongPress: (msg, rowEl, evt) => {
+        this._handleMessageLongPress(msg, rowEl, evt);
+      },
+      onMessageTapInSelection: (msg, rowEl, evt) => {
+        evt?.stopPropagation();
+        this.reactionBar?.hide();
+        this.toggleMessageSelection(msg.id, rowEl);
+      },
+      onMessageReply: (msg) => {
+        if (!this.isSelectionMode) this.startReply(msg);
+      },
+      onQuotedMessageClick: async (targetId) => {
+        const found = await this.scroller.scrollToMessage(targetId);
+        if (!found) Toast.show('Original message not found');
       }
     });
 
     await this.scroller.loadInitial(targetMsgId);
+    await this.loadAndRenderPins();
 
     // Auto-open search if navigated from Contact Info "Search in chat"
     if (params.search === '1' || params.search === 'true') {
@@ -346,21 +404,46 @@ export class ChatView {
     this.container.querySelector('#btn-cancel-msg-select')?.addEventListener('click', () => {
       this.exitSelectionMode();
     });
-    this.container.querySelector('#btn-msg-star-selected')?.addEventListener('click', () => {
-      this.starSelectedMessages();
+
+    const overflowBtn = this.container.querySelector('#btn-selection-overflow');
+    const overflowMenu = this.container.querySelector('#selection-overflow-menu');
+    overflowBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isVisible = overflowMenu.style.display !== 'none';
+      overflowMenu.style.display = isVisible ? 'none' : 'block';
     });
-    this.container.querySelector('#btn-msg-copy-selected')?.addEventListener('click', () => {
-      this.copySelectedMessages();
+
+    document.addEventListener('click', (e) => {
+      if (overflowMenu && overflowMenu.style.display !== 'none' && !e.target.closest('#selection-overflow-wrap')) {
+        overflowMenu.style.display = 'none';
+      }
     });
-    this.container.querySelector('#btn-msg-forward-selected')?.addEventListener('click', () => {
-      this.forwardSelectedMessages();
-    });
-    this.container.querySelector('#btn-msg-delete-selected')?.addEventListener('click', () => {
-      this.deleteSelectedMessages();
-    });
-    this.container.querySelector('#btn-msg-select-all')?.addEventListener('click', () => {
-      this.selectAllMessages();
-    });
+
+    this._onResize = () => {
+      if (this.isSelectionMode) {
+        this.updateMessageSelectionBar();
+      }
+    };
+    window.addEventListener('resize', this._onResize);
+
+    // Pinned Message Bar Click -> Open Panel
+    const pinnedBar = this.container.querySelector('#chat-pinned-bar');
+    if (pinnedBar) {
+      pinnedBar.addEventListener('click', (e) => {
+        if (e.target.closest('#pinned-bar-close')) return;
+        this.openPinnedPanel();
+      });
+    }
+
+    // Pinned Message Bar Close Button -> Session Dismiss
+    const pinnedBarClose = this.container.querySelector('#pinned-bar-close');
+    if (pinnedBarClose) {
+      pinnedBarClose.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.pinnedBarDismissed = true;
+        this.renderPinnedBar();
+      });
+    }
 
     // Profile Click -> Contact Info Screen 5
     this.container.querySelector('#chat-header-profile-btn').addEventListener('click', () => {
@@ -400,6 +483,11 @@ export class ChatView {
       this.container.querySelector('#menu-search-in-chat')?.addEventListener('click', () => {
         Motion.closeMenu(dropdownMenu);
         this.toggleSearchHeader(true);
+      });
+
+      this.container.querySelector('#menu-pinned-messages')?.addEventListener('click', () => {
+        Motion.closeMenu(dropdownMenu);
+        this.openPinnedPanel();
       });
 
       this.container.querySelector('#menu-swap-perspective')?.addEventListener('click', () => {
@@ -456,15 +544,39 @@ export class ChatView {
     // In-Chat Search bar events
     this.bindSearchEvents();
 
-    // Sticker Drawer Button
+    // Sticker / Emoji left-icon button (swaps icon based on typing state)
     const stickerBtn = this.container.querySelector('#btn-open-stickers');
     if (stickerBtn) {
+      stickerBtn.dataset.mode = 'sticker'; // 'sticker' | 'emoji'
+
       stickerBtn.addEventListener('click', () => {
-        new StickerDrawer({
-          onSelectSticker: (blobOrUrl, name) => {
-            this.sendStickerMessage(blobOrUrl, name);
+        if (stickerBtn.dataset.mode === 'emoji') {
+          // Open emoji picker
+          if (!this.emojiPickerSheet) {
+            this.emojiPickerSheet = new EmojiPickerSheet();
           }
-        }).open();
+          this.emojiPickerSheet.open(async (chosenEmoji) => {
+            const textarea2 = this.container.querySelector('#chat-input-textarea');
+            if (textarea2) {
+              const start = textarea2.selectionStart;
+              const end = textarea2.selectionEnd;
+              const val = textarea2.value;
+              textarea2.value = val.slice(0, start) + chosenEmoji + val.slice(end);
+              textarea2.selectionStart = textarea2.selectionEnd = start + chosenEmoji.length;
+              textarea2.dispatchEvent(new Event('input'));
+              textarea2.focus();
+            }
+          });
+        } else {
+          if (!this.stickerDrawer) {
+            this.stickerDrawer = new StickerDrawer({
+              onSelectSticker: (blobOrUrl, name) => {
+                this.sendStickerMessage(blobOrUrl, name);
+              }
+            });
+          }
+          this.stickerDrawer.open();
+        }
       });
     }
 
@@ -498,13 +610,26 @@ export class ChatView {
     const textarea = this.container.querySelector('#chat-input-textarea');
     const sendBtn = this.container.querySelector('#btn-mic-send');
 
+    // Left icon (sticker ↔ emoji) + right icon (mic ↔ send) swap on typing
+    const leftBtn = this.container.querySelector('#btn-open-stickers');
+    const _stickerIconHTML = leftBtn ? leftBtn.innerHTML : '';
+    const _emojiIconHTML = Icons.emoji ? Icons.emoji('', 22) : _stickerIconHTML;
+
     textarea.addEventListener('input', () => {
-      if (textarea.value.trim().length > 0) {
+      const hasText = textarea.value.trim().length > 0;
+      // Right button: mic ↔ send
+      if (hasText) {
         sendBtn.innerHTML = Icons.send('', 22);
         sendBtn.classList.add('is-send');
       } else {
         sendBtn.innerHTML = Icons.mic('mic-icon', 22);
         sendBtn.classList.remove('is-send');
+      }
+      // Left button: sticker ↔ emoji icon
+      if (leftBtn) {
+        leftBtn.innerHTML = hasText ? _emojiIconHTML : _stickerIconHTML;
+        leftBtn.dataset.mode = hasText ? 'emoji' : 'sticker';
+        leftBtn.setAttribute('aria-label', hasText ? 'Emoji' : 'Stickers');
       }
     });
 
@@ -515,6 +640,12 @@ export class ChatView {
         textarea.value = '';
         sendBtn.innerHTML = Icons.mic('mic-icon', 22);
         sendBtn.classList.remove('is-send');
+        // Reset left icon back to sticker
+        if (leftBtn) {
+          leftBtn.innerHTML = _stickerIconHTML;
+          leftBtn.dataset.mode = 'sticker';
+          leftBtn.setAttribute('aria-label', 'Stickers');
+        }
       }
     });
 
@@ -579,7 +710,7 @@ export class ChatView {
       e.preventDefault();
       try {
         sendBtn.setPointerCapture(e.pointerId);
-      } catch (err) {}
+      } catch (err) { }
 
       startX = e.clientX;
       startY = e.clientY;
@@ -602,7 +733,7 @@ export class ChatView {
         isHolding = false;
         try {
           sendBtn.releasePointerCapture(e.pointerId);
-        } catch (err) {}
+        } catch (err) { }
         return;
       }
     };
@@ -625,7 +756,7 @@ export class ChatView {
           isHolding = false;
           try {
             sendBtn.releasePointerCapture(e.pointerId);
-          } catch (err) {}
+          } catch (err) { }
           await this.voiceRecorder.stop(false);
           this.resetVoiceUI();
           Toast.show('Recording cancelled');
@@ -649,7 +780,7 @@ export class ChatView {
           isLocked = true;
           try {
             sendBtn.releasePointerCapture(e.pointerId);
-          } catch (err) {}
+          } catch (err) { }
           this.voiceRecorder.lock();
           return;
         }
@@ -664,7 +795,7 @@ export class ChatView {
 
       try {
         sendBtn.releasePointerCapture(e.pointerId);
-      } catch (err) {}
+      } catch (err) { }
 
       if (this.voiceRecorder.isRecording) {
         const recordingDuration = (Date.now() - this.voiceRecorder.startTime) / 1000;
@@ -683,7 +814,7 @@ export class ChatView {
       isHolding = false;
       try {
         sendBtn.releasePointerCapture(e.pointerId);
-      } catch (err) {}
+      } catch (err) { }
       await this.voiceRecorder.stop(false);
       this.resetVoiceUI();
     };
@@ -785,7 +916,7 @@ export class ChatView {
     if (this.previewAudio) {
       try {
         this.previewAudio.pause();
-      } catch (e) {}
+      } catch (e) { }
       this.previewAudio = null;
     }
   }
@@ -824,6 +955,92 @@ export class ChatView {
     editor.show(files);
   }
 
+  // ---------- Reply feature ----------
+  _escHtml(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  async startReply(msg) {
+    if (!msg || msg.isSystem || msg.isDeleted) return;
+    const sender = msg.isOutgoing ? 'You' : (msg.sender || this.chat?.name || 'Contact');
+    this.replyingTo = {
+      id: msg.id,
+      sender,
+      text: msg.text || '',
+      mediaType: msg.mediaType || null,
+      mediaId: msg.mediaId || null,
+      mediaName: msg.mediaName || null
+    };
+    await this.renderReplyBanner();
+    this.container.querySelector('#chat-input-textarea')?.focus();
+  }
+
+  async renderReplyBanner() {
+    const banner = this.container.querySelector('#chat-reply-banner');
+    if (!banner) return;
+    if (this.replyThumbUrl) {
+      URL.revokeObjectURL(this.replyThumbUrl);
+      this.replyThumbUrl = null;
+    }
+    const r = this.replyingTo;
+    if (!r) {
+      banner.style.display = 'none';
+      banner.innerHTML = '';
+      return;
+    }
+
+    let snippet = r.text;
+    let iconHtml = '';
+    if (r.mediaType === 'image') { iconHtml = Icons.gallery('', 13); snippet = r.text ? `Photo: ${r.text}` : 'Photo'; }
+    else if (r.mediaType === 'video') { iconHtml = Icons.callVideo('', 13); snippet = r.text ? `Video: ${r.text}` : 'Video'; }
+    else if (r.mediaType === 'audio') { iconHtml = Icons.mic('', 13); snippet = 'Voice message'; }
+    else if (r.mediaType === 'sticker') { iconHtml = Icons.sticker('', 13); snippet = 'Sticker'; }
+    else if (r.mediaType === 'pdf' || r.mediaType === 'document') { iconHtml = Icons.documentIcon('', 13); snippet = r.mediaName || 'Document'; }
+
+    let thumbHtml = '';
+    if (r.mediaId && ['image', 'video', 'sticker'].includes(r.mediaType)) {
+      try {
+        const item = await db.getMedia(r.mediaId);
+        if (item && item.blob) {
+          this.replyThumbUrl = URL.createObjectURL(item.blob);
+          thumbHtml = r.mediaType === 'video'
+            ? `<div class="reply-banner-thumb"><video src="${this.replyThumbUrl}"></video></div>`
+            : `<div class="reply-banner-thumb"><img src="${this.replyThumbUrl}" alt="" /></div>`;
+        }
+      } catch (_) { }
+    }
+
+    banner.innerHTML = `
+      <div class="reply-banner-content">
+        <div class="reply-banner-bar"></div>
+        <div class="reply-banner-texts">
+          <div class="reply-banner-sender">${this._escHtml(r.sender)}</div>
+          <div class="reply-banner-snippet" dir="auto">${iconHtml}${this._escHtml(snippet)}</div>
+        </div>
+        ${thumbHtml}
+      </div>
+      <button type="button" class="reply-banner-close-btn" id="btn-cancel-reply" aria-label="Cancel reply">${Icons.close('', 18)}</button>
+    `;
+    banner.style.display = 'flex';
+    banner.querySelector('#btn-cancel-reply').addEventListener('click', () => this.clearReply());
+  }
+
+  clearReply() {
+    this.replyingTo = null;
+    this.renderReplyBanner();
+  }
+
+  applyReplyTo(msg) {
+    if (this.replyingTo) {
+      msg.replyTo = { ...this.replyingTo };
+      this.clearReply();
+    }
+  }
+
   async sendNewMessage(text) {
     const currentMe = this.chat.meParticipant || this.chat.customMeName || 'Me';
     const newMsg = {
@@ -838,6 +1055,7 @@ export class ChatView {
       mediaType: null
     };
 
+    this.applyReplyTo(newMsg);
     await db.saveMessage(newMsg);
     await db.updateChat(this.chatId, {
       lastMessage: text,
@@ -887,6 +1105,7 @@ export class ChatView {
         mediaName: file.name,
         mediaType: type
       };
+      if (i === 0) this.applyReplyTo(msg);
       await db.saveMessage(msg);
       newMsgs.push(msg);
     }
@@ -916,7 +1135,7 @@ export class ChatView {
       try {
         const resp = await fetch(blobOrUrl);
         blob = await resp.blob();
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const mediaId = db.generateUUID();
@@ -944,6 +1163,7 @@ export class ChatView {
       mediaType: 'sticker'
     };
 
+    this.applyReplyTo(newMsg);
     await db.saveMessage(newMsg);
     await db.updateChat(this.chatId, {
       lastMessage: '💟 Sticker',
@@ -1010,6 +1230,7 @@ export class ChatView {
       duration: duration
     };
 
+    this.applyReplyTo(newMsg);
     await db.saveMessage(newMsg);
     await db.updateChat(this.chatId, {
       lastMessage: `🎤 Voice message (${VoiceRecorder.formatDuration(duration)})`,
@@ -1055,6 +1276,7 @@ export class ChatView {
       mediaType: type
     };
 
+    this.applyReplyTo(newMsg);
     await db.saveMessage(newMsg);
     await db.updateChat(this.chatId, {
       lastMessage: `📷 ${file.name}`,
@@ -1169,7 +1391,7 @@ export class ChatView {
 
       this.searchMatches = this.scroller.allMessages.filter((m) => {
         return (m.text && m.text.toLowerCase().includes(q)) ||
-               (m.mediaName && m.mediaName.toLowerCase().includes(q));
+          (m.mediaName && m.mediaName.toLowerCase().includes(q));
       });
 
       if (this.searchMatches.length > 0) {
@@ -1215,87 +1437,162 @@ export class ChatView {
     }
   }
 
-  openMessageContextMenu(msg, rowEl) {
-    const overlay = this.container.querySelector('#msg-context-overlay');
-    Motion.openSheet(overlay, 'flex');
+  _handleMessageLongPress(msg, rowEl, evt) {
+    if (this.isSelectionMode) {
+      this.toggleMessageSelection(msg.id, rowEl);
+    } else {
+      this.enterSelectionMode(msg.id, rowEl);
+      this.reactionBar?.show(msg.id, rowEl, msg.reaction);
+    }
+  }
 
-    // Highlight active reaction
-    const reactButtons = overlay.querySelectorAll('.react-btn');
-    reactButtons.forEach((btn) => {
-      const emoji = btn.dataset.emoji;
-      if (msg.reaction === emoji) {
-        btn.classList.add('active');
-      } else {
-        btn.classList.remove('active');
-      }
+  // --- In-Place Message Inline Editing ---
+  _startInlineEdit(msg) {
+    this.exitSelectionMode();
+    const rowEl = this.scroller?.findMessageElement(msg.id);
+    if (!rowEl) return;
 
-      btn.onclick = async () => {
-        const clickedEmoji = btn.dataset.emoji;
-        const newReaction = (msg.reaction === clickedEmoji) ? null : clickedEmoji;
+    const bubble = rowEl.querySelector('.msg-bubble');
+    if (!bubble) return;
 
-        await db.updateMessage(msg.id, { reaction: newReaction });
-        msg.reaction = newReaction;
-        Motion.closeSheet(overlay);
+    const existingTextEl = bubble.querySelector('.bubble-text-content') || bubble.querySelector('.msg-text');
+    const originalDisplay = existingTextEl ? existingTextEl.style.display : '';
+    if (existingTextEl) existingTextEl.style.display = 'none';
 
-        // Update ONLY this message's DOM node
-        this.scroller.updateMessageReactionDOM(msg.id, newReaction);
-      };
+    // Remove any previous inline edit box
+    const oldBox = bubble.querySelector('.msg-inline-edit-box');
+    if (oldBox) oldBox.remove();
+
+    const editBox = document.createElement('div');
+    editBox.className = 'msg-inline-edit-box';
+    editBox.innerHTML = `
+      <textarea class="msg-inline-edit-textarea" rows="2" dir="auto">${this.escapeHtml(msg.text || '')}</textarea>
+      <div class="msg-inline-edit-actions">
+        <button type="button" class="inline-edit-btn cancel" title="Cancel" aria-label="Cancel edit">${Icons.close('', 18)}</button>
+        <button type="button" class="inline-edit-btn save" title="Save" aria-label="Save edit">${Icons.check('', 18)}</button>
+      </div>
+    `;
+
+    bubble.appendChild(editBox);
+
+    const textarea = editBox.querySelector('.msg-inline-edit-textarea');
+    const cancelBtn = editBox.querySelector('.inline-edit-btn.cancel');
+    const saveBtn = editBox.querySelector('.inline-edit-btn.save');
+
+    textarea.focus();
+    textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+
+    const cleanupEdit = () => {
+      editBox.remove();
+      if (existingTextEl) existingTextEl.style.display = originalDisplay;
+    };
+
+    cancelBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      cleanupEdit();
     });
 
-    // Copy Text
-    overlay.querySelector('#ctx-star-msg').onclick = async () => {
-      Motion.closeSheet(overlay);
-      const isStarred = !msg.isStarred;
-      await db.updateMessage(msg.id, { isStarred });
-      msg.isStarred = isStarred;
-      Toast.show(isStarred ? 'Message starred' : 'Message unstarred');
-      this.scroller.loadInitial();
-    };
-
-    overlay.querySelector('#ctx-select-msg').onclick = () => {
-      Motion.closeSheet(overlay);
-      this.enterSelectionMode(msg.id, rowEl);
-    };
-
-    overlay.querySelector('#ctx-copy-text').onclick = () => {
-      Motion.closeSheet(overlay);
-      if (msg.text) {
-        navigator.clipboard.writeText(msg.text);
-        Toast.show('Message copied to clipboard');
+    const doSave = async () => {
+      const newText = textarea.value.trim();
+      if (!newText) {
+        Toast.show('Message cannot be empty');
+        return;
       }
-    };
-
-    // Toggle Forwarded
-    overlay.querySelector('#ctx-toggle-forward').onclick = async () => {
-      Motion.closeSheet(overlay);
-      await db.updateMessage(msg.id, { isForwarded: !msg.isForwarded });
-      this.scroller.loadInitial();
-    };
-
-    // Delete message (replaces native confirm with showConfirm)
-    overlay.querySelector('#ctx-delete-msg').onclick = async () => {
-      Motion.closeSheet(overlay);
-      const confirmed = await showConfirm({
-        title: 'Delete message?',
-        message: 'Do you want to delete this message?',
-        confirmText: 'Delete for me',
-        cancelText: 'Cancel',
-        isDanger: true
-      });
-      if (confirmed) {
-        await db.deleteMessage(msg.id);
-        this.scroller.loadInitial();
+      if (newText === msg.text) {
+        cleanupEdit();
+        return;
       }
+
+      await db.updateMessage(msg.id, { text: newText, isEdited: true });
+      msg.text = newText;
+      msg.isEdited = true;
+
+      // Update scroller in-memory message
+      const inMem = this.scroller?.allMessages.find((m) => String(m.id) === String(msg.id));
+      if (inMem) {
+        inMem.text = newText;
+        inMem.isEdited = true;
+      }
+
+      cleanupEdit();
+      if (existingTextEl) {
+        existingTextEl.textContent = newText;
+      }
+
+      // Ensure (Edited) badge is shown in bubble meta
+      const metaSpan = rowEl.querySelector('.msg-meta') || rowEl.querySelector('.album-caption-meta');
+      if (metaSpan && !metaSpan.querySelector('.edited-tag')) {
+        const tag = document.createElement('span');
+        tag.className = 'edited-tag';
+        tag.textContent = 'Edited';
+        const timeEl = metaSpan.querySelector('.msg-time');
+        if (timeEl) {
+          metaSpan.insertBefore(tag, timeEl);
+        } else {
+          metaSpan.prepend(tag);
+        }
+      }
+
+      Toast.show('Message edited');
     };
 
-    overlay.onclick = (e) => {
-      if (e.target === overlay) Motion.closeSheet(overlay);
-    };
+    saveBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      doSave();
+    });
+
+    textarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        doSave();
+      } else if (e.key === 'Escape') {
+        cleanupEdit();
+      }
+    });
+  }
+
+  // --- Share Media Messages ---
+  async _shareMessage(msg) {
+    this.exitSelectionMode();
+    try {
+      let blob = null;
+      if (msg.mediaId) {
+        const mediaItem = await db.getMedia(msg.mediaId);
+        if (mediaItem && mediaItem.blob) blob = mediaItem.blob;
+      }
+
+      // 1. Try Native System Share if browser supports sharing files
+      if (navigator.share && blob) {
+        const ext = msg.mediaType === 'image' ? 'jpg' : (msg.mediaType === 'video' ? 'mp4' : (msg.mediaType === 'audio' || msg.mediaType === 'voice' ? 'mp3' : 'bin'));
+        const file = new File([blob], msg.mediaName || `shared_${msg.id}.${ext}`, { type: blob.type });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: msg.mediaName || 'Media',
+              text: msg.text || ''
+            });
+            return;
+          } catch (shareErr) {
+            if (shareErr.name === 'AbortError') return; // User cancelled native share
+            console.warn('[ChatView] Native share failed, opening share options modal:', shareErr);
+          }
+        }
+      }
+
+      // 2. Open dedicated Share Options Window with platform targets, preview & tools
+      const modal = new ShareOptionsModal({ msg, blob });
+      modal.open();
+    } catch (err) {
+      console.error('Share error:', err);
+      Toast.show('Unable to open share options');
+    }
   }
 
   // --- Message Multi-Selection System ---
   enterSelectionMode(initialMsgId, rowEl) {
     this.isSelectionMode = true;
+    if (this.scroller) this.scroller.selectionMode = true;
     this.selectedMessageIds.clear();
     if (initialMsgId) {
       this.selectedMessageIds.add(initialMsgId);
@@ -1325,23 +1622,284 @@ export class ChatView {
   }
 
   updateMessageSelectionBar() {
+    if (this.selectedMessageIds.size === 0) {
+      this.exitSelectionMode();
+      return;
+    }
+
     const defaultHeader = this.container.querySelector('#chat-default-header');
     const selectHeader = this.container.querySelector('#chat-selection-header');
     const countEl = this.container.querySelector('#chat-select-count');
+    const toolsBar = this.container.querySelector('#selection-tools-bar');
+    const overflowWrap = this.container.querySelector('#selection-overflow-wrap');
+    const overflowMenu = this.container.querySelector('#selection-overflow-menu');
+
+    if (!selectHeader || !toolsBar) return;
 
     if (defaultHeader) defaultHeader.style.display = 'none';
-    if (selectHeader) selectHeader.style.display = 'flex';
+    selectHeader.style.display = 'flex';
     if (countEl) countEl.textContent = `${this.selectedMessageIds.size}`;
+    if (overflowMenu) overflowMenu.style.display = 'none';
+
+    // Retrieve selected message objects
+    const allMsgs = this.scroller?.allMessages || [];
+    const selectedMsgs = [];
+    for (const id of this.selectedMessageIds) {
+      const found = allMsgs.find((m) => String(m.id) === String(id));
+      if (found) selectedMsgs.push(found);
+    }
+
+    const count = selectedMsgs.length;
+    if (count === 0) return;
+
+    const allStarred = selectedMsgs.every((m) => m.isStarred);
+    const allPinned = selectedMsgs.every((m) => this.chatPins.some((p) => String(p.messageId) === String(m.id)));
+    const isAllText = selectedMsgs.every((m) => m.text && !m.mediaId && !m.mediaType && !m.isDeleted);
+
+    const tools = [];
+
+    if (count === 1) {
+      const msg = selectedMsgs[0];
+      const isPinned = this.chatPins.some((p) => String(p.messageId) === String(msg.id));
+      const canEdit = Boolean(msg.isOutgoing && msg.text && !msg.isDeleted && !msg.mediaId);
+
+      // Single select tools arrangement:
+      // 1. Reply
+      tools.push({
+        id: 'reply',
+        label: 'Reply',
+        icon: Icons.replyBold('', 20),
+        action: () => {
+          this.exitSelectionMode();
+          this.startReply(msg);
+        }
+      });
+
+      // 2. Edit (only for outgoing text messages)
+      if (canEdit) {
+        tools.push({
+          id: 'edit',
+          label: 'Edit',
+          icon: Icons.edit('', 20),
+          action: () => {
+            this._startInlineEdit(msg);
+          }
+        });
+      }
+
+      // 3. Info
+      tools.push({
+        id: 'info',
+        label: 'Info',
+        icon: Icons.infoCircle('', 20),
+        action: () => {
+          this.exitSelectionMode();
+          this.messageInfoSheet?.show(msg, isPinned);
+        }
+      });
+
+      // 4. Delete
+      tools.push({
+        id: 'delete',
+        label: 'Delete',
+        icon: Icons.trash('', 20),
+        danger: true,
+        action: () => {
+          this.deleteSelectedMessages();
+        }
+      });
+
+      // 5. Forward
+      tools.push({
+        id: 'forward',
+        label: 'Forward',
+        icon: Icons.forwardBold('', 20),
+        action: () => {
+          this.forwardSelectedMessages();
+        }
+      });
+
+      // 6. Star
+      tools.push({
+        id: 'star',
+        label: msg.isStarred ? 'Unstar' : 'Star',
+        icon: msg.isStarred ? Icons.unstar('', 20) : Icons.star('', 20),
+        action: () => {
+          this.starSelectedMessages();
+        }
+      });
+
+      // 7. Copy (for text) OR Share (for media and files)
+      if (msg.text && !msg.isDeleted) {
+        tools.push({
+          id: 'copy',
+          label: 'Copy',
+          icon: Icons.copy('', 20),
+          action: () => {
+            this.copySelectedMessages();
+          }
+        });
+      } else if (msg.mediaId || msg.mediaType) {
+        tools.push({
+          id: 'share',
+          label: 'Share',
+          icon: Icons.share('', 20),
+          action: () => {
+            this._shareMessage(msg);
+          }
+        });
+      }
+
+      // 8. Pin
+      tools.push({
+        id: 'pin',
+        label: isPinned ? 'Unpin' : 'Pin',
+        icon: isPinned ? Icons.pinOff('', 20) : Icons.pin('', 20),
+        action: () => {
+          this.pinSelectedMessages();
+        }
+      });
+
+    } else if (isAllText) {
+      // Multiple select text-only: star all, delete, copy, forward, pin
+      tools.push({
+        id: 'star',
+        label: allStarred ? 'Unstar all' : 'Star all',
+        icon: allStarred ? Icons.unstar('', 20) : Icons.star('', 20),
+        action: () => this.starSelectedMessages()
+      });
+      tools.push({
+        id: 'delete',
+        label: 'Delete',
+        icon: Icons.trash('', 20),
+        danger: true,
+        action: () => this.deleteSelectedMessages()
+      });
+      tools.push({
+        id: 'copy',
+        label: 'Copy',
+        icon: Icons.copy('', 20),
+        action: () => this.copySelectedMessages()
+      });
+      tools.push({
+        id: 'forward',
+        label: 'Forward',
+        icon: Icons.forwardBold('', 20),
+        action: () => this.forwardSelectedMessages()
+      });
+      tools.push({
+        id: 'pin',
+        label: allPinned ? 'Unpin all' : 'Pin all',
+        icon: allPinned ? Icons.pinOff('', 20) : Icons.pin('', 20),
+        action: () => this.pinSelectedMessages()
+      });
+
+    } else {
+      // Multiple select mixed types: star all, delete, forward, pin
+      tools.push({
+        id: 'star',
+        label: allStarred ? 'Unstar all' : 'Star all',
+        icon: allStarred ? Icons.unstar('', 20) : Icons.star('', 20),
+        action: () => this.starSelectedMessages()
+      });
+      tools.push({
+        id: 'delete',
+        label: 'Delete',
+        icon: Icons.trash('', 20),
+        danger: true,
+        action: () => this.deleteSelectedMessages()
+      });
+      tools.push({
+        id: 'forward',
+        label: 'Forward',
+        icon: Icons.forwardBold('', 20),
+        action: () => this.forwardSelectedMessages()
+      });
+      tools.push({
+        id: 'pin',
+        label: allPinned ? 'Unpin all' : 'Pin all',
+        icon: allPinned ? Icons.pinOff('', 20) : Icons.pin('', 20),
+        action: () => this.pinSelectedMessages()
+      });
+    }
+
+    // Responsive tool measurement and layout
+    const headerWidth = selectHeader.clientWidth || window.innerWidth;
+    const leftWidth = 100; // width of [← back] [count] + gap
+    const btnWidth = 44;   // width per tool icon button
+    const availableWidth = Math.max(0, headerWidth - leftWidth - 12);
+
+    toolsBar.innerHTML = '';
+    overflowMenu.innerHTML = '';
+
+    if (tools.length * btnWidth <= availableWidth) {
+      // All tools fit directly in the toolbar
+      if (overflowWrap) overflowWrap.style.display = 'none';
+      tools.forEach((tool) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `selection-tool-btn ${tool.danger ? 'danger-tool' : ''}`;
+        btn.title = tool.label;
+        btn.setAttribute('aria-label', tool.label);
+        btn.innerHTML = tool.icon;
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          tool.action();
+        });
+        toolsBar.appendChild(btn);
+      });
+    } else {
+      // Not all tools fit: leave space for 3-dots overflow button (44px)
+      const maxVisible = Math.max(1, Math.floor((availableWidth - 44) / btnWidth));
+      const visibleTools = tools.slice(0, maxVisible);
+      const overflowTools = tools.slice(maxVisible);
+
+      visibleTools.forEach((tool) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `selection-tool-btn ${tool.danger ? 'danger-tool' : ''}`;
+        btn.title = tool.label;
+        btn.setAttribute('aria-label', tool.label);
+        btn.innerHTML = tool.icon;
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          tool.action();
+        });
+        toolsBar.appendChild(btn);
+      });
+
+      overflowTools.forEach((tool) => {
+        const item = document.createElement('div');
+        item.className = `selection-overflow-item ${tool.danger ? 'danger-item' : ''}`;
+        item.innerHTML = `
+          <span class="selection-overflow-item-icon">${tool.icon}</span>
+          <span>${tool.label}</span>
+        `;
+        item.addEventListener('click', (e) => {
+          e.stopPropagation();
+          overflowMenu.style.display = 'none';
+          tool.action();
+        });
+        overflowMenu.appendChild(item);
+      });
+
+      if (overflowWrap) overflowWrap.style.display = 'flex';
+    }
   }
 
   exitSelectionMode() {
     this.isSelectionMode = false;
+    if (this.scroller) this.scroller.selectionMode = false;
     this.selectedMessageIds.clear();
+    this.reactionBar?.hide();
+
     const defaultHeader = this.container.querySelector('#chat-default-header');
     const selectHeader = this.container.querySelector('#chat-selection-header');
+    const overflowMenu = this.container.querySelector('#selection-overflow-menu');
 
     if (defaultHeader) defaultHeader.style.display = 'flex';
     if (selectHeader) selectHeader.style.display = 'none';
+    if (overflowMenu) overflowMenu.style.display = 'none';
 
     this.container.querySelectorAll('.msg-row.is-msg-selected').forEach((r) => {
       r.classList.remove('is-msg-selected');
@@ -1354,20 +1912,42 @@ export class ChatView {
 
   async starSelectedMessages() {
     if (this.selectedMessageIds.size === 0) return;
+    let allStarred = true;
+    const msgsToUpdate = [];
+
+    // Resolve selected IDs from the scroller's in-memory message list
+    const allMsgs = this.scroller?.allMessages ?? [];
     for (const id of this.selectedMessageIds) {
-      const m = await db.getMessage(id);
-      if (m) await db.updateMessage(id, { isStarred: !m.isStarred });
+      const m = allMsgs.find((msg) => String(msg.id) === String(id));
+      if (m) {
+        msgsToUpdate.push(m);
+        if (!m.isStarred) allStarred = false;
+      }
     }
-    Toast.show(`${this.selectedMessageIds.size} messages updated`);
+
+    if (msgsToUpdate.length === 0) return;
+
+    // If all selected messages are starred, unstar them all; otherwise star them all
+    const targetState = !allStarred;
+    const ids = msgsToUpdate.map((m) => m.id);
+    await db.setMessagesStarred(ids, targetState);
+    // Update in-memory references so the star badge reflects immediately
+    for (const m of msgsToUpdate) {
+      m.isStarred = targetState;
+    }
+
+    const count = msgsToUpdate.length;
+    Toast.show(targetState ? `${count} message${count > 1 ? 's' : ''} starred` : `${count} message${count > 1 ? 's' : ''} unstarred`);
     this.exitSelectionMode();
-    this.scroller.loadInitial();
+    await this.scroller.loadInitial();
   }
 
   async copySelectedMessages() {
     if (this.selectedMessageIds.size === 0) return;
     const texts = [];
+    const allMsgs = this.scroller?.allMessages ?? [];
     for (const id of this.selectedMessageIds) {
-      const m = await db.getMessage(id);
+      const m = allMsgs.find((msg) => String(msg.id) === String(id));
       if (m && m.text) texts.push(m.text);
     }
     if (texts.length > 0) {
@@ -1381,12 +1961,53 @@ export class ChatView {
 
   async forwardSelectedMessages() {
     if (this.selectedMessageIds.size === 0) return;
+    const allMsgs = this.scroller?.allMessages ?? [];
+    const msgsToForward = [];
     for (const id of this.selectedMessageIds) {
-      await db.updateMessage(id, { isForwarded: true });
+      const m = allMsgs.find((msg) => String(msg.id) === String(id));
+      if (m) msgsToForward.push(m);
     }
-    Toast.show(`${this.selectedMessageIds.size} messages marked forwarded`);
+    if (msgsToForward.length === 0) return;
+
+    const picker = new ForwardPicker();
+    const result = await picker.open(msgsToForward);
+    if (result && result.chatIds && result.chatIds.length > 0) {
+      await forwardMessagesToChats(msgsToForward, result.chatIds);
+      const count = result.chatIds.length;
+      Toast.show(`Forwarded to ${count} chat${count > 1 ? 's' : ''}`);
+      this.exitSelectionMode();
+      if (result.chatIds.includes(this.chatId)) {
+        await this.scroller.loadInitial();
+      }
+    }
+  }
+
+  async toggleForwardSelectedMessages() {
+    if (this.selectedMessageIds.size === 0) return;
+    const allMsgs = this.scroller?.allMessages ?? [];
+    const msgsToUpdate = [];
+    let allForwarded = true;
+
+    for (const id of this.selectedMessageIds) {
+      const m = allMsgs.find((msg) => String(msg.id) === String(id));
+      if (m) {
+        msgsToUpdate.push(m);
+        if (!m.isForwarded) allForwarded = false;
+      }
+    }
+
+    if (msgsToUpdate.length === 0) return;
+
+    const targetState = !allForwarded;
+    for (const m of msgsToUpdate) {
+      await db.updateMessage(m.id, { isForwarded: targetState });
+      m.isForwarded = targetState;
+    }
+
+    const count = msgsToUpdate.length;
+    Toast.show(targetState ? `${count} message${count > 1 ? 's' : ''} marked forwarded` : `${count} message${count > 1 ? 's' : ''} unforwarded`);
     this.exitSelectionMode();
-    this.scroller.loadInitial();
+    await this.scroller.loadInitial();
   }
 
   async deleteSelectedMessages() {
@@ -1467,7 +2088,251 @@ export class ChatView {
     }
   }
 
+  // --- Message Pin System ---
+  async loadAndRenderPins() {
+    this.chatPins = await db.getPinsForChat(this.chatId);
+    this.pinPriorityMode = await db.getPinPriorityMode(this.chatId);
+
+    // Auto-expire check
+    const now = Date.now();
+    const activePins = this.chatPins.filter((p) => p.expiresAt === null || p.expiresAt > now);
+    if (activePins.length !== this.chatPins.length) {
+      this.chatPins = activePins;
+      await db.savePinsForChat(this.chatId, activePins);
+    }
+
+    this.scroller?.setPinnedMessageIds(this.chatPins.map((p) => String(p.messageId)));
+    this.renderPinnedBar();
+  }
+
+  renderPinnedBar() {
+    const bar = this.container?.querySelector('#chat-pinned-bar');
+    if (!bar) return;
+
+    if (this.chatPins.length === 0 || this.pinnedBarDismissed) {
+      bar.style.display = 'none';
+      if (this.switcherInterval) {
+        clearInterval(this.switcherInterval);
+        this.switcherInterval = null;
+      }
+      return;
+    }
+
+    const priorityPin = this._getHighestPriorityPin();
+    if (!priorityPin) {
+      bar.style.display = 'none';
+      return;
+    }
+
+    const snippetEl = bar.querySelector('#pinned-bar-snippet');
+    const labelEl = bar.querySelector('#pinned-bar-label');
+
+    if (snippetEl) {
+      const text = priorityPin.text || (priorityPin.mediaType ? `[${priorityPin.mediaType}]` : 'Media message');
+      snippetEl.textContent = text;
+    }
+
+    if (labelEl) {
+      if (this.chatPins.length > 1) {
+        labelEl.textContent = `Pinned message • ${this.chatPins.length} pinned`;
+      } else {
+        labelEl.textContent = 'Pinned message';
+      }
+    }
+
+    bar.style.display = 'flex';
+
+    // Switcher mode timer
+    if (this.pinPriorityMode?.mode === 'switcher' && this.chatPins.length > 1) {
+      if (!this.switcherInterval) {
+        const secs = Math.max(1, this.pinPriorityMode.switcherSeconds || 10);
+        this.switcherInterval = setInterval(() => {
+          if (!this.container || this.chatPins.length <= 1) return;
+          this.switcherIndex = (this.switcherIndex + 1) % this.chatPins.length;
+          this._updatePinnedBarContentOnly();
+        }, secs * 1000);
+      }
+    } else {
+      if (this.switcherInterval) {
+        clearInterval(this.switcherInterval);
+        this.switcherInterval = null;
+      }
+    }
+  }
+
+  _updatePinnedBarContentOnly() {
+    const bar = this.container?.querySelector('#chat-pinned-bar');
+    if (!bar || this.chatPins.length === 0 || this.pinnedBarDismissed) return;
+    const priorityPin = this._getHighestPriorityPin();
+    if (!priorityPin) return;
+    const snippetEl = bar.querySelector('#pinned-bar-snippet');
+    if (snippetEl) {
+      snippetEl.style.opacity = '0';
+      setTimeout(() => {
+        snippetEl.textContent = priorityPin.text || (priorityPin.mediaType ? `[${priorityPin.mediaType}]` : 'Media message');
+        snippetEl.style.opacity = '1';
+      }, 150);
+    }
+  }
+
+  _getHighestPriorityPin() {
+    if (!this.chatPins || this.chatPins.length === 0) return null;
+    const mode = this.pinPriorityMode?.mode || 'last_added';
+    const now = Date.now();
+    let sorted = [...this.chatPins];
+
+    if (mode === 'last_added') {
+      sorted.sort((a, b) => (b.pinnedAt || 0) - (a.pinnedAt || 0));
+      return sorted[0];
+    }
+
+    if (mode === 'first_added') {
+      sorted.sort((a, b) => (a.pinnedAt || 0) - (b.pinnedAt || 0));
+      return sorted[0];
+    }
+
+    if (mode === 'about_to_end') {
+      sorted.sort((a, b) => {
+        if (a.expiresAt === null && b.expiresAt === null) return (b.pinnedAt || 0) - (a.pinnedAt || 0);
+        if (a.expiresAt === null) return 1;
+        if (b.expiresAt === null) return -1;
+        return a.expiresAt - b.expiresAt;
+      });
+      return sorted[0];
+    }
+
+    if (mode === 'mixed') {
+      const days = this.pinPriorityMode.mixedDays || 7;
+      const thresholdMs = days * 86400000;
+      sorted.sort((a, b) => {
+        const aClose = a.expiresAt !== null && (a.expiresAt - now) <= thresholdMs;
+        const bClose = b.expiresAt !== null && (b.expiresAt - now) <= thresholdMs;
+        if (aClose && !bClose) return -1;
+        if (!aClose && bClose) return 1;
+        if (aClose && bClose) return a.expiresAt - b.expiresAt;
+        return (b.pinnedAt || 0) - (a.pinnedAt || 0);
+      });
+      return sorted[0];
+    }
+
+    if (mode === 'switcher') {
+      if (this.switcherIndex >= sorted.length) {
+        this.switcherIndex = 0;
+      }
+      return sorted[this.switcherIndex];
+    }
+
+    return sorted[0];
+  }
+
+  async pinSelectedMessages() {
+    if (this.selectedMessageIds.size === 0) return;
+    const allMsgs = this.scroller?.allMessages ?? [];
+    const msgsToPin = [];
+    for (const id of this.selectedMessageIds) {
+      const m = allMsgs.find((msg) => String(msg.id) === String(id));
+      if (m) msgsToPin.push(m);
+    }
+    if (msgsToPin.length === 0) return;
+    this.exitSelectionMode();
+    await this.pinMessages(msgsToPin);
+  }
+
+  async pinMessages(msgs) {
+    if (!msgs || msgs.length === 0) return;
+    const result = await PinDurationPicker.open();
+    if (!result) return; // cancelled
+
+    const { expiresAt } = result;
+    const now = Date.now();
+    let updatedPins = [...this.chatPins];
+
+    for (const msg of msgs) {
+      // If already pinned, replace existing entry with new duration
+      const existingIdx = updatedPins.findIndex((p) => String(p.messageId) === String(msg.id));
+      if (existingIdx !== -1) {
+        updatedPins.splice(existingIdx, 1);
+      }
+
+      updatedPins.push({
+        id: db.generateUUID(),
+        messageId: msg.id,
+        chatId: this.chatId,
+        pinnedAt: now,
+        expiresAt,
+        text: msg.text || null,
+        sender: msg.sender || (msg.isOutgoing ? 'You' : this.chat.name),
+        mediaType: msg.mediaType || null
+      });
+    }
+
+    this.chatPins = updatedPins;
+    this.pinnedBarDismissed = false; // re-show bar on new pin
+    await db.savePinsForChat(this.chatId, updatedPins);
+    this.scroller?.setPinnedMessageIds(this.chatPins.map((p) => String(p.messageId)));
+
+    const count = msgs.length;
+    Toast.show(`${count} message${count > 1 ? 's' : ''} pinned`);
+    this.renderPinnedBar();
+  }
+
+  async unpinMessage(messageId) {
+    this.chatPins = this.chatPins.filter((p) => String(p.messageId) !== String(messageId));
+    await db.savePinsForChat(this.chatId, this.chatPins);
+    this.scroller?.setPinnedMessageIds(this.chatPins.map((p) => String(p.messageId)));
+    Toast.show('Message unpinned');
+    this.renderPinnedBar();
+  }
+
+  openPinnedPanel() {
+    const panel = new PinnedPanel({
+      chatId: this.chatId,
+      pins: this.chatPins,
+      priorityMode: this.pinPriorityMode,
+      onJumpToMessage: async (msgId) => {
+        const found = await this.scroller.scrollToMessage(msgId);
+        if (!found) Toast.show('Message not found');
+      },
+      onPinsChanged: async (updatedPins, updatedMode) => {
+        this.chatPins = updatedPins;
+        if (updatedMode) {
+          this.pinPriorityMode = updatedMode;
+          await db.savePinPriorityMode(this.chatId, updatedMode);
+        }
+        await db.savePinsForChat(this.chatId, updatedPins);
+        this.scroller?.setPinnedMessageIds(this.chatPins.map((p) => String(p.messageId)));
+        this.renderPinnedBar();
+      }
+    });
+    panel.open();
+  }
+
   cleanup() {
+    this.exitSelectionMode();
+    if (this._onResize) {
+      window.removeEventListener('resize', this._onResize);
+      this._onResize = null;
+    }
+    if (this.reactionBar) {
+      this.reactionBar.destroy();
+      this.reactionBar = null;
+    }
+    if (this.emojiPickerSheet) {
+      this.emojiPickerSheet.destroy();
+      this.emojiPickerSheet = null;
+    }
+    if (this.messageInfoSheet) {
+      this.messageInfoSheet.destroy();
+      this.messageInfoSheet = null;
+    }
+    if (this.stickerDrawer) {
+      this.stickerDrawer.close(false);
+      this.stickerDrawer = null;
+    }
+    if (this.switcherInterval) {
+      clearInterval(this.switcherInterval);
+      this.switcherInterval = null;
+    }
     if (this.scroller) {
       this.scroller.cleanup();
     }

@@ -3,6 +3,7 @@ import { Icons } from './icons.js';
 import { db } from './db.js';
 import { audioManager } from './audio-player.js';
 import { mediaLightbox } from './components/lightbox.js';
+import { Toast } from './components/toast.js';
 
 export class VirtualMessageScroller {
   constructor(container, options = {}) {
@@ -12,7 +13,14 @@ export class VirtualMessageScroller {
     this.onMediaClick = options.onMediaClick || (() => { });
     this.onMessageAction = options.onMessageAction || (() => { });
     this.onMessageClick = options.onMessageClick || null;
+    this.onMessageReply = options.onMessageReply || null;
+    this.onQuotedMessageClick = options.onQuotedMessageClick || null;
     this.outgoingTheme = options.outgoingTheme || 'slate';
+
+    // Long-press → multi-select redesign
+    this.onMessageLongPress = null;    // (msg, row, e) => void
+    this.onMessageTapInSelection = null; // (msg, row) => void
+    this.selectionMode = false;
 
     this.CHUNK_SIZE = 50;
     this.MAX_DOM_MESSAGES = 250;
@@ -25,8 +33,41 @@ export class VirtualMessageScroller {
     this.autoScrollTimer = null;
     this.mediaCache = new Map(); // id -> objectURL
     this.activeLongPressTimer = null;
+    this.pinnedMessageIds = new Set();
 
     this.initScrollListener();
+  }
+
+  setPinnedMessageIds(ids) {
+    this.pinnedMessageIds = new Set((ids || []).map(String));
+    this.updateAllPinnedBadges();
+  }
+
+  updateAllPinnedBadges() {
+    if (!this.container) return;
+    const rows = this.container.querySelectorAll('.msg-row[data-msg-id]');
+    rows.forEach((row) => {
+      const msgId = row.dataset.msgId;
+      if (!msgId) return;
+      const metaSpan = row.querySelector('.msg-meta') || row.querySelector('.album-caption-meta') || row.querySelector('.album-meta-row');
+      if (!metaSpan) return;
+      const isPinned = this.pinnedMessageIds.has(String(msgId));
+      let badge = metaSpan.querySelector('.msg-pin-badge');
+      if (isPinned && !badge) {
+        badge = document.createElement('span');
+        badge.className = 'msg-pin-badge';
+        badge.title = 'Pinned';
+        badge.innerHTML = Icons.pin('pin-icon-meta', 11);
+        const timeEl = metaSpan.querySelector('.msg-time') || metaSpan.querySelector('.album-meta-time') || metaSpan.querySelector('span:not(.msg-star-badge):not(.edited-tag)');
+        if (timeEl) {
+          metaSpan.insertBefore(badge, timeEl);
+        } else {
+          metaSpan.prepend(badge);
+        }
+      } else if (!isPinned && badge) {
+        badge.remove();
+      }
+    });
   }
 
   // Format date header pill: "Today", "Yesterday", or "DD/MM/YYYY"
@@ -170,6 +211,165 @@ export class VirtualMessageScroller {
       e.preventDefault();
       this.cancelPendingLongPress();
       onAction(e);
+    });
+  }
+
+  attachSwipeAndLongPress(row, msg, onLongPress) {
+    let startX = 0;
+    let startY = 0;
+    let isPointerDown = false;
+    let isSwiping = false;
+    let hapticTriggered = false;
+
+    const onPointerDown = (e) => {
+      // For mouse events, strictly allow only primary button (left click)
+      if (e.button !== undefined && e.button !== 0) return;
+
+      this.cancelPendingLongPress();
+      isPointerDown = true;
+      isSwiping = false;
+      hapticTriggered = false;
+
+      startX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+      startY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+
+      this.activeLongPressTimer = setTimeout(() => {
+        if (!isSwiping && isPointerDown) {
+          onLongPress(e);
+          this.activeLongPressTimer = null;
+        }
+      }, 450);
+
+      // Attach window listeners for mouse drag so dragging continues smoothly across screen
+      if (e.type === 'mousedown') {
+        window.addEventListener('mousemove', onWindowMouseMove);
+        window.addEventListener('mouseup', onWindowMouseUp);
+      }
+    };
+
+    const handlePointerMove = (curX, curY, e) => {
+      if (!isPointerDown) return;
+
+      // If mouse event, ensure primary button is still held down
+      if (e && e.buttons !== undefined && (e.buttons & 1) !== 1) {
+        finishPointerUp(curX);
+        return;
+      }
+
+      const deltaX = curX - startX;
+      const deltaY = curY - startY;
+
+      // Vertical movement cancels swipe and long press
+      if (!isSwiping && Math.abs(deltaY) > 12) {
+        this.cancelPendingLongPress();
+        return;
+      }
+
+      // Horizontal swipe to the right
+      if (deltaX > 8 && Math.abs(deltaX) > Math.abs(deltaY) * 1.3) {
+        this.cancelPendingLongPress();
+        isSwiping = true;
+        row.classList.add('swiping-right');
+
+        const bubble = row.querySelector('.msg-bubble');
+        const replyIcon = row.querySelector('.swipe-reply-icon');
+
+        // Apply rubber-band drag to bubble (max 72px)
+        const translateX = Math.min(Math.max(0, deltaX * 0.65), 72);
+        if (bubble) {
+          bubble.style.transition = 'none';
+          bubble.style.transform = `translateX(${translateX}px)`;
+        }
+
+        if (replyIcon) {
+          const progress = Math.min(1, translateX / 45);
+          replyIcon.style.opacity = progress;
+          replyIcon.style.transform = `translateY(-50%) scale(${0.4 + progress * 0.6})`;
+        }
+
+        if (translateX >= 45 && !hapticTriggered) {
+          hapticTriggered = true;
+          if (navigator.vibrate) {
+            try { navigator.vibrate(15); } catch (_) {}
+          }
+        } else if (translateX < 45) {
+          hapticTriggered = false;
+        }
+      }
+    };
+
+    const finishPointerUp = (curX) => {
+      if (!isPointerDown) return;
+      isPointerDown = false;
+      this.cancelPendingLongPress();
+
+      window.removeEventListener('mousemove', onWindowMouseMove);
+      window.removeEventListener('mouseup', onWindowMouseUp);
+
+      if (isSwiping) {
+        const deltaX = curX - startX;
+        const reached = (deltaX * 0.65) >= 45;
+
+        const bubble = row.querySelector('.msg-bubble');
+        const replyIcon = row.querySelector('.swipe-reply-icon');
+
+        if (bubble) {
+          bubble.style.transition = 'transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1)';
+          bubble.style.transform = 'translateX(0)';
+          const cleanup = () => {
+            bubble.style.transition = '';
+            bubble.style.transform = '';
+            bubble.removeEventListener('transitionend', cleanup);
+          };
+          bubble.addEventListener('transitionend', cleanup);
+        }
+
+        if (replyIcon) {
+          replyIcon.style.transition = 'opacity 0.2s, transform 0.2s';
+          replyIcon.style.opacity = '0';
+          replyIcon.style.transform = 'translateY(-50%) scale(0.5)';
+        }
+
+        row.classList.remove('swiping-right');
+        isSwiping = false;
+
+        if (reached && this.onMessageReply) {
+          this.onMessageReply(msg);
+        }
+      }
+    };
+
+    const onTouchMove = (e) => {
+      const curX = e.touches && e.touches[0] ? e.touches[0].clientX : 0;
+      const curY = e.touches && e.touches[0] ? e.touches[0].clientY : 0;
+      handlePointerMove(curX, curY, e);
+    };
+
+    const onTouchEnd = (e) => {
+      const curX = e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : 0;
+      finishPointerUp(curX);
+    };
+
+    const onWindowMouseMove = (e) => {
+      handlePointerMove(e.clientX, e.clientY, e);
+    };
+
+    const onWindowMouseUp = (e) => {
+      finishPointerUp(e.clientX);
+    };
+
+    row.addEventListener('touchstart', onPointerDown, { passive: true });
+    row.addEventListener('touchmove', onTouchMove, { passive: true });
+    row.addEventListener('touchend', onTouchEnd, { passive: true });
+    row.addEventListener('touchcancel', onTouchEnd, { passive: true });
+
+    row.addEventListener('mousedown', onPointerDown);
+
+    row.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      this.cancelPendingLongPress();
+      finishPointerUp(e.clientX);
+      onLongPress(e);
     });
   }
 
@@ -530,6 +730,11 @@ export class VirtualMessageScroller {
     row.dataset.albumIds = albumMsgs.map((m) => m.id).join(',');
     row.dataset.mediaIds = albumMsgs.map((m) => m.mediaId).filter(Boolean).join(',');
 
+    const replyIcon = document.createElement('div');
+    replyIcon.className = 'swipe-reply-icon';
+    replyIcon.innerHTML = Icons.reply('', 18);
+    row.appendChild(replyIcon);
+
     const bubble = document.createElement('div');
     bubble.className = `msg-bubble ${firstMsg.isOutgoing ? 'bubble-outgoing' : 'bubble-incoming'} ${this.outgoingTheme === 'green' && firstMsg.isOutgoing ? 'theme-green' : ''} media-album-bubble`;
 
@@ -541,6 +746,33 @@ export class VirtualMessageScroller {
       senderHeader.style.padding = '4px 8px 2px 8px';
       senderHeader.textContent = firstMsg.sender;
       bubble.appendChild(senderHeader);
+    }
+
+    // Forwarded badge for album
+    const hasForwarded = albumMsgs.some((m) => m.isForwarded);
+    if (hasForwarded) {
+      const forwardedBadge = document.createElement('div');
+      forwardedBadge.className = 'forwarded-header';
+      forwardedBadge.style.padding = '4px 8px 0 8px';
+      forwardedBadge.title = 'Click to unmark as forwarded';
+      forwardedBadge.innerHTML = `${Icons.forward('forward-icon', 13)} <i>Forwarded</i>`;
+      forwardedBadge.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        for (const m of albumMsgs) {
+          await db.updateMessage(m.id, { isForwarded: false });
+          m.isForwarded = false;
+        }
+        Toast.show('Removed "Forwarded" label');
+        await this.loadInitial();
+      });
+      bubble.appendChild(forwardedBadge);
+    }
+
+    // Quoted reply box for album
+    if (firstMsg.replyTo && firstMsg.replyTo.id) {
+      const quoteBox = await this.renderQuotedReplyBox(firstMsg.replyTo);
+      if (quoteBox) bubble.appendChild(quoteBox);
     }
 
     // Grid container — fixed display count capped at 4; for 3-image, compute smart layout
@@ -685,6 +917,11 @@ export class VirtualMessageScroller {
     // Goal 1: Timestamp & checks always go in a footer row BELOW the grid,
     // styled exactly like a text message meta row — never overlaid on the photos.
     const captionMsg = albumMsgs.find((m) => m.text && m.text.trim().length > 0);
+    const hasStarred = albumMsgs.some((m) => m.isStarred);
+    const hasPinned = albumMsgs.some((m) => this.pinnedMessageIds && this.pinnedMessageIds.has(String(m.id)));
+    const albumStarHtml = hasStarred ? `<span class="msg-star-badge" title="Starred">${Icons.star('star-icon-meta', 11)}</span>` : '';
+    const albumPinHtml = hasPinned ? `<span class="msg-pin-badge" title="Pinned">${Icons.pin('pin-icon-meta', 11)}</span>` : '';
+
     if (captionMsg) {
       const captionBlock = document.createElement('div');
       captionBlock.className = 'album-caption-block';
@@ -697,6 +934,8 @@ export class VirtualMessageScroller {
       captionBlock.innerHTML = `
         <div class="album-caption-text">${this.escapeHtml(captionMsg.text.trim())}</div>
         <div class="album-caption-meta">
+          ${albumStarHtml}
+          ${albumPinHtml}
           <span>${this.formatTime(lastMsg.timestamp)}</span>
           ${checksHtml}
         </div>
@@ -710,17 +949,26 @@ export class VirtualMessageScroller {
       if (firstMsg.isOutgoing) {
         checksHtml = Icons.checks(true, 'receipt-check', 15);
       }
-      metaRow.innerHTML = `<span class="album-meta-time">${this.formatTime(lastMsg.timestamp)}</span>${checksHtml}`;
+      metaRow.innerHTML = `${albumStarHtml}${albumPinHtml}<span class="album-meta-time">${this.formatTime(lastMsg.timestamp)}</span>${checksHtml}`;
       bubble.appendChild(metaRow);
     }
     row.appendChild(bubble);
 
-    // Attach touch & long-press handler
-    this.attachLongPress(row, (e) => {
-      this.onMessageAction(firstMsg, row, e);
+    // Attach swipe-to-reply and long-press handler
+    this.attachSwipeAndLongPress(row, firstMsg, (e) => {
+      if (this.onMessageLongPress) {
+        this.onMessageLongPress(firstMsg, row, e);
+      } else {
+        this.onMessageAction(firstMsg, row, e);
+      }
     });
 
     row.addEventListener('click', (e) => {
+      if (this.selectionMode && this.onMessageTapInSelection) {
+        e.stopPropagation();
+        this.onMessageTapInSelection(firstMsg, row, e);
+        return;
+      }
       if (this.onMessageClick) {
         this.onMessageClick(firstMsg, row, e);
       }
@@ -736,6 +984,11 @@ export class VirtualMessageScroller {
     row.dataset.msgId = String(msg.id);
     if (msg.mediaId) row.dataset.mediaId = String(msg.mediaId);
     row.dataset.msgCount = '1';
+
+    const replyIcon = document.createElement('div');
+    replyIcon.className = 'swipe-reply-icon';
+    replyIcon.innerHTML = Icons.reply('', 18);
+    row.appendChild(replyIcon);
 
     if (msg.isSystem) {
       row.className = 'msg-row system';
@@ -762,8 +1015,23 @@ export class VirtualMessageScroller {
     if (msg.isForwarded) {
       const forwardedBadge = document.createElement('div');
       forwardedBadge.className = 'forwarded-header';
+      forwardedBadge.title = 'Click to unmark as forwarded';
       forwardedBadge.innerHTML = `${Icons.forward('forward-icon', 13)} <i>Forwarded</i>`;
+      forwardedBadge.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        await db.updateMessage(msg.id, { isForwarded: false });
+        msg.isForwarded = false;
+        Toast.show('Removed "Forwarded" label');
+        await this.loadInitial();
+      });
       bubble.appendChild(forwardedBadge);
+    }
+
+    // Quoted reply box
+    if (msg.replyTo && msg.replyTo.id) {
+      const quoteBox = await this.renderQuotedReplyBox(msg.replyTo);
+      if (quoteBox) bubble.appendChild(quoteBox);
     }
 
     // Call badge in chat
@@ -805,8 +1073,11 @@ export class VirtualMessageScroller {
     if (msg.isOutgoing) {
       checksHtml = Icons.checks(true, 'receipt-check', 15);
     }
+    const starHtml = msg.isStarred ? `<span class="msg-star-badge" title="Starred">${Icons.star('star-icon-meta', 11)}</span>` : '';
+    const isPinned = this.pinnedMessageIds && this.pinnedMessageIds.has(String(msg.id));
+    const pinHtml = isPinned ? `<span class="msg-pin-badge" title="Pinned">${Icons.pin('pin-icon-meta', 11)}</span>` : '';
     const editedHtml = msg.isEdited ? '<span class="edited-tag">Edited</span>' : '';
-    metaSpan.innerHTML = `${editedHtml}<span class="msg-time">${this.formatTime(msg.timestamp)}</span>${checksHtml}`;
+    metaSpan.innerHTML = `${editedHtml}${starHtml}${pinHtml}<span class="msg-time">${this.formatTime(msg.timestamp)}</span>${checksHtml}`;
     bubble.appendChild(metaSpan);
 
     // Reaction badge
@@ -819,18 +1090,104 @@ export class VirtualMessageScroller {
 
     row.appendChild(bubble);
 
-    // Attach reliable long-press gesture (cancels on pointer move > 10px and scroll)
-    this.attachLongPress(row, (e) => {
-      this.onMessageAction(msg, row, e);
+    // Attach swipe-to-reply and reliable long-press gesture (cancels on pointer move > 10px and scroll)
+    this.attachSwipeAndLongPress(row, msg, (e) => {
+      if (this.onMessageLongPress) {
+        this.onMessageLongPress(msg, row, e);
+      } else {
+        this.onMessageAction(msg, row, e);
+      }
     });
 
     row.addEventListener('click', (e) => {
+      if (this.selectionMode && this.onMessageTapInSelection) {
+        e.stopPropagation();
+        this.onMessageTapInSelection(msg, row, e);
+        return;
+      }
       if (this.onMessageClick) {
         this.onMessageClick(msg, row, e);
       }
     });
 
     return row;
+  }
+
+  async renderQuotedReplyBox(replyTo) {
+    if (!replyTo || !replyTo.id) return null;
+
+    const box = document.createElement('div');
+    box.className = 'quoted-reply-box';
+    box.dataset.replyId = String(replyTo.id);
+
+    // Bar color
+    const barColor = (this.chat && this.chat.isGroup && replyTo.sender && replyTo.sender !== 'You')
+      ? this.getParticipantColor(replyTo.sender)
+      : 'var(--app-accent, #25d366)';
+
+    // Snippet label & Icon
+    let snippetText = replyTo.text || '';
+    let iconHtml = '';
+    if (replyTo.mediaType === 'image') {
+      iconHtml = Icons.gallery('', 13);
+      snippetText = snippetText ? `Photo: ${snippetText}` : 'Photo';
+    } else if (replyTo.mediaType === 'video') {
+      iconHtml = Icons.callVideo('', 13);
+      snippetText = snippetText ? `Video: ${snippetText}` : 'Video';
+    } else if (replyTo.mediaType === 'audio') {
+      iconHtml = Icons.mic('', 13);
+      snippetText = 'Voice message';
+    } else if (replyTo.mediaType === 'pdf' || replyTo.mediaType === 'document') {
+      iconHtml = Icons.documentIcon('', 13);
+      snippetText = replyTo.mediaName || 'Document';
+    } else if (replyTo.mediaType === 'sticker') {
+      iconHtml = Icons.sticker('', 13);
+      snippetText = 'Sticker';
+    }
+
+    // Thumbnail if mediaId exists
+    let thumbHtml = '';
+    if (replyTo.mediaId) {
+      let mediaItem = null;
+      try {
+        mediaItem = await db.getMedia(replyTo.mediaId);
+      } catch (_) {}
+
+      if (mediaItem && mediaItem.blob) {
+        let mediaUrl;
+        if (this.mediaCache.has(mediaItem.id)) {
+          mediaUrl = this.mediaCache.get(mediaItem.id);
+        } else {
+          mediaUrl = URL.createObjectURL(mediaItem.blob);
+          this.mediaCache.set(mediaItem.id, mediaUrl);
+        }
+
+        if (replyTo.mediaType === 'image' || replyTo.mediaType === 'sticker') {
+          thumbHtml = `<img src="${mediaUrl}" alt="Thumbnail" />`;
+        } else if (replyTo.mediaType === 'video') {
+          thumbHtml = `<video src="${mediaUrl}"></video>`;
+        }
+      }
+    }
+
+    box.innerHTML = `
+      <div class="quoted-reply-bar" style="background-color: ${barColor};"></div>
+      <div class="quoted-reply-body">
+        <div class="quoted-reply-sender" style="color: ${barColor};">${this.escapeHtml(replyTo.sender || 'Contact')}</div>
+        <div class="quoted-reply-snippet" dir="auto">${iconHtml ? `<span class="snippet-icon">${iconHtml}</span> ` : ''}${this.escapeHtml(snippetText)}</div>
+      </div>
+      ${thumbHtml ? `<div class="quoted-reply-thumb">${thumbHtml}</div>` : ''}
+    `;
+
+    box.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (this.onQuotedMessageClick) {
+        this.onQuotedMessageClick(replyTo.id);
+      }
+    });
+
+    return box;
   }
 
   async renderMediaCard(msg) {
@@ -1071,7 +1428,7 @@ export class VirtualMessageScroller {
   }
 
   async scrollToMessage(messageId) {
-    if (!messageId) return;
+    if (!messageId) return false;
     clearTimeout(this.autoScrollTimer);
     this.isAutoScrolling = true;
 
@@ -1104,7 +1461,7 @@ export class VirtualMessageScroller {
     if (el) {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          this._scrollElementToCenter(el);
           el.classList.add('highlight-flash');
           const bubble = el.querySelector('.msg-bubble');
           if (bubble) bubble.classList.add('highlight-flash');
@@ -1119,6 +1476,101 @@ export class VirtualMessageScroller {
     this.autoScrollTimer = setTimeout(() => {
       this.isAutoScrolling = false;
     }, 600);
+
+    return Boolean(el);
+  }
+
+  /**
+   * Scroll `el` to the vertical center of `this.container` using the
+   * container's own scrollTop (instead of scrollIntoView which targets
+   * the document root and misfires when the scroll element is a custom
+   * overflow div).  Falls back to `el.offsetTop` relative arithmetic
+   * when getBoundingClientRect values are not yet settled.
+   *
+   * We use `scrollTo({ behavior: 'smooth' })` so the animation is
+   * identical to the old scrollIntoView smooth scroll.
+   */
+  _scrollElementToCenter(el) {
+    const container = this.container;
+    if (!container || !el) return;
+
+    // getBoundingClientRect gives positions relative to the viewport.
+    // The difference between the element's top and the container's top
+    // tells us how far el sits inside the container's visible area.
+    const containerRect = container.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+
+    // Current scroll position + offset of el inside container - half a
+    // viewport height + half the element's height = desired scrollTop
+    // that places the element's midpoint at the container's midpoint.
+    const elMidpoint = elRect.top + elRect.height / 2;
+    const containerMidpoint = containerRect.top + containerRect.height / 2;
+    const delta = elMidpoint - containerMidpoint;
+
+    container.scrollTo({
+      top: container.scrollTop + delta,
+      behavior: 'smooth',
+    });
+  }
+
+  /**
+   * Scroll target message so it is positioned cleanly in the visible space
+   * ABOVE a bottom sheet of height sheetHeightVh (e.g. 60vh).
+   */
+  async scrollMessageAboveSheet(messageId, sheetHeightVh = 60) {
+    if (!messageId) return false;
+    clearTimeout(this.autoScrollTimer);
+    this.isAutoScrolling = true;
+
+    const targetStr = String(messageId);
+    let el = this.findMessageElement(targetStr);
+
+    if (!el) {
+      const foundIdx = this.allMessages.findIndex(
+        (m) => String(m.id) === targetStr || (m.mediaId && String(m.mediaId) === targetStr)
+      );
+      if (foundIdx !== -1) {
+        this.visibleStartIndex = Math.max(0, foundIdx - Math.floor(this.CHUNK_SIZE / 2));
+        this.visibleEndIndex = Math.min(this.allMessages.length, this.visibleStartIndex + this.CHUNK_SIZE);
+        await this.renderBatch(this.visibleStartIndex, this.visibleEndIndex, 'replace');
+        el = this.findMessageElement(targetStr);
+      }
+    }
+
+    if (el && this.container) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const containerRect = this.container.getBoundingClientRect();
+          const elRect = el.getBoundingClientRect();
+
+          const visibleTop = containerRect.top;
+          const visibleBottom = Math.max(visibleTop + 80, window.innerHeight * (1 - sheetHeightVh / 100));
+          const targetY = visibleTop + (visibleBottom - visibleTop) / 2;
+
+          const elMidpoint = elRect.top + elRect.height / 2;
+          const delta = elMidpoint - targetY;
+
+          this.container.scrollTo({
+            top: this.container.scrollTop + delta,
+            behavior: 'smooth'
+          });
+
+          el.classList.add('highlight-flash');
+          const bubble = el.querySelector('.msg-bubble');
+          if (bubble) bubble.classList.add('highlight-flash');
+          setTimeout(() => {
+            el.classList.remove('highlight-flash');
+            if (bubble) bubble.classList.remove('highlight-flash');
+          }, 2500);
+        });
+      });
+    }
+
+    this.autoScrollTimer = setTimeout(() => {
+      this.isAutoScrolling = false;
+    }, 600);
+
+    return Boolean(el);
   }
 
   async jumpToDate(targetMsg, dateString) {

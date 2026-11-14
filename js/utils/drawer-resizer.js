@@ -27,9 +27,10 @@ export class DrawerResizer {
     this.defaultHeightVh = options.defaultHeightVh || 45;
     this.minVh = options.minVh !== undefined ? options.minVh : 20;
     this.maxVh = options.maxVh !== undefined ? options.maxVh : 80;
-    this.onClose = options.onClose || (() => {});
-    this.onResize = options.onResize || (() => {});
-    this.onStateChange = options.onStateChange || (() => {});
+    this.mode = options.mode || 'bottom'; // 'bottom' | 'centered'
+    this.onClose = options.onClose || (() => { });
+    this.onResize = options.onResize || (() => { });
+    this.onStateChange = options.onStateChange || (() => { });
 
     this.currentHeightVh = this.defaultHeightVh;
     this.isDragging = false;
@@ -38,6 +39,8 @@ export class DrawerResizer {
     this.startY = 0;
     this.startHeight = 0;
     this.pointerId = null;
+    this.lastDragVh = null;
+    this._closeTimer = null;
 
     this.boundPointerDown = this.onPointerDown.bind(this);
     this.boundPointerMove = this.onPointerMove.bind(this);
@@ -81,27 +84,77 @@ export class DrawerResizer {
   }
 
   open(heightVh = null) {
-    this.isOpen = true;
-    const targetVh = heightVh || this.currentHeightVh || this.defaultHeightVh;
-    this.sheet.classList.add('open');
-    this.sheet.style.display = 'flex';
-    this.sheet.style.flexDirection = 'column';
-
-    if (this.backdrop) {
-      this.backdrop.classList.remove('closing');
-      this.backdrop.classList.add('active');
+    if (this._closeTimer) {
+      clearTimeout(this._closeTimer);
+      this._closeTimer = null;
     }
 
-    this.setHeightVh(targetVh, true);
+    this.isOpen = true;
+    const targetVh = heightVh || this.currentHeightVh || this.defaultHeightVh;
+
+    // Step 1: make the sheet visible but keep it in the "closed" (off-screen) position
+    // so the browser can paint the starting frame before we trigger the transition.
+    this.sheet.style.display = 'flex';
+    this.sheet.style.flexDirection = 'column';
+    this.sheet.style.transition = 'none'; // no animation yet
+
+    if (this.mode === 'centered') {
+      // Start from scaled-down + transparent state (matches CSS default)
+      this.sheet.style.opacity = '0';
+      this.sheet.style.transform = 'translate(-50%, -50%) scale(0.85)';
+    } else {
+      // Start fully below the viewport
+      this.sheet.style.transform = 'translateY(100%)';
+    }
+
+    if (this.backdrop) {
+      this.backdrop.style.display = 'block';
+      this.backdrop.classList.remove('closing');
+      this.backdrop.classList.remove('active');
+    }
 
     if (this.overlayId && window.router) {
       window.router.pushOverlay(this.overlayId, () => this.close(false));
     }
 
-    this.onStateChange({ isOpen: true, isFullscreen: this.isFullscreen });
+    // Step 2: on the next two animation frames, re-enable transitions and
+    // move to the open state — this guarantees the browser sees the "from" frame.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!this.isOpen) return; // closed before animation started
+
+        // Re-enable CSS transitions
+        this.sheet.style.transition = '';
+
+        this.sheet.classList.add('open');
+
+        if (this.backdrop) {
+          this.backdrop.classList.add('active');
+        }
+
+        if (this.mode === 'centered') {
+          // Animate to full opacity + scale(1)
+          this.sheet.style.opacity = '1';
+          this.sheet.style.transform = 'translate(-50%, -50%) scale(1)';
+        } else {
+          // Bottom drawer slides up into view!
+          this.sheet.style.transform = 'translateY(0)';
+        }
+
+        // setHeightVh will set the final height with animation
+        this.setHeightVh(targetVh, true);
+
+        this.onStateChange({ isOpen: true, isFullscreen: this.isFullscreen });
+      });
+    });
   }
 
   close(notifyRouter = true) {
+    if (this._closeTimer) {
+      clearTimeout(this._closeTimer);
+      this._closeTimer = null;
+    }
+
     this.isOpen = false;
     this.isFullscreen = false;
 
@@ -114,27 +167,44 @@ export class DrawerResizer {
       this.backdrop.classList.add('closing');
     }
 
-    this.sheet.style.transition = 'transform 0.28s cubic-bezier(0.32, 0.72, 0, 1), height 0.28s cubic-bezier(0.32, 0.72, 0, 1)';
-    this.sheet.style.transform = 'translateY(100%)';
+    if (this.mode === 'centered') {
+      // Animate back to scaled-down + transparent
+      this.sheet.style.transition = 'transform 0.22s cubic-bezier(0.4, 0, 1, 1), opacity 0.2s ease';
+      this.sheet.style.transform = 'translate(-50%, -50%) scale(0.85)';
+      this.sheet.style.opacity = '0';
+    } else {
+      // Slide back down below viewport
+      this.sheet.style.transition = 'transform 0.28s cubic-bezier(0.32, 0.72, 0, 1), height 0.28s cubic-bezier(0.32, 0.72, 0, 1)';
+      this.sheet.style.transform = 'translateY(100%)';
+    }
 
-    setTimeout(() => {
+    const animDuration = this.mode === 'centered' ? 240 : 300;
+
+    this._closeTimer = setTimeout(() => {
+      this._closeTimer = null;
       if (!this.isOpen) {
         this.sheet.style.display = 'none';
+        // Reset inline styles so next open() starts clean
         this.sheet.style.transform = '';
+        this.sheet.style.opacity = '';
+        this.sheet.style.transition = '';
         if (this.fullscreenHeader) {
           this.fullscreenHeader.style.display = 'none';
         }
         if (this.backdrop) {
+          this.backdrop.style.display = 'none';
           this.backdrop.classList.remove('closing');
+          this.backdrop.classList.remove('active');
         }
+        // Now that the visual is hidden, fire the onClose callback
+        this.onClose();
       }
-    }, 280);
+    }, animDuration);
 
     if (notifyRouter && this.overlayId && window.router) {
       window.router.removeOverlay(this.overlayId);
     }
 
-    this.onClose();
     this.onStateChange({ isOpen: false, isFullscreen: false });
   }
 
@@ -144,11 +214,27 @@ export class DrawerResizer {
     const vhPx = (clampedVh / 100) * window.innerHeight;
 
     if (animate) {
-      this.sheet.style.transition = 'height 0.28s cubic-bezier(0.32, 0.72, 0, 1), border-radius 0.2s ease, transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)';
+      this.sheet.style.transition = 'height 0.28s cubic-bezier(0.32, 0.72, 0, 1), border-radius 0.2s ease, transform 0.28s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.2s ease';
     } else {
       this.sheet.style.transition = 'none';
     }
-    this.sheet.style.transform = '';
+
+    if (this.mode === 'centered') {
+      this.sheet.style.opacity = '1';
+      if (clampedVh >= this.maxVh) {
+        // Fullscreen — no centering transform needed
+        this.sheet.style.transform = 'none';
+      } else {
+        // Keep centered; scale stays at 1 (open state)
+        this.sheet.style.transform = 'translate(-50%, -50%) scale(1)';
+      }
+    } else {
+      if (clampedVh >= this.maxVh) {
+        this.sheet.style.transform = 'none';
+      } else {
+        this.sheet.style.transform = 'translateY(0)';
+      }
+    }
 
     if (clampedVh >= this.maxVh) {
       this.isFullscreen = true;
@@ -157,12 +243,18 @@ export class DrawerResizer {
       if (this.fullscreenHeader) {
         this.fullscreenHeader.style.display = 'flex';
       }
+      if (this.handle) {
+        this.handle.style.display = 'none';
+      }
     } else {
       this.isFullscreen = false;
       this.sheet.classList.remove('is-fullscreen');
       this.sheet.style.height = `${vhPx}px`;
       if (this.fullscreenHeader) {
         this.fullscreenHeader.style.display = 'none';
+      }
+      if (this.handle) {
+        this.handle.style.display = 'flex';
       }
     }
 
@@ -177,15 +269,20 @@ export class DrawerResizer {
     this.pointerId = e.pointerId;
     this.startY = e.clientY;
     this.startHeight = this.sheet.getBoundingClientRect().height;
+    this.lastDragVh = (this.startHeight / window.innerHeight) * 100;
 
     try {
       this.handle.setPointerCapture(e.pointerId);
-    } catch (err) {}
+    } catch (err) { }
 
     document.body.classList.add('drawer-resizing');
     this.sheet.classList.add('is-dragging');
     this.sheet.style.transition = 'none';
-    this.sheet.style.transform = '';
+    if (this.mode === 'centered') {
+      this.sheet.style.transform = this.isFullscreen ? 'none' : 'translate(-50%, -50%)';
+    } else {
+      this.sheet.style.transform = this.isFullscreen ? 'none' : 'translateY(0)';
+    }
 
     window.addEventListener('pointermove', this.boundPointerMove, { passive: false });
     window.addEventListener('pointerup', this.boundPointerUp);
@@ -198,22 +295,32 @@ export class DrawerResizer {
 
     const currentY = e.clientY;
     const deltaY = this.startY - currentY; // Drag up increases height
-    const rawHeight = this.startHeight + deltaY;
+    const rawHeight = this.mode === 'centered' && !this.isFullscreen
+      ? this.startHeight + deltaY * 2
+      : this.startHeight + deltaY;
 
     const vh = window.innerHeight;
     // Allow dragging smoothly down to 0 and up to viewport height
     const clampedHeight = Math.max(0, Math.min(vh, rawHeight));
     const currentVh = (clampedHeight / vh) * 100;
+    this.lastDragVh = currentVh;
 
     this.sheet.style.height = `${clampedHeight}px`;
+    if (this.mode === 'centered') {
+      this.sheet.style.transform = (currentVh >= this.maxVh) ? 'none' : 'translate(-50%, -50%)';
+    } else {
+      this.sheet.style.transform = (currentVh >= this.maxVh) ? 'none' : 'translateY(0)';
+    }
 
     // Dynamic visual feedback for fullscreen boundary (>= 80%)
     if (currentVh >= this.maxVh) {
       this.sheet.classList.add('is-fullscreen');
       if (this.fullscreenHeader) this.fullscreenHeader.style.display = 'flex';
+      if (this.handle) this.handle.style.display = 'none';
     } else {
       this.sheet.classList.remove('is-fullscreen');
       if (this.fullscreenHeader) this.fullscreenHeader.style.display = 'none';
+      if (this.handle) this.handle.style.display = 'flex';
     }
 
     this.onResize(clampedHeight, currentVh);
@@ -229,7 +336,7 @@ export class DrawerResizer {
     if (this.pointerId !== null) {
       try {
         this.handle.releasePointerCapture(this.pointerId);
-      } catch (err) {}
+      } catch (err) { }
       this.pointerId = null;
     }
 
@@ -245,7 +352,8 @@ export class DrawerResizer {
     this.sheet.style.transition = 'height 0.28s cubic-bezier(0.32, 0.72, 0, 1), transform 0.28s cubic-bezier(0.32, 0.72, 0, 1), border-radius 0.2s ease';
 
     // 1. If height is less than 20% of the screen: automatically close with animation of scrolling down
-    if (finalVh < this.minVh) {
+    const isBelowMin = (this.lastDragVh !== null && this.lastDragVh < this.minVh) || finalVh < this.minVh;
+    if (isBelowMin) {
       this.close();
       return;
     }
@@ -267,6 +375,10 @@ export class DrawerResizer {
   }
 
   destroy() {
+    if (this._closeTimer) {
+      clearTimeout(this._closeTimer);
+      this._closeTimer = null;
+    }
     this.close(false);
     if (this.handle) {
       this.handle.removeEventListener('pointerdown', this.boundPointerDown);

@@ -5,6 +5,7 @@ import { MainPagerView } from './views/main-pager-view.js';
 import { HomeView } from './views/home-view.js';
 import { NewListView } from './views/new-list-view.js';
 import { GalleryView } from './views/gallery-view.js';
+import { StarredMessagesView } from './views/starred-messages-view.js';
 import { ChatView } from './views/chat-view.js';
 import { ContactInfoView } from './views/contact-info-view.js';
 import { CallsView } from './views/calls-view.js';
@@ -27,7 +28,7 @@ import { applyAppIcon } from './config/app-icons.js';
 import { assetUrl } from './config/base-path.js';
 
 // Application Version Constant
-window.APP_VERSION = '2.0.0';
+window.APP_VERSION = '2.2.2';
 
 // Global deferred PWA install prompt holder
 window.deferredInstallPrompt = null;
@@ -93,6 +94,7 @@ class Application {
       { pattern: '/settings', viewClass: MainPagerView, defaultParams: { initialTab: 'settings' } },
       { pattern: '/new-list', viewClass: NewListView },
       { pattern: '/gallery', viewClass: GalleryView },
+      { pattern: '/starred', viewClass: StarredMessagesView },
       { pattern: '/chat/:id/info', viewClass: ContactInfoView },
       { pattern: '/chat/:id', viewClass: ChatView },
       { pattern: '/manage-storage/:id', viewClass: ChatStorageView },
@@ -197,7 +199,13 @@ class Application {
 
       const existingChat = await db.getChat(chatId);
       const chatName = existingChat ? existingChat.name : 'Contact';
-      const meName = parseResult.participants[0] || 'You';
+      let meName = parseResult.participants.find(p => /^(me|you|أنا|انا)$/i.test(p.trim()));
+      if (!meName && existingChat && existingChat.name) {
+        meName = parseResult.participants.find(p => p.toLowerCase() !== existingChat.name.toLowerCase());
+      }
+      if (!meName) {
+        meName = parseResult.participants[1] || parseResult.participants[0] || 'You';
+      }
 
       const messages = parseResult.messages.map((m) => {
         let cleanMediaName = null;

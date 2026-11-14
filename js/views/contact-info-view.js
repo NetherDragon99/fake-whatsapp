@@ -28,6 +28,7 @@ export class ContactInfoView {
 
     const chatMedia = await db.getMediaByChat(this.chatId);
     const msgs = await db.getMessages(this.chatId);
+    const starredCount = msgs.filter((m) => m.isStarred).length;
 
     // Calculate chat storage
     let chatBytes = 0;
@@ -127,6 +128,14 @@ export class ContactInfoView {
               <div class="option-texts">
                 <div class="option-title">Edit Chat Info</div>
                 <div class="option-subtitle">Change contact or group name</div>
+              </div>
+            </div>
+
+            <div class="option-row clickable" id="row-starred-messages">
+              <span class="option-icon">${Icons.star('', 20)}</span>
+              <div class="option-texts">
+                <div class="option-title">Starred messages</div>
+                <div class="option-subtitle">${starredCount > 0 ? `${starredCount} message${starredCount > 1 ? 's' : ''}` : 'None'}</div>
               </div>
             </div>
 
@@ -397,6 +406,11 @@ export class ContactInfoView {
         ChatExporter.showExportPrompt(this.chatId);
       });
     }
+
+    // Starred messages
+    this.container.querySelector('#row-starred-messages')?.addEventListener('click', () => {
+      this.router.navigate(`#/starred?chatId=${this.chatId}`);
+    });
 
     // Wallpaper
     this.container.querySelector('#row-chat-wallpaper').addEventListener('click', () => {

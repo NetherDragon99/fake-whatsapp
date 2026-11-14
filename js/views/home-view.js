@@ -35,7 +35,10 @@ export class HomeView {
         <header class="wa-app-bar" id="home-default-bar">
           <div class="app-title">WhatsApp</div>
           <div class="app-bar-actions">
-            <button class="app-bar-icon-btn" id="btn-open-gallery" title="Gallery">
+            <button class="app-bar-icon-btn" id="btn-open-starred" title="Starred messages" aria-label="Starred messages">
+              ${Icons.star('', 22)}
+            </button>
+            <button class="app-bar-icon-btn" id="btn-open-gallery" title="Gallery" aria-label="Media gallery">
               ${Icons.gallery('', 22)}
             </button>
           </div>
@@ -107,6 +110,11 @@ export class HomeView {
   }
 
   bindEvents() {
+    // Starred messages button
+    this.container.querySelector('#btn-open-starred')?.addEventListener('click', () => {
+      this.router.navigate('#/starred');
+    });
+
     // Gallery button
     this.container.querySelector('#btn-open-gallery').addEventListener('click', () => {
       this.router.navigate('#/gallery');

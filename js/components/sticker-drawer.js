@@ -7,6 +7,7 @@ export class StickerDrawer {
   constructor(options = {}) {
     this.onSelectSticker = options.onSelectSticker || (() => {});
     this.container = null;
+    this.drawerEl = null;
     this.isOpen = false;
     this.currentHeightVh = 40; // Default 40%
     this.resizer = null;
@@ -18,28 +19,27 @@ export class StickerDrawer {
       return;
     }
     this.isOpen = true;
-    if (window.router) {
-      window.router.pushOverlay('sticker-drawer', () => this.close(false));
-    }
+    // Note: DrawerResizer.open() handles window.router.pushOverlay via overlayId
     await this.render();
   }
 
   close(notifyRouter = true) {
+    if (this.resizer && this.resizer.isOpen) {
+      // DrawerResizer.close() will call onClose which cleans up the DOM elements
+      this.resizer.close(notifyRouter);
+      return;
+    }
+    // Fallback if resizer not yet initialized
     if (notifyRouter && window.router) {
       window.router.removeOverlay('sticker-drawer');
     }
-    if (this.resizer && this.resizer.isOpen) {
-      this.resizer.close(false);
-      return;
-    }
     if (this.container) {
-      this.container.classList.remove('active');
-      setTimeout(() => {
-        if (this.container) {
-          this.container.remove();
-          this.container = null;
-        }
-      }, 250);
+      this.container.remove();
+      this.container = null;
+    }
+    if (this.drawerEl) {
+      this.drawerEl.remove();
+      this.drawerEl = null;
     }
     this.isOpen = false;
   }
@@ -84,17 +84,20 @@ export class StickerDrawer {
   }
 
   async render() {
-    const existing = document.querySelector('.sticker-drawer-overlay');
-    if (existing) existing.remove();
+    const existingOverlay = document.querySelector('.sticker-drawer-overlay');
+    if (existingOverlay) existingOverlay.remove();
+    const existingDrawer = document.querySelector('.sticker-drawer-sheet');
+    if (existingDrawer) existingDrawer.remove();
 
     const stickers = await this.loadAllStickers();
 
     const overlay = document.createElement('div');
     overlay.className = 'sticker-drawer-overlay';
+    overlay.style.display = 'none';
 
     const drawer = document.createElement('div');
     drawer.className = 'sticker-drawer-sheet';
-    drawer.style.height = `${this.currentHeightVh}vh`;
+    drawer.style.display = 'none';
 
     drawer.innerHTML = `
       <!-- Top Drag Handle -->
@@ -103,7 +106,7 @@ export class StickerDrawer {
         <div class="drawer-header-title">Stickers</div>
       </div>
 
-      <!-- Fullscreen Header (active when dragged > 90%) -->
+      <!-- Fullscreen Header (active when dragged > 80%) -->
       <div class="sheet-fullscreen-header" id="sticker-fullscreen-header" style="display:none;">
         <button type="button" class="sheet-fullscreen-back-btn" id="btn-sticker-fullscreen-back" aria-label="Exit fullscreen">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
@@ -125,34 +128,29 @@ export class StickerDrawer {
       </div>
     `;
 
-    overlay.appendChild(drawer);
     document.body.appendChild(overlay);
+    document.body.appendChild(drawer);
     this.container = overlay;
+    this.drawerEl = drawer;
 
-    // Trigger open animation
-    requestAnimationFrame(() => {
-      overlay.classList.add('active');
-    });
-
-    // Initialize Universal Drawer Resizer
+    // Initialize Universal Drawer Resizer (opens to 40% from bottom)
     this.resizer = new DrawerResizer({
       sheet: drawer,
       handle: drawer.querySelector('#drawer-drag-header'),
       backdrop: overlay,
       fullscreenHeader: drawer.querySelector('#sticker-fullscreen-header'),
       overlayId: 'sticker-drawer',
-      defaultHeightVh: this.currentHeightVh || 40,
+      defaultHeightVh: 40,
       minVh: 20,
       maxVh: 80,
       onClose: () => {
         if (this.container) {
-          this.container.classList.remove('active');
-          setTimeout(() => {
-            if (this.container) {
-              this.container.remove();
-              this.container = null;
-            }
-          }, 280);
+          this.container.remove();
+          this.container = null;
+        }
+        if (this.drawerEl) {
+          this.drawerEl.remove();
+          this.drawerEl = null;
         }
         this.isOpen = false;
       },
@@ -161,14 +159,7 @@ export class StickerDrawer {
       }
     });
 
-    this.resizer.open(this.currentHeightVh || 40);
-
-    // Close when tapping outside the sheet
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) {
-        this.close();
-      }
-    });
+    this.resizer.open(40);
 
     // Bind Sticker selection
     const tiles = drawer.querySelectorAll('.sticker-grid-tile');

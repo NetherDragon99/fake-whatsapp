@@ -104,14 +104,70 @@ export const Icons = {
       <rect x="14" y="4" width="4" height="16"/>
     </svg>`,
 
+  reply: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"/>
+    </svg>`,
+
+  shareOut: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/>
+      <polyline points="16 6 12 2 8 6"/>
+      <line x1="12" y1="2" x2="12" y2="15"/>
+    </svg>`,
+
+  forwardTag: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/>
+      <polyline points="9 8 13 12 9 16" transform="translate(-1 0)"/>
+    </svg>`,
+
+  forwardTagOff: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/>
+      <polyline points="9 8 13 12 9 16" transform="translate(-1 0)"/>
+      <line x1="3" y1="21" x2="21" y2="3" stroke-width="2.5"/>
+    </svg>`,
+
+  replyBold: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="9 14 4 9 9 4"/>
+      <path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
+    </svg>`,
+
+  /** Forward arrow icon (exact horizontal mirror of replyBold) */
+  forwardBold: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="15 14 20 9 15 4"/>
+      <path d="M4 20v-7a4 4 0 0 1 4-4h12"/>
+    </svg>`,
+
   forward: (cls = '', size = 16) => `
     <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 8V4l8 8-8 8v-4H4V8h8z"/>
     </svg>`,
 
+  unforward: (cls = '', size = 16) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 8V4l8 8-8 8v-4H4V8h8z"/>
+      <line x1="2" y1="2" x2="22" y2="22" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+    </svg>`,
+
   pin: (cls = '', size = 18) => `
     <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
       <path d="M16 9V4l1 0c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1l1 0v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"/>
+    </svg>`,
+
+  pinOff: (cls = '', size = 18) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M16 9V4l1 0c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1l1 0v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"/>
+      <line x1="3" y1="21" x2="21" y2="3" stroke="var(--wa-surface, #121b22)" stroke-width="3.2" stroke-linecap="round"/>
+      <line x1="3" y1="21" x2="21" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </svg>`,
+
+  infoCircle: (cls = '', size = 16) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
     </svg>`,
 
   archive: (cls = '', size = 20) => `
@@ -126,6 +182,16 @@ export const Icons = {
 
   star: (cls = '', size = 20) => `
     <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+    </svg>`,
+
+  unstar: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M21.19 21.19L2.81 2.81 1.39 4.22l4.89 4.89-.46 1.96 5.18 3.76.88 5.25 2.12-1.22 3.96 3.96 1.41-1.41zM12 17.77l-1.07.62-.48-2.89 2.84 2.06-.48.21zm2.34-6.42l-2.06-2.06.81-1.03L15.09 8.26l6.91 1.01-4.27 4.17.65 3.9-3.95-3.95.87-2.04zM12 2l3.09 6.26.17.35.38.05 4.62.67-3.34 3.26-.28.27.07.39.79 4.59-4.14-2.18-.34-.18-.34.18-1.52.8 1.95 1.95 2.05-1.08 5.18 2.73-1.18-5.88 4.7-4.58-6.19-.9L12 2z"/>
+    </svg>`,
+
+  starOutline: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
     </svg>`,
 
@@ -295,5 +361,11 @@ export const Icons = {
   check: (cls = '', size = 20) => `
     <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
       <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+    </svg>`,
+
+  /** Share / export icon — used for sharing media messages */
+  share: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/>
     </svg>`
 };

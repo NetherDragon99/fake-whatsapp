@@ -10,7 +10,7 @@ import { DrawerResizer } from '../utils/drawer-resizer.js';
 
 export class ImportModal {
   constructor(options = {}) {
-    this.onComplete = options.onComplete || (() => {});
+    this.onComplete = options.onComplete || (() => { });
     this.overlay = null;
     this.resizer = null;
     this.parser = new WhatsAppParser();
@@ -675,8 +675,13 @@ export class ImportModal {
     let overlapChoice = 'new';
 
     if (this.isAutoCreatingDemo) {
-      chatName = this.pendingOverrideName || 'Demo Chat';
-      meName = (this.rawParseResult && this.rawParseResult.participants && this.rawParseResult.participants[0]) || 'You';
+      chatName = this.pendingOverrideName || (this.rawParseResult?.participants?.find(p => !/^(me|you|أنا|انا)$/i.test(p.trim())) || 'Steven Mario');
+      meName = (this.rawParseResult && this.rawParseResult.participants)
+        ? (this.rawParseResult.participants.find(p => /^(me|you|أنا|انا)$/i.test(p.trim())) ||
+          this.rawParseResult.participants.find(p => p.toLowerCase() !== chatName.toLowerCase()) ||
+          this.rawParseResult.participants[1] ||
+          this.rawParseResult.participants[0])
+        : 'You';
       isSelfChat = false;
       isGroup = false;
       overlapChoice = 'new';
@@ -744,7 +749,7 @@ export class ImportModal {
             if (decoded && isFinite(decoded.duration)) {
               audioDuration = Math.max(1, Math.round(decoded.duration));
             }
-            try { ctx.close(); } catch (e) {}
+            try { ctx.close(); } catch (e) { }
           }
         } catch (decErr) {
           audioDuration = 0;

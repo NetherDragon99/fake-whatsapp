@@ -1,0 +1,369 @@
+/* ===================================================================
+   Starred Messages Screen  —  starred.css
+   =================================================================== */
+
+/* ---------- Screen shell ---------- */
+.starred-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: var(--wa-bg-main);
+  color: var(--wa-text-primary);
+  overflow: hidden;
+}
+
+/* ---------- App-bar header info block ---------- */
+.starred-header-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.starred-header-info .app-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--wa-app-title-color, var(--wa-text-primary));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-subtitle {
+  font-size: 12px;
+  color: var(--wa-text-secondary);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Scrollable content area ---------- */
+.starred-content-scroller {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.starred-loading-spinner {
+  text-align: center;
+  padding: 48px 16px;
+  color: var(--wa-text-secondary);
+  font-size: 14px;
+}
+
+/* ---------- Empty state ---------- */
+.starred-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 32px;
+  text-align: center;
+  min-height: 70vh;
+}
+
+.starred-empty-circle {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: var(--wa-surface-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24px;
+  color: var(--app-accent, #25d366);
+}
+
+.starred-empty-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--wa-text-primary);
+  margin: 0 0 10px;
+}
+
+.starred-empty-subtitle {
+  font-size: 14px;
+  color: var(--wa-text-secondary);
+  line-height: 1.55;
+  max-width: 300px;
+  margin: 0;
+}
+
+/* ---------- Card item ---------- */
+.starred-card-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 10px 12px 10px 8px;
+  border-bottom: 1px solid var(--wa-border-color, rgba(255, 255, 255, 0.05));
+  cursor: pointer;
+  transition: background 0.12s ease;
+  position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.starred-card-item:active {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.starred-card-item.is-selected {
+  background: rgba(37, 211, 102, 0.08);
+}
+
+/* Inner content flex wrapper */
+.starred-card-inner {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- Selection indicator (left checkmark circle) ---------- */
+.starred-selection-indicator {
+  width: 36px;
+  min-width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 6px;
+  align-self: flex-start;
+}
+
+.starred-select-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--wa-text-secondary);
+  background: transparent;
+  display: none;
+  transition: background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+/* Show circles when selection mode is active */
+.starred-screen.selection-active .starred-select-check {
+  display: block;
+}
+
+/* Fill circle when card is selected */
+.starred-card-item.is-selected .starred-select-check {
+  background: var(--app-accent, #25d366);
+  border-color: var(--app-accent, #25d366);
+  /* Checkmark via background-image */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+  background-size: 13px 13px;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+/* ---------- Card header row ---------- */
+.starred-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+
+.starred-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Chat / contact avatar circle */
+.starred-avatar-wrap {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--wa-surface-elevated);
+  color: var(--wa-text-secondary);
+  flex-shrink: 0;
+}
+
+.starred-sender-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+/* Text stack: chat name + date-time */
+.starred-meta-texts {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.starred-chat-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--wa-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.starred-date-time {
+  font-size: 11.5px;
+  color: var(--wa-text-secondary);
+  margin-top: 2px;
+  line-height: 1.2;
+}
+
+/* ---------- Jump-to-chat button ---------- */
+.starred-jump-btn {
+  background: none;
+  border: none;
+  color: var(--app-accent, #25d366);
+  cursor: pointer;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  flex-shrink: 0;
+  opacity: 0.75;
+  transition: opacity 0.12s, background 0.12s;
+  margin-left: 4px;
+}
+
+.starred-jump-btn:hover {
+  opacity: 1;
+  background: rgba(37, 211, 102, 0.1);
+}
+
+.starred-jump-btn:active {
+  opacity: 1;
+}
+
+/* rotate the down-chevron 270° to point right */
+.rotate-270 {
+  transform: rotate(-90deg);
+  display: block;
+}
+
+/* ---------- Bubble replica wrapper ---------- */
+.starred-bubble-wrap {
+  display: flex;
+}
+
+.starred-bubble-wrap.outgoing {
+  justify-content: flex-end;
+}
+
+.starred-bubble-wrap.incoming {
+  justify-content: flex-start;
+}
+
+/* Keep the bubble width constrained within the card */
+.starred-bubble-wrap .msg-bubble {
+  max-width: 92%;
+}
+
+/* ---------- Audio message card ---------- */
+.starred-audio-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+}
+
+.starred-audio-icon {
+  color: var(--app-accent, #25d366);
+  display: flex;
+  flex-shrink: 0;
+}
+
+.starred-audio-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.starred-audio-title {
+  font-size: 13px;
+  color: var(--wa-text-primary);
+  line-height: 1.3;
+}
+
+.starred-audio-sub {
+  font-size: 11px;
+  color: var(--wa-text-secondary);
+}
+
+/* ---------- Document / PDF card ---------- */
+.starred-doc-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+}
+
+.starred-doc-icon {
+  color: var(--app-accent, #25d366);
+  display: flex;
+  flex-shrink: 0;
+}
+
+.starred-doc-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.starred-doc-title {
+  font-size: 13px;
+  color: var(--wa-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+  line-height: 1.3;
+}
+
+.starred-doc-sub {
+  font-size: 11px;
+  color: var(--wa-text-secondary);
+}
+
+/* ---------- Context sheet — icon alignment ---------- */
+/* The .context-item already has display:flex + align-items:center in chat.css */
+.context-action-list .context-item {
+  gap: 14px;
+}
+
+.ctx-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--wa-text-secondary);
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+}
+
+/* ---------- Selection bar button styles ---------- */
+.app-bar-text-btn {
+  background: none;
+  border: none;
+  color: var(--wa-text-primary);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 4px;
+  opacity: 0.9;
+  transition: background 0.12s;
+  white-space: nowrap;
+}
+
+.app-bar-text-btn:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
