@@ -2140,9 +2140,8 @@
   border-radius: 0 !important;
   height: 100vh !important;
   max-height: 100vh !important;
-  top: 0 !important;
   bottom: 0 !important;
-  transform: none !important;
+  transform: translateY(0) !important;
 }
 
 .drawer-drag-header {
