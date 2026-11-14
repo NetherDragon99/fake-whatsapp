@@ -4,6 +4,7 @@
 // Instantly closes the dialog on any action to keep the next step directly visible.
 
 import { Toast } from './toast.js';
+import { DrawerResizer } from '../utils/drawer-resizer.js';
 
 function formatFileSize(bytes) {
   if (!bytes || bytes <= 0) return '';
@@ -65,13 +66,16 @@ export class ShareOptionsModal {
     this.blob = blob || null;
     this.onComplete = onComplete;
     this.overlay = null;
+    this.resizer = null;
     this.isOpen = false;
+    this._completed = false;
     this.thumbUrl = null;
   }
 
   open() {
     if (this.isOpen) return;
     this.isOpen = true;
+    this._completed = false;
 
     const existing = document.querySelector('.share-options-overlay');
     if (existing) existing.remove();
@@ -122,6 +126,19 @@ export class ShareOptionsModal {
     }
 
     card.innerHTML = `
+      <div class="sheet-drag-handle-bar" id="share-sheet-handle">
+        <div class="sheet-drag-handle"></div>
+      </div>
+
+      <div class="sheet-fullscreen-header" id="share-fullscreen-header" style="display: none;">
+        <button type="button" class="sheet-fullscreen-back-btn app-bar-icon-btn" id="btn-share-fs-back" aria-label="Back">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+          </svg>
+        </button>
+        <span class="fs-header-title">Share</span>
+      </div>
+
       <div class="share-options-header">
         <div class="share-options-title-row">
           <h3 class="share-options-title">Share</h3>
@@ -133,6 +150,7 @@ export class ShareOptionsModal {
         </div>
       </div>
 
+      <div class="share-options-body">
       <!-- Media Preview Card -->
       <div class="share-media-card">
         ${previewHtml}
@@ -275,20 +293,40 @@ export class ShareOptionsModal {
         </button>
         ` : ''}
       </div>
+      </div><!-- /.share-options-body -->
     `;
 
     overlay.appendChild(card);
     document.body.appendChild(overlay);
     this.overlay = overlay;
 
-    // Trigger transition
-    requestAnimationFrame(() => {
-      overlay.classList.add('active');
+    this.resizer = new DrawerResizer({
+      sheet: card,
+      handle: card.querySelector('#share-sheet-handle'),
+      backdrop: overlay,
+      fullscreenHeader: card.querySelector('#share-fullscreen-header'),
+      overlayId: 'share-options-modal',
+      defaultHeightVh: 58,
+      minVh: 20,
+      maxVh: 80,
+      onClose: () => {
+        this.isOpen = false;
+        if (this.thumbUrl) {
+          URL.revokeObjectURL(this.thumbUrl);
+          this.thumbUrl = null;
+        }
+        if (this.overlay) {
+          this.overlay.remove();
+          this.overlay = null;
+        }
+        this.resizer = null;
+        if (this.onComplete && !this._completed) {
+          this._completed = true;
+          this.onComplete();
+        }
+      }
     });
-
-    if (window.router) {
-      window.router.pushOverlay('share-options-modal', () => this.close(false));
-    }
+    this.resizer.open(58);
 
     this.bindEvents(card, fileName, caption, isImage);
   }
@@ -462,6 +500,11 @@ export class ShareOptionsModal {
     if (!this.isOpen) return;
     this.isOpen = false;
 
+    if (this.resizer && this.resizer.isOpen) {
+      this.resizer.close(notifyRouter);
+      return;
+    }
+
     if (notifyRouter && window.router) {
       window.router.removeOverlay('share-options-modal');
     }
@@ -481,7 +524,8 @@ export class ShareOptionsModal {
       }, 220);
     }
 
-    if (this.onComplete) {
+    if (this.onComplete && !this._completed) {
+      this._completed = true;
       this.onComplete();
     }
   }

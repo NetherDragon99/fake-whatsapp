@@ -2,7 +2,7 @@
 import { Icons } from '../icons.js';
 import { db } from '../db.js';
 import { Toast } from './toast.js';
-import { Motion } from '../ui-motion.js';
+import { DrawerResizer } from '../utils/drawer-resizer.js';
 
 /**
  * ForwardPicker
@@ -15,11 +15,14 @@ import { Motion } from '../ui-motion.js';
 export class ForwardPicker {
   constructor() {
     this.overlay = null;
+    this.resizer = null;
     this.chats = [];
     this.filteredChats = [];
     this.selectedChatIds = new Set();
     this.mediaCacheUrls = [];
     this._resolvePromise = null;
+    this._pendingResult = null;
+    this._isClosing = false;
   }
 
   /**
@@ -29,6 +32,8 @@ export class ForwardPicker {
   open(messages) {
     return new Promise(async (resolve) => {
       this._resolvePromise = resolve;
+      this._pendingResult = null;
+      this._isClosing = false;
       this.selectedChatIds.clear();
       this.messages = messages || [];
 
@@ -40,8 +45,27 @@ export class ForwardPicker {
       this._buildDOM();
       document.body.appendChild(this.overlay);
 
-      // Slide up
-      Motion.openSheet(this.overlay, 'flex');
+      this.resizer = new DrawerResizer({
+        sheet: this.overlay.querySelector('.fwd-picker-sheet'),
+        handle: this.overlay.querySelector('#fwd-sheet-handle'),
+        backdrop: this.overlay,
+        fullscreenHeader: this.overlay.querySelector('#fwd-fullscreen-header'),
+        overlayId: 'fwd-picker-sheet',
+        defaultHeightVh: 65,
+        minVh: 20,
+        maxVh: 80,
+        onClose: () => {
+          const result = this._pendingResult;
+          this._pendingResult = null;
+          this.resizer = null;
+          this.destroy();
+          if (this._resolvePromise) {
+            this._resolvePromise(result);
+            this._resolvePromise = null;
+          }
+        }
+      });
+      this.resizer.open(65);
     });
   }
 
@@ -55,6 +79,15 @@ export class ForwardPicker {
 
     overlay.innerHTML = `
       <div class="wa-context-sheet fwd-picker-sheet">
+        <div class="sheet-drag-handle-bar" id="fwd-sheet-handle">
+          <div class="sheet-drag-handle"></div>
+        </div>
+        <div class="sheet-fullscreen-header" id="fwd-fullscreen-header" style="display: none;">
+          <button type="button" class="sheet-fullscreen-back-btn app-bar-icon-btn" id="btn-fwd-fs-back" aria-label="Back">
+            ${Icons.arrowBack('', 22)}
+          </button>
+          <span class="fs-header-title">Forward ${msgLabel}</span>
+        </div>
         <div class="fwd-picker-header">
           <div class="fwd-picker-title">Forward ${msgLabel}</div>
           <button type="button" class="app-bar-icon-btn fwd-picker-close" aria-label="Cancel">
@@ -210,16 +243,18 @@ export class ForwardPicker {
   }
 
   _close(result) {
-    if (this.overlay) {
-      Motion.closeSheet(this.overlay);
-      setTimeout(() => {
-        this.destroy();
-      }, 320);
-    }
+    if (this._isClosing) return;
+    this._isClosing = true;
+    this._pendingResult = result;
     if (this._resolvePromise) {
       this._resolvePromise(result);
       this._resolvePromise = null;
     }
+    if (this.resizer && this.resizer.isOpen) {
+      this.resizer.close();
+      return;
+    }
+    this.destroy();
   }
 
   destroy() {

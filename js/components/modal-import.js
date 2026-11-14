@@ -32,16 +32,15 @@ export class ImportModal {
 
     this.overlay.innerHTML = `
       <div class="wa-modal-sheet" id="import-sheet">
+        <div class="sheet-drag-handle-bar" id="import-sheet-handle">
+          <div class="sheet-drag-handle"></div>
+        </div>
         <!-- Fullscreen Header (active when dragged > 80%) -->
         <div class="sheet-fullscreen-header" id="import-fullscreen-header" style="display:none;">
           <button type="button" class="sheet-fullscreen-back-btn" id="btn-import-fullscreen-back" aria-label="Close">
             ${Icons.arrowBack('', 22)}
           </button>
           <div class="sheet-fullscreen-title" id="import-fullscreen-title">Add Chat</div>
-        </div>
-        <!-- Top Drag Handle Bar (kept visible in both normal & fullscreen mode) -->
-        <div class="sheet-drag-handle-bar" id="import-sheet-handle">
-          <div class="sheet-drag-handle"></div>
         </div>
         <div class="sheet-header">
           <button class="sheet-close-btn">${Icons.close('', 22)}</button>
@@ -229,7 +228,7 @@ export class ImportModal {
       backdrop: this.overlay,
       fullscreenHeader: this.overlay.querySelector('#import-fullscreen-header'),
       overlayId: 'import-sheet',
-      defaultHeightVh: 48,
+      defaultHeightVh: 55,
       minVh: 20,
       maxVh: 80,
       onClose: () => {
@@ -245,7 +244,7 @@ export class ImportModal {
       }
     });
 
-    this.resizer.open(75);
+    this.resizer.open(55);
 
     // Close buttons (standard header & fullscreen header)
     this.overlay.querySelector('.sheet-close-btn').addEventListener('click', () => this.close());

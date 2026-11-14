@@ -31,6 +31,7 @@ export class DrawerResizer {
     this.onClose = options.onClose || (() => { });
     this.onResize = options.onResize || (() => { });
     this.onStateChange = options.onStateChange || (() => { });
+    this.onFullscreenBack = options.onFullscreenBack || null;
 
     this.currentHeightVh = this.defaultHeightVh;
     this.isDragging = false;
@@ -70,10 +71,10 @@ export class DrawerResizer {
       if (backBtn) {
         backBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          // If in fullscreen mode, collapse back to default height; otherwise close
-          if (this.isFullscreen) {
-            this.setHeightVh(this.defaultHeightVh, true);
+          if (this.onFullscreenBack) {
+            this.onFullscreenBack();
           } else {
+            // Tapping the back button completely closes the window with the slide-down animation
             this.close();
           }
         });
@@ -112,9 +113,14 @@ export class DrawerResizer {
     }
 
     if (this.backdrop) {
-      this.backdrop.style.display = 'block';
+      const usesFlex = this.backdrop.contains(this.sheet) ||
+        this.backdrop.classList.contains('wa-modal-overlay') ||
+        this.backdrop.classList.contains('wa-context-sheet-overlay') ||
+        this.backdrop.classList.contains('share-options-overlay');
+      this.backdrop.style.display = usesFlex ? 'flex' : 'block';
       this.backdrop.classList.remove('closing');
       this.backdrop.classList.remove('active');
+      this.backdrop.classList.remove('is-sheet-fullscreen');
     }
 
     if (this.overlayId && window.router) {
@@ -168,6 +174,7 @@ export class DrawerResizer {
 
     if (this.backdrop) {
       this.backdrop.classList.remove('active');
+      this.backdrop.classList.remove('is-sheet-fullscreen');
       this.backdrop.classList.add('closing');
     }
 
@@ -233,24 +240,29 @@ export class DrawerResizer {
         this.sheet.style.transform = 'translate(-50%, -50%) scale(1)';
       }
     } else {
-      // Bottom sheets always anchor to bottom with translateY(0)
-      this.sheet.style.transform = 'translateY(0)';
+      if (clampedVh >= this.maxVh) {
+        this.sheet.style.transform = 'none';
+      } else {
+        this.sheet.style.transform = 'translateY(0)';
+      }
     }
 
     if (clampedVh >= this.maxVh) {
       this.isFullscreen = true;
       this.sheet.classList.add('is-fullscreen');
-      this.sheet.style.height = '100vh';
+      if (this.backdrop) this.backdrop.classList.add('is-sheet-fullscreen');
+      this.sheet.style.height = '100dvh';
       if (this.fullscreenHeader) {
         this.fullscreenHeader.style.display = 'flex';
       }
       if (this.handle) {
-        // Keep the drag handle visible and functional in fullscreen mode!
+        // Keep the drag handle dash visible at top even in fullscreen so user can drag down to shrink
         this.handle.style.display = 'flex';
       }
     } else {
       this.isFullscreen = false;
       this.sheet.classList.remove('is-fullscreen');
+      if (this.backdrop) this.backdrop.classList.remove('is-sheet-fullscreen');
       this.sheet.style.height = `${vhPx}px`;
       if (this.fullscreenHeader) {
         this.fullscreenHeader.style.display = 'none';
@@ -283,7 +295,7 @@ export class DrawerResizer {
     if (this.mode === 'centered') {
       this.sheet.style.transform = this.isFullscreen ? 'none' : 'translate(-50%, -50%)';
     } else {
-      this.sheet.style.transform = 'translateY(0)';
+      this.sheet.style.transform = this.isFullscreen ? 'none' : 'translateY(0)';
     }
 
     window.addEventListener('pointermove', this.boundPointerMove, { passive: false });
@@ -311,16 +323,18 @@ export class DrawerResizer {
     if (this.mode === 'centered') {
       this.sheet.style.transform = (currentVh >= this.maxVh) ? 'none' : 'translate(-50%, -50%)';
     } else {
-      this.sheet.style.transform = 'translateY(0)';
+      this.sheet.style.transform = (currentVh >= this.maxVh) ? 'none' : 'translateY(0)';
     }
 
     // Dynamic visual feedback for fullscreen boundary (>= 80%)
     if (currentVh >= this.maxVh) {
       this.sheet.classList.add('is-fullscreen');
+      if (this.backdrop) this.backdrop.classList.add('is-sheet-fullscreen');
       if (this.fullscreenHeader) this.fullscreenHeader.style.display = 'flex';
       if (this.handle) this.handle.style.display = 'flex';
     } else {
       this.sheet.classList.remove('is-fullscreen');
+      if (this.backdrop) this.backdrop.classList.remove('is-sheet-fullscreen');
       if (this.fullscreenHeader) this.fullscreenHeader.style.display = 'none';
       if (this.handle) this.handle.style.display = 'flex';
     }

@@ -75,19 +75,7 @@ export class PinnedPanel {
       <div class="pinned-panel-backdrop" id="pinned-panel-backdrop"></div>
       <div class="pinned-panel-sheet" id="pinned-panel-sheet">
         
-        <!-- Fullscreen Header (only visible > 80% vh) -->
-        <div class="pinned-panel-fullscreen-header" id="pinned-panel-fs-header" style="display: none;">
-          <button type="button" class="sheet-fullscreen-back-btn app-bar-icon-btn" aria-label="Back">
-            ${Icons.arrowBack('', 22)}
-          </button>
-          <span class="fs-header-title" id="pinned-panel-fs-title">Pinned messages</span>
-          <div style="flex: 1;"></div>
-          <button type="button" class="pinned-panel-gear-btn app-bar-icon-btn" id="btn-pinned-priority-gear-fs" title="Display priority settings">
-            ${Icons.settingsTab('', 20)}
-          </button>
-        </div>
-
-        <!-- Drag Handle Area (Hidden in Fullscreen) -->
+        <!-- Drag Handle Area (Dash stays visible in Fullscreen) -->
         <div class="pinned-panel-handle-area" id="pinned-panel-handle">
           <div class="pinned-panel-dash"></div>
           <div class="pinned-panel-header-bar">
@@ -102,6 +90,18 @@ export class PinnedPanel {
               </button>
             </div>
           </div>
+        </div>
+
+        <!-- Fullscreen Header (only visible > 80% vh) -->
+        <div class="pinned-panel-fullscreen-header" id="pinned-panel-fs-header" style="display: none;">
+          <button type="button" class="sheet-fullscreen-back-btn app-bar-icon-btn" aria-label="Back">
+            ${Icons.arrowBack('', 22)}
+          </button>
+          <span class="fs-header-title" id="pinned-panel-fs-title">Pinned messages</span>
+          <div style="flex: 1;"></div>
+          <button type="button" class="pinned-panel-gear-btn app-bar-icon-btn" id="btn-pinned-priority-gear-fs" title="Display priority settings">
+            ${Icons.settingsTab('', 20)}
+          </button>
         </div>
 
         <!-- Main Body: List View vs Priority Settings View -->

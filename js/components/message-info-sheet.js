@@ -26,6 +26,15 @@ export class MessageInfoSheet {
     this.sheetEl.className = 'msg-info-sheet wa-bottom-sheet';
     this.sheetEl.style.display = 'none';
 
+    // Handle area (centered dash + title)
+    this.handleEl = document.createElement('div');
+    this.handleEl.className = 'msg-info-handle sheet-handle-area';
+    this.handleEl.innerHTML = `
+      <div class="sheet-dash"></div>
+      <div class="msg-info-sheet-title">Message info</div>
+    `;
+    this.sheetEl.appendChild(this.handleEl);
+
     // Fullscreen header (shown above 80%)
     this.fsHeaderEl = document.createElement('div');
     this.fsHeaderEl.className = 'msg-info-fs-header sheet-fullscreen-header';
@@ -36,15 +45,6 @@ export class MessageInfoSheet {
     `;
     this.fsHeaderEl.querySelector('.fs-back-btn').addEventListener('click', () => this.close());
     this.sheetEl.appendChild(this.fsHeaderEl);
-
-    // Handle area (centered dash + title)
-    this.handleEl = document.createElement('div');
-    this.handleEl.className = 'msg-info-handle sheet-handle-area';
-    this.handleEl.innerHTML = `
-      <div class="sheet-dash"></div>
-      <div class="msg-info-sheet-title">Message info</div>
-    `;
-    this.sheetEl.appendChild(this.handleEl);
 
     // Body
     const body = document.createElement('div');

@@ -198,37 +198,17 @@ export class ChatView {
         <!-- Reply Preview Banner (above input bar) -->
         <div class="chat-reply-preview-banner" id="chat-reply-banner" style="display: none;"></div>
 
-        <!-- Backdrop for expanded/fullscreen chat input -->
-        <div class="chat-input-expanded-backdrop" id="chat-input-backdrop" style="display: none;"></div>
-
         <!-- Bottom Input Bar -->
         <footer class="chat-input-bar" id="chat-default-input-bar">
-          <div class="input-pill" id="chat-input-pill">
-            <!-- Fullscreen Header (active when expanded > 80%) -->
-            <div class="chat-input-fullscreen-header" id="chat-input-fs-header" style="display: none;">
-              <button type="button" class="chat-input-fs-back-btn" id="btn-chat-input-fs-back" aria-label="Collapse">
-                ${Icons.arrowBack('', 22)}
-              </button>
-              <div class="chat-input-fs-title">Message</div>
-            </div>
-
-            <!-- Top Drag Handle Dash (appears on typing) -->
-            <div class="chat-input-drag-handle" id="chat-input-drag-handle" style="display: none;">
-              <div class="sheet-drag-handle"></div>
-            </div>
-
-            <div class="input-pill-inner" id="chat-input-pill-inner">
-              <button type="button" class="input-icon-btn" id="btn-open-stickers" aria-label="Stickers">${Icons.sticker('', 22)}</button>
-              <textarea id="chat-input-textarea" placeholder="Message" rows="1" dir="auto"></textarea>
-              <div class="input-pill-trailing-icons" id="chat-input-trailing-icons">
-                <label class="input-icon-btn" id="btn-gallery-attach" title="Attach file or photo">
-                  ${Icons.paperclip('', 22)}
-                  <input type="file" id="chat-gallery-input" accept="image/*,video/*" multiple style="display:none;" />
-                </label>
-                <button type="button" class="input-icon-btn" id="btn-camera-snap" aria-label="Camera">${Icons.camera('', 22)}</button>
-                <input type="file" id="chat-camera-input" accept="image/*" capture="environment" style="display:none;" />
-              </div>
-            </div>
+          <div class="input-pill">
+            <button type="button" class="input-icon-btn" id="btn-open-stickers" aria-label="Stickers">${Icons.sticker('', 22)}</button>
+            <textarea id="chat-input-textarea" placeholder="Message" rows="1" dir="auto"></textarea>
+            <label class="input-icon-btn" id="btn-gallery-attach" title="Attach file or photo">
+              ${Icons.paperclip('', 22)}
+              <input type="file" id="chat-gallery-input" accept="image/*,video/*" multiple style="display:none;" />
+            </label>
+            <button type="button" class="input-icon-btn" id="btn-camera-snap" aria-label="Camera">${Icons.camera('', 22)}</button>
+            <input type="file" id="chat-camera-input" accept="image/*" capture="environment" style="display:none;" />
           </div>
           <button type="button" class="mic-send-btn" id="btn-mic-send" aria-label="Send or record audio">
             ${Icons.mic('mic-icon', 22)}
@@ -666,207 +646,11 @@ export class ChatView {
           leftBtn.dataset.mode = 'sticker';
           leftBtn.setAttribute('aria-label', 'Stickers');
         }
-        // Collapse expanded input if open
-        this._collapseChatInput?.();
       }
     });
 
     // Voice Recorder Setup (Long Press, Swipe up to lock, Pause/Resume, Discard)
     this.setupVoiceRecording();
-
-    // Chat Input Auto-Grow up to 10 lines & Draggable Handle Resizer
-    this.setupChatInputResizer();
-  }
-
-  setupChatInputResizer() {
-    const inputBar = this.container.querySelector('#chat-default-input-bar');
-    const inputPill = this.container.querySelector('#chat-input-pill');
-    const dragHandle = this.container.querySelector('#chat-input-drag-handle');
-    const fsHeader = this.container.querySelector('#chat-input-fs-header');
-    const fsBackBtn = this.container.querySelector('#btn-chat-input-fs-back');
-    const backdrop = this.container.querySelector('#chat-input-backdrop');
-    const textarea = this.container.querySelector('#chat-input-textarea');
-
-    if (!inputBar || !inputPill || !dragHandle || !textarea) return;
-
-    let isDragging = false;
-    let startY = 0;
-    let startHeight = 0;
-    let isFullscreen = false;
-    let manualHeight = null;
-
-    // Auto-grow textarea up to 10 lines
-    const updateAutoHeight = () => {
-      if (isFullscreen) return;
-
-      textarea.style.height = 'auto';
-      const lineHeight = 22; // px per line
-      const verticalPadding = 16; // 8px top + 8px bottom
-      const max10LinesPx = 10 * lineHeight + verticalPadding; // 236px (~240px)
-      const scrollH = textarea.scrollHeight;
-
-      if (scrollH > max10LinesPx) {
-        textarea.style.height = `${max10LinesPx}px`;
-        textarea.style.overflowY = 'auto';
-      } else {
-        const h = Math.max(38, scrollH);
-        textarea.style.height = `${h}px`;
-        textarea.style.overflowY = 'hidden';
-      }
-
-      if (manualHeight !== null) {
-        const naturalPillHeight = textarea.offsetHeight + 18;
-        if (manualHeight < naturalPillHeight) {
-          manualHeight = null;
-          inputPill.style.height = '';
-        } else {
-          inputPill.style.height = `${manualHeight}px`;
-        }
-      } else {
-        inputPill.style.height = '';
-      }
-    };
-
-    const collapseToNormal = () => {
-      isFullscreen = false;
-      manualHeight = null;
-      inputBar.classList.remove('is-input-fullscreen');
-      inputPill.classList.remove('is-input-fullscreen');
-      inputPill.style.height = '';
-      if (fsHeader) fsHeader.style.display = 'none';
-      if (backdrop) {
-        backdrop.classList.remove('active');
-        backdrop.style.opacity = '0';
-        setTimeout(() => {
-          if (!isFullscreen && backdrop) backdrop.style.display = 'none';
-        }, 220);
-      }
-      updateAutoHeight();
-    };
-
-    const enterFullscreen = () => {
-      isFullscreen = true;
-      inputBar.classList.add('is-input-fullscreen');
-      inputPill.classList.add('is-input-fullscreen');
-      inputPill.style.height = '100%';
-      if (fsHeader) fsHeader.style.display = 'flex';
-      if (backdrop) {
-        backdrop.style.display = 'block';
-        backdrop.classList.add('active');
-        backdrop.style.opacity = '1';
-      }
-      textarea.style.height = '100%';
-      textarea.style.overflowY = 'auto';
-    };
-
-    // Show or hide drag handle on typing + auto-grow
-    const onTextChange = () => {
-      const hasText = textarea.value.trim().length > 0;
-      if (hasText) {
-        dragHandle.style.display = 'flex';
-      } else {
-        dragHandle.style.display = 'none';
-        if (isFullscreen || manualHeight !== null) {
-          collapseToNormal();
-        }
-      }
-      updateAutoHeight();
-    };
-
-    textarea.addEventListener('input', onTextChange);
-
-    if (fsBackBtn) {
-      fsBackBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        collapseToNormal();
-      });
-    }
-
-    if (backdrop) {
-      backdrop.addEventListener('click', () => {
-        collapseToNormal();
-      });
-    }
-
-    // Pointer events for drag handle
-    const onPointerDown = (e) => {
-      if (e.button !== undefined && e.button !== 0) return;
-      isDragging = true;
-      startY = e.clientY;
-      startHeight = inputPill.getBoundingClientRect().height;
-      inputPill.style.transition = 'none';
-      if (backdrop) {
-        backdrop.style.display = 'block';
-        backdrop.style.transition = 'none';
-      }
-      dragHandle.setPointerCapture?.(e.pointerId);
-    };
-
-    const onPointerMove = (e) => {
-      if (!isDragging) return;
-      const deltaY = startY - e.clientY; // upward drag is positive
-      const naturalHeight = textarea.scrollHeight + 18;
-      let newHeight = startHeight + deltaY;
-
-      // Least shrink is the default value depending on number of lines typed (up to 10 lines)
-      if (newHeight < naturalHeight) {
-        newHeight = naturalHeight;
-      }
-
-      const vhPercent = (newHeight / window.innerHeight) * 100;
-
-      if (vhPercent >= 80) {
-        enterFullscreen();
-      } else {
-        if (isFullscreen) {
-          isFullscreen = false;
-          inputBar.classList.remove('is-input-fullscreen');
-          inputPill.classList.remove('is-input-fullscreen');
-          if (fsHeader) fsHeader.style.display = 'none';
-        }
-        manualHeight = newHeight;
-        inputPill.style.height = `${newHeight}px`;
-        textarea.style.height = `${newHeight - 34}px`;
-
-        if (backdrop) {
-          const dimOpacity = Math.min(0.7, Math.max(0, (newHeight - naturalHeight) / (window.innerHeight * 0.7)));
-          backdrop.style.opacity = `${dimOpacity}`;
-        }
-      }
-    };
-
-    const onPointerUp = (e) => {
-      if (!isDragging) return;
-      isDragging = false;
-      inputPill.style.transition = '';
-      if (backdrop) backdrop.style.transition = '';
-
-      const currentHeight = inputPill.getBoundingClientRect().height;
-      const vhPercent = (currentHeight / window.innerHeight) * 100;
-
-      if (vhPercent >= 80) {
-        enterFullscreen();
-      } else {
-        const naturalHeight = textarea.scrollHeight + 18;
-        if (currentHeight <= naturalHeight + 15) {
-          collapseToNormal();
-        } else {
-          manualHeight = currentHeight;
-          if (backdrop) {
-            backdrop.classList.add('active');
-            backdrop.style.opacity = '0.5';
-          }
-        }
-      }
-    };
-
-    dragHandle.addEventListener('pointerdown', onPointerDown);
-    dragHandle.addEventListener('pointermove', onPointerMove);
-    dragHandle.addEventListener('pointerup', onPointerUp);
-    dragHandle.addEventListener('pointercancel', onPointerUp);
-
-    this._collapseChatInput = collapseToNormal;
-    this._updateChatInputAutoHeight = updateAutoHeight;
   }
 
   setupVoiceRecording() {

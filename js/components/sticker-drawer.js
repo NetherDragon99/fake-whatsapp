@@ -100,6 +100,12 @@ export class StickerDrawer {
     drawer.style.display = 'none';
 
     drawer.innerHTML = `
+      <!-- Top Drag Handle -->
+      <div class="drawer-drag-header" id="drawer-drag-header">
+        <div class="drawer-drag-handle-bar"></div>
+        <div class="drawer-header-title">Stickers</div>
+      </div>
+
       <!-- Fullscreen Header (active when dragged > 80%) -->
       <div class="sheet-fullscreen-header" id="sticker-fullscreen-header" style="display:none;">
         <button type="button" class="sheet-fullscreen-back-btn" id="btn-sticker-fullscreen-back" aria-label="Exit fullscreen">
@@ -108,12 +114,6 @@ export class StickerDrawer {
           </svg>
         </button>
         <div class="sheet-fullscreen-title">Stickers</div>
-      </div>
-
-      <!-- Top Drag Handle (kept visible in both normal & fullscreen mode) -->
-      <div class="drawer-drag-header" id="drawer-drag-header">
-        <div class="drawer-drag-handle-bar"></div>
-        <div class="drawer-header-title">Stickers</div>
       </div>
 
       <!-- Sticker Grid Body -->

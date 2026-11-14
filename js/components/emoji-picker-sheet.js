@@ -158,6 +158,15 @@ export class EmojiPickerSheet {
     this.sheetEl.className = 'emoji-picker-sheet wa-bottom-sheet';
     this.sheetEl.style.display = 'none';
 
+    // Handle area (centered dash + title)
+    this.handleEl = document.createElement('div');
+    this.handleEl.className = 'emoji-picker-handle sheet-handle-area';
+    this.handleEl.innerHTML = `
+      <div class="sheet-dash"></div>
+      <div class="emoji-picker-title">Pick reaction</div>
+    `;
+    this.sheetEl.appendChild(this.handleEl);
+
     // Fullscreen header (shown above 80%)
     this.fsHeaderEl = document.createElement('div');
     this.fsHeaderEl.className = 'emoji-picker-fs-header sheet-fullscreen-header';
@@ -168,15 +177,6 @@ export class EmojiPickerSheet {
     `;
     this.fsHeaderEl.querySelector('.fs-back-btn').addEventListener('click', () => this.close());
     this.sheetEl.appendChild(this.fsHeaderEl);
-
-    // Handle area (centered dash + title)
-    this.handleEl = document.createElement('div');
-    this.handleEl.className = 'emoji-picker-handle sheet-handle-area';
-    this.handleEl.innerHTML = `
-      <div class="sheet-dash"></div>
-      <div class="emoji-picker-title">Pick reaction</div>
-    `;
-    this.sheetEl.appendChild(this.handleEl);
 
     // Header with search
     const header = document.createElement('div');
