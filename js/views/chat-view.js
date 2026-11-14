@@ -200,15 +200,26 @@ export class ChatView {
 
         <!-- Bottom Input Bar -->
         <footer class="chat-input-bar" id="chat-default-input-bar">
-          <div class="input-pill">
-            <button type="button" class="input-icon-btn" id="btn-open-stickers" aria-label="Stickers">${Icons.sticker('', 22)}</button>
-            <textarea id="chat-input-textarea" placeholder="Message" rows="1" dir="auto"></textarea>
-            <label class="input-icon-btn" id="btn-gallery-attach" title="Attach file or photo">
-              ${Icons.paperclip('', 22)}
-              <input type="file" id="chat-gallery-input" accept="image/*,video/*" multiple style="display:none;" />
-            </label>
-            <button type="button" class="input-icon-btn" id="btn-camera-snap" aria-label="Camera">${Icons.camera('', 22)}</button>
-            <input type="file" id="chat-camera-input" accept="image/*" capture="environment" style="display:none;" />
+          <div class="input-pill" id="chat-input-pill">
+            <div class="chat-input-drag-handle" id="chat-input-drag-handle" style="display: none;" aria-label="Drag to resize message input">
+              <div class="chat-input-drag-dash"></div>
+            </div>
+            <div class="chat-input-fs-header" id="chat-input-fs-header" style="display: none;">
+              <button type="button" class="app-bar-icon-btn chat-input-fs-back-btn" id="btn-chat-input-fs-back" aria-label="Exit fullscreen">
+                ${Icons.arrowBack('', 22)}
+              </button>
+              <span class="chat-input-fs-title">Message</span>
+            </div>
+            <div class="input-pill-main-row">
+              <button type="button" class="input-icon-btn" id="btn-open-stickers" aria-label="Stickers">${Icons.sticker('', 22)}</button>
+              <textarea id="chat-input-textarea" placeholder="Message" rows="1" dir="auto"></textarea>
+              <label class="input-icon-btn" id="btn-gallery-attach" title="Attach file or photo">
+                ${Icons.paperclip('', 22)}
+                <input type="file" id="chat-gallery-input" accept="image/*,video/*" multiple style="display:none;" />
+              </label>
+              <button type="button" class="input-icon-btn" id="btn-camera-snap" aria-label="Camera">${Icons.camera('', 22)}</button>
+              <input type="file" id="chat-camera-input" accept="image/*" capture="environment" style="display:none;" />
+            </div>
           </div>
           <button type="button" class="mic-send-btn" id="btn-mic-send" aria-label="Send or record audio">
             ${Icons.mic('mic-icon', 22)}
@@ -606,7 +617,12 @@ export class ChatView {
       });
     }
 
-    // Input text & Send / Mic button behavior
+    // Input text & Send / Mic button behavior + 10-line auto-grow & drag resize
+    const inputBar = this.container.querySelector('#chat-default-input-bar');
+    const inputPill = this.container.querySelector('#chat-input-pill');
+    const dragHandle = this.container.querySelector('#chat-input-drag-handle');
+    const fsHeader = this.container.querySelector('#chat-input-fs-header');
+    const fsBackBtn = this.container.querySelector('#btn-chat-input-fs-back');
     const textarea = this.container.querySelector('#chat-input-textarea');
     const sendBtn = this.container.querySelector('#btn-mic-send');
 
@@ -615,37 +631,272 @@ export class ChatView {
     const _stickerIconHTML = leftBtn ? leftBtn.innerHTML : '';
     const _emojiIconHTML = Icons.emoji ? Icons.emoji('', 22) : _stickerIconHTML;
 
-    textarea.addEventListener('input', () => {
-      const hasText = textarea.value.trim().length > 0;
+    let manualPillHeightPx = null;
+    let isFullscreen = false;
+    let isDraggingInput = false;
+
+    const getViewportHeight = () => {
+      const vvh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      return Math.max(240, Math.min(window.innerHeight || vvh, vvh || window.innerHeight));
+    };
+
+    const measureNaturalMetrics = () => {
+      const style = window.getComputedStyle(textarea);
+      let lineHeight = parseFloat(style.lineHeight);
+      if (Number.isNaN(lineHeight) || style.lineHeight === 'normal') {
+        const fontSize = parseFloat(style.fontSize) || 16;
+        lineHeight = fontSize * 1.35;
+      }
+      const padTop = parseFloat(style.paddingTop) || 0;
+      const padBottom = parseFloat(style.paddingBottom) || 0;
+      const oneLineHeight = Math.ceil(lineHeight + padTop + padBottom);
+      const max10LinesHeight = Math.ceil(lineHeight * 10 + padTop + padBottom);
+      const viewportCap = Math.max(oneLineHeight * 2, Math.floor(getViewportHeight() * 0.75) - 48);
+      const maxAutoTextareaHeight = Math.min(max10LinesHeight, viewportCap);
+
+      // Measure true wrapped content height even while manually resized or in fullscreen
+      const prevHeight = textarea.style.height;
+      const prevMinHeight = textarea.style.minHeight;
+      const prevAlignSelf = textarea.style.alignSelf;
+      textarea.style.alignSelf = 'flex-start';
+      textarea.style.minHeight = '0px';
+      textarea.style.height = '1px';
+      const rawScrollHeight = textarea.scrollHeight;
+      textarea.style.height = prevHeight;
+      textarea.style.minHeight = prevMinHeight;
+      textarea.style.alignSelf = prevAlignSelf;
+
+      const clampedTextareaHeight = Math.max(
+        oneLineHeight,
+        Math.min(rawScrollHeight, maxAutoTextareaHeight)
+      );
+      const needsInternalScroll = rawScrollHeight > maxAutoTextareaHeight + 1;
+
+      const handleVisible = dragHandle && dragHandle.style.display !== 'none';
+      const handleHeight = handleVisible ? (dragHandle.offsetHeight || 14) : 0;
+      const pillStyle = inputPill ? window.getComputedStyle(inputPill) : null;
+      const pillPadV = pillStyle
+        ? (parseFloat(pillStyle.paddingTop) || 0) + (parseFloat(pillStyle.paddingBottom) || 0)
+        : 8;
+      const basePillPadV = isFullscreen ? 8 : Math.max(8, pillPadV);
+      const naturalPillHeight = Math.max(48, Math.ceil(clampedTextareaHeight + handleHeight + basePillPadV));
+
+      return {
+        clampedTextareaHeight,
+        needsInternalScroll,
+        naturalPillHeight
+      };
+    };
+
+    const setFullscreenState = (nextFullscreen, notifyRouter = true) => {
+      if (isFullscreen === nextFullscreen) return;
+      isFullscreen = nextFullscreen;
+      if (inputBar) {
+        inputBar.classList.toggle('is-input-fullscreen', isFullscreen);
+      }
+      if (isFullscreen) {
+        if (this.router && typeof this.router.pushOverlay === 'function') {
+          this.router.pushOverlay('chat-input-fullscreen', () => {
+            manualPillHeightPx = null;
+            setFullscreenState(false, false);
+            updateInputLayout();
+          });
+        }
+      } else if (notifyRouter && this.router && typeof this.router.removeOverlay === 'function') {
+        this.router.removeOverlay('chat-input-fullscreen');
+      }
+    };
+
+    const updateInputLayout = () => {
+      if (!textarea || !document.body.contains(textarea)) return;
+      const hasRawText = textarea.value.length > 0;
+      const hasSendableText = textarea.value.trim().length > 0;
+
       // Right button: mic ↔ send
-      if (hasText) {
+      if (hasSendableText) {
         sendBtn.innerHTML = Icons.send('', 22);
         sendBtn.classList.add('is-send');
       } else {
         sendBtn.innerHTML = Icons.mic('mic-icon', 22);
         sendBtn.classList.remove('is-send');
       }
+
       // Left button: sticker ↔ emoji icon
       if (leftBtn) {
-        leftBtn.innerHTML = hasText ? _emojiIconHTML : _stickerIconHTML;
-        leftBtn.dataset.mode = hasText ? 'emoji' : 'sticker';
-        leftBtn.setAttribute('aria-label', hasText ? 'Emoji' : 'Stickers');
+        leftBtn.innerHTML = hasSendableText ? _emojiIconHTML : _stickerIconHTML;
+        leftBtn.dataset.mode = hasSendableText ? 'emoji' : 'sticker';
+        leftBtn.setAttribute('aria-label', hasSendableText ? 'Emoji' : 'Stickers');
       }
-    });
+
+      // Hide camera & reveal drag dash as soon as typing begins
+      if (cameraBtn) {
+        cameraBtn.style.display = hasRawText ? 'none' : '';
+      }
+      if (dragHandle) {
+        dragHandle.style.display = (hasRawText || isFullscreen || isDraggingInput) ? 'flex' : 'none';
+      }
+
+      if (!hasRawText && !isDraggingInput) {
+        manualPillHeightPx = null;
+        if (isFullscreen) {
+          setFullscreenState(false, true);
+        }
+      }
+
+      const { clampedTextareaHeight, needsInternalScroll, naturalPillHeight } = measureNaturalMetrics();
+
+      if (isDraggingInput) {
+        return;
+      }
+
+      if (isFullscreen) {
+        if (inputPill) {
+          inputPill.classList.remove('is-manual-size');
+          inputPill.style.height = '';
+        }
+        textarea.style.height = '';
+        textarea.style.overflowY = 'auto';
+        return;
+      }
+
+      if (manualPillHeightPx !== null) {
+        if (naturalPillHeight >= manualPillHeightPx) {
+          // Typed text reached manual height -> seamlessly return to auto-grow (up to 10 lines)
+          manualPillHeightPx = null;
+        } else {
+          if (inputPill) {
+            inputPill.classList.add('is-manual-size');
+            inputPill.style.height = `${manualPillHeightPx}px`;
+          }
+          textarea.style.height = '';
+          textarea.style.overflowY = 'auto';
+          return;
+        }
+      }
+
+      // Auto-grow up to 10 lines, then internal scroll
+      if (inputPill) {
+        inputPill.classList.remove('is-manual-size');
+        inputPill.style.height = '';
+      }
+      if (!hasRawText) {
+        textarea.style.height = '';
+        textarea.style.overflowY = 'hidden';
+      } else {
+        textarea.style.height = `${clampedTextareaHeight}px`;
+        textarea.style.overflowY = needsInternalScroll ? 'auto' : 'hidden';
+      }
+    };
+
+    const startInputDrag = (e, fromFsHeader = false) => {
+      if (e.button !== undefined && e.button !== 0 && e.pointerType === 'mouse') return;
+      if (fromFsHeader && e.target.closest('button')) return;
+      if (!inputPill) return;
+
+      const startY = e.clientY;
+      const startPillHeight = inputPill.getBoundingClientRect().height;
+      let dragActivated = !fromFsHeader;
+      let latestPillHeight = startPillHeight;
+      let latestRatio = startPillHeight / getViewportHeight();
+
+      if (dragActivated) {
+        e.preventDefault();
+        isDraggingInput = true;
+        inputBar?.classList.add('is-input-dragging');
+        inputPill.classList.add('is-manual-size');
+        inputPill.style.height = `${Math.round(startPillHeight)}px`;
+        textarea.style.height = '';
+        textarea.style.overflowY = 'auto';
+      }
+
+      const cleanupListeners = () => {
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+        window.removeEventListener('pointercancel', onPointerUp);
+        this._cleanupInputDrag = null;
+      };
+
+      const onPointerMove = (moveEvent) => {
+        const dy = startY - moveEvent.clientY;
+        if (!dragActivated) {
+          if (Math.abs(dy) < 4) return;
+          dragActivated = true;
+          isDraggingInput = true;
+          inputBar?.classList.add('is-input-dragging');
+          inputPill.classList.add('is-manual-size');
+          inputPill.style.height = `${Math.round(startPillHeight)}px`;
+          textarea.style.height = '';
+          textarea.style.overflowY = 'auto';
+        }
+        moveEvent.preventDefault();
+
+        const vhPx = getViewportHeight();
+        const { naturalPillHeight } = measureNaturalMetrics();
+        const targetHeight = Math.max(naturalPillHeight, Math.min(vhPx, startPillHeight + dy));
+        latestPillHeight = targetHeight;
+        latestRatio = targetHeight / vhPx;
+
+        setFullscreenState(latestRatio >= 0.8, true);
+
+        inputPill.classList.add('is-manual-size');
+        inputPill.style.height = `${Math.round(targetHeight)}px`;
+      };
+
+      const onPointerUp = () => {
+        cleanupListeners();
+        if (!dragActivated) return;
+
+        isDraggingInput = false;
+        inputBar?.classList.remove('is-input-dragging');
+
+        const { naturalPillHeight } = measureNaturalMetrics();
+        if (latestRatio >= 0.8) {
+          manualPillHeightPx = null;
+          setFullscreenState(true, true);
+        } else {
+          setFullscreenState(false, true);
+          manualPillHeightPx = latestPillHeight <= naturalPillHeight + 4
+            ? null
+            : Math.round(latestPillHeight);
+        }
+        updateInputLayout();
+      };
+
+      window.addEventListener('pointermove', onPointerMove, { passive: false });
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerUp);
+      this._cleanupInputDrag = cleanupListeners;
+    };
+
+    if (dragHandle) {
+      dragHandle.addEventListener('pointerdown', (e) => startInputDrag(e, false));
+    }
+    if (fsHeader) {
+      fsHeader.addEventListener('pointerdown', (e) => startInputDrag(e, true));
+    }
+    if (fsBackBtn) {
+      fsBackBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        manualPillHeightPx = null;
+        setFullscreenState(false, true);
+        updateInputLayout();
+      });
+    }
+
+    this._onInputResize = () => updateInputLayout();
+    window.addEventListener('resize', this._onInputResize);
+    window.visualViewport?.addEventListener('resize', this._onInputResize);
+
+    textarea.addEventListener('input', updateInputLayout);
 
     sendBtn.addEventListener('click', () => {
       const text = textarea.value.trim();
       if (text) {
         this.sendNewMessage(text);
         textarea.value = '';
-        sendBtn.innerHTML = Icons.mic('mic-icon', 22);
-        sendBtn.classList.remove('is-send');
-        // Reset left icon back to sticker
-        if (leftBtn) {
-          leftBtn.innerHTML = _stickerIconHTML;
-          leftBtn.dataset.mode = 'sticker';
-          leftBtn.setAttribute('aria-label', 'Stickers');
-        }
+        manualPillHeightPx = null;
+        setFullscreenState(false, true);
+        updateInputLayout();
       }
     });
 
@@ -2313,6 +2564,16 @@ export class ChatView {
       window.removeEventListener('resize', this._onResize);
       this._onResize = null;
     }
+    if (this._onInputResize) {
+      window.removeEventListener('resize', this._onInputResize);
+      window.visualViewport?.removeEventListener('resize', this._onInputResize);
+      this._onInputResize = null;
+    }
+    if (this._cleanupInputDrag) {
+      this._cleanupInputDrag();
+      this._cleanupInputDrag = null;
+    }
+    this.router?.removeOverlay('chat-input-fullscreen');
     if (this.reactionBar) {
       this.reactionBar.destroy();
       this.reactionBar = null;
