@@ -9,11 +9,13 @@ export class WallpaperSectionView {
     this.router = router;
     this.container = null;
     this.category = 'nature';
+    this.chatId = null;
   }
 
   async render(rootEl, params = {}) {
     this.container = rootEl;
     this.category = params.category || 'nature';
+    this.chatId = params.chatId || null;
 
     let title = 'Wallpapers';
     let items = [];
@@ -84,7 +86,8 @@ export class WallpaperSectionView {
     cards.forEach((card) => {
       card.addEventListener('click', () => {
         const id = card.dataset.id;
-        this.router.navigate(`#/theme-preview?wallpaper=${encodeURIComponent(id)}`);
+        const chatAmp = this.chatId ? `&chatId=${encodeURIComponent(this.chatId)}` : '';
+        this.router.navigate(`#/theme-preview?wallpaper=${encodeURIComponent(id)}${chatAmp}`);
       });
     });
   }

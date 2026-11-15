@@ -1,7 +1,7 @@
 // Screen: Appearance & App Theme Settings (Sub-screens of Settings)
 import { Icons } from '../icons.js';
 import { db } from '../db.js';
-import { APP_COLOR_PALETTE, applyAppAccent } from '../config/palette.js';
+import { APP_COLOR_PALETTE, applyAppAccent, applyOutgoingBubbleColor } from '../config/palette.js';
 import { WALLPAPER_PRESETS } from '../config/wallpapers.js';
 import { getAppIcon } from '../config/app-icons.js';
 import { assetUrl } from '../config/base-path.js';
@@ -208,6 +208,10 @@ export class AppearanceView {
         if (meta) meta.setAttribute('content', '#ffffff');
         await db.setSetting('themeMode', 'light');
         localStorage.setItem('wa_theme_mode', 'light');
+      }
+      const savedBubble = await db.getSetting('defaultBubbleColor', null);
+      if (savedBubble) {
+        applyOutgoingBubbleColor(savedBubble);
       }
       Toast.show(isDark ? 'Dark mode enabled' : 'Light mode enabled');
     });

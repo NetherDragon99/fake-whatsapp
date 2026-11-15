@@ -2,12 +2,15 @@
 import { Icons } from '../icons.js';
 import { db } from '../db.js';
 import { assetUrl } from '../config/base-path.js';
+import { resolveBubbleColorForTheme, isLightThemeActive } from '../config/palette.js';
+import { Toast } from '../components/toast.js';
 
 export class ChatThemeView {
   constructor(router) {
     this.router = router;
     this.container = null;
     this.themeData = null;
+    this.chatId = null;
   }
 
   async loadThemes() {
@@ -21,7 +24,7 @@ export class ChatThemeView {
       console.warn('[ChatThemeView] Could not fetch chat-themes.json, using bundled presets:', e);
     }
 
-    // Bundled fallback presets (keep in sync with assets/data/chat-themes.json v2.2.3)
+    // Bundled fallback presets (keep in sync with assets/data/chat-themes.json v2.3.0)
     this.themeData = {
       categories: [
         {
@@ -100,9 +103,30 @@ export class ChatThemeView {
 
   async render(rootEl, params = {}) {
     this.container = rootEl;
+    this.chatId = params.chatId || null;
     await this.loadThemes();
 
+    let chat = null;
+    if (this.chatId) {
+      chat = await db.getChat(this.chatId);
+    }
+
     const categoriesHtml = this.themeData.categories.map((cat) => this.renderCategory(cat)).join('');
+    const hasChatOverride = Boolean(
+      chat && (
+        (chat.wallpaper && chat.wallpaper !== '') ||
+        (chat.wallpaperDimming !== undefined && chat.wallpaperDimming !== null) ||
+        Boolean(chat.outgoingBubbleColor)
+      )
+    );
+
+    const resetSectionHtml = this.chatId ? `
+      <div class="theme-reset-row">
+        <button type="button" class="theme-reset-btn" id="btn-reset-chat-theme" ${hasChatOverride ? '' : 'disabled'}>
+          <span>Reset to default theme</span>
+        </button>
+      </div>
+    ` : '';
 
     rootEl.innerHTML = `
       <div class="screen-view chat-theme-screen">
@@ -110,7 +134,7 @@ export class ChatThemeView {
           <button type="button" class="app-bar-icon-btn" id="btn-chat-theme-back" aria-label="Go back">
             ${Icons.arrowBack('', 24)}
           </button>
-          <div class="app-title">Chat theme</div>
+          <div class="app-title">${chat ? `Chat theme` : 'Chat theme'}</div>
         </header>
 
         <div class="chat-theme-body">
@@ -139,6 +163,8 @@ export class ChatThemeView {
             </button>
           </div>
 
+          ${resetSectionHtml}
+
           <!-- Categorized Preset Themes List -->
           <div class="theme-categories-list">
             ${categoriesHtml}
@@ -151,21 +177,25 @@ export class ChatThemeView {
   }
 
   renderCategory(cat) {
+    const isLight = isLightThemeActive();
+    const defaultBg = isLight ? '#efeae2' : '#0b141a';
+
     const itemsHtml = cat.items.map((item) => {
       let bgStyle = '';
       if (item.wallpaper.startsWith('color:')) {
         bgStyle = `background-color: ${item.wallpaper.replace('color:', '')};`;
       } else if (item.wallpaper === 'default') {
-        bgStyle = 'background-color: #0b141a;';
+        bgStyle = `background-color: ${defaultBg};`;
       } else {
         bgStyle = `background-image: url('${assetUrl(item.wallpaper)}'); background-size: cover; background-position: center;`;
       }
+      const displayBubble = resolveBubbleColorForTheme(item.bubbleColor, isLight);
 
       return `
-        <div class="theme-card-wrap" data-wallpaper="${item.wallpaper}" data-bubble-color="${item.bubbleColor}">
+        <div class="theme-card-wrap" data-wallpaper="${item.wallpaper}" data-bubble-color="${displayBubble}">
           <div class="theme-preview-card" style="${bgStyle}">
             <div class="card-mini-bubble card-bubble-incoming"></div>
-            <div class="card-mini-bubble card-bubble-outgoing" style="background-color: ${item.bubbleColor};"></div>
+            <div class="card-mini-bubble card-bubble-outgoing" style="background-color: ${displayBubble};"></div>
           </div>
         </div>
       `;
@@ -188,20 +218,36 @@ export class ChatThemeView {
       this.router.back();
     });
 
+    const chatSuffix = this.chatId ? `?chatId=${encodeURIComponent(this.chatId)}` : '';
+
     this.container.querySelector('#btn-top-chat-bubble').addEventListener('click', () => {
-      this.router.navigate('#/chat-bubble-picker');
+      this.router.navigate(`#/chat-bubble-picker${chatSuffix}`);
     });
 
     this.container.querySelector('#btn-top-wallpaper').addEventListener('click', () => {
-      this.router.navigate('#/wallpaper-picker');
+      this.router.navigate(`#/wallpaper-picker${chatSuffix}`);
     });
+
+    const resetBtn = this.container.querySelector('#btn-reset-chat-theme');
+    if (resetBtn && this.chatId) {
+      resetBtn.addEventListener('click', async () => {
+        await db.updateChat(this.chatId, {
+          wallpaper: null,
+          wallpaperDimming: null,
+          outgoingBubbleColor: null
+        });
+        Toast.show('Reset to default chat theme');
+        resetBtn.disabled = true;
+      });
+    }
 
     const cards = this.container.querySelectorAll('.theme-card-wrap');
     cards.forEach((card) => {
       card.addEventListener('click', () => {
         const wp = card.dataset.wallpaper;
         const bubble = card.dataset.bubbleColor;
-        this.router.navigate(`#/theme-preview?wallpaper=${encodeURIComponent(wp)}&bubbleColor=${encodeURIComponent(bubble)}`);
+        const chatQuery = this.chatId ? `&chatId=${encodeURIComponent(this.chatId)}` : '';
+        this.router.navigate(`#/theme-preview?wallpaper=${encodeURIComponent(wp)}&bubbleColor=${encodeURIComponent(bubble)}${chatQuery}`);
       });
     });
   }

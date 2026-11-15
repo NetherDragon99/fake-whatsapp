@@ -1,6 +1,7 @@
 /* WhatsApp Android Dark & Light Mode - Core Variables & Reset */
 :root {
   --wa-bg-main: #0b141a;
+  --wa-chat-bg: #0b141a;
   --wa-surface: #111b21;
   --wa-surface-elevated: #1f2c34;
   --wa-divider-strip: #070d11;
@@ -9,6 +10,8 @@
   --wa-bubble-incoming: #1f2c34;
   --wa-bubble-outgoing: #1d3c4e;
   --wa-bubble-outgoing-green: #005c4b;
+  --wa-bubble-outgoing-text: #e9edef;
+  --wa-bubble-outgoing-meta: rgba(233, 237, 239, 0.7);
   --wa-bubble-inner-card: #162f3e;
   --wa-bubble-inner-card-green: #025144;
 
@@ -35,44 +38,48 @@
 
   /* Safe Area & Heights */
   --app-height: 100dvh;
+  --app-offset-top: 0px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* Modern WhatsApp Android Light Theme */
 [data-theme="light"] {
-  --wa-bg-main: #efeae2;
+  --wa-bg-main: #ffffff;
+  --wa-chat-bg: #efeae2;
   --wa-surface: #ffffff;
   --wa-surface-elevated: #f0f2f5;
-  --wa-divider-strip: #e9edef;
+  --wa-divider-strip: #f0f2f5;
 
   /* Bubbles */
   --wa-bubble-incoming: #ffffff;
   --wa-bubble-outgoing: #d9fdd3;
   --wa-bubble-outgoing-green: #d9fdd3;
-  --wa-bubble-inner-card: #e7f8e8;
-  --wa-bubble-inner-card-green: #e7f8e8;
+  --wa-bubble-outgoing-text: #111b21;
+  --wa-bubble-outgoing-meta: #667781;
+  --wa-bubble-inner-card: #d0f4cb;
+  --wa-bubble-inner-card-green: #d0f4cb;
 
   /* Typography */
   --wa-text-primary: #111b21;
-  --wa-text-secondary: #667781;
-  --wa-text-subtle: #8696a0;
+  --wa-text-secondary: #54656f;
+  --wa-text-subtle: #667781;
 
   /* Accents */
-  --wa-green: #008069;
-  --app-accent: #008069;
+  --wa-green: #1dab61;
+  --app-accent: #1dab61;
   --accent-color: var(--app-accent);
-  --wa-green-active-chip: #dcf8c6;
+  --wa-green-active-chip: #d8fdd2;
   --wa-cyan: #53bdeb;
   --wa-danger: #ea0038;
 
   /* Overlays & Borders */
-  --wa-chat-doodle-tint: radial-gradient(circle at 50% 50%, rgba(239, 234, 226, 0.5) 0%, rgba(239, 234, 226, 0.9) 100%);
+  --wa-chat-doodle-tint: radial-gradient(circle at 50% 50%, rgba(239, 234, 226, 0.45) 0%, rgba(239, 234, 226, 0.85) 100%);
   --wa-date-pill-bg: #ffffff;
   --wa-date-pill-text: #54656f;
-  --wa-border-color: rgba(0, 0, 0, 0.08);
+  --wa-border-color: rgba(11, 20, 38, 0.08);
   --wa-bubble-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
-  --wa-app-title-color: #008069;
+  --wa-app-title-color: #1dab61;
 }
 
 * {
@@ -108,19 +115,30 @@
   display: none;
 }
 
-html {
-  scrollbar-gutter: stable;
+[data-theme="light"] * {
+  scrollbar-color: rgba(17, 27, 33, 0.22) transparent;
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background-color: rgba(17, 27, 33, 0.2);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(17, 27, 33, 0.35);
 }
 
 html,
 body {
+  position: fixed;
+  inset: 0;
   width: 100%;
-  height: var(--app-height);
+  height: 100%;
   background-color: var(--wa-bg-main);
   color: var(--wa-text-primary);
   font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   font-size: 15px;
   overflow: hidden;
+  overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
   -webkit-user-select: none;
   -moz-user-select: none;
@@ -152,17 +170,21 @@ textarea,
 }
 
 #app-root {
+  position: fixed;
+  top: var(--app-offset-top, 0px);
+  left: 0;
   width: 100%;
-  height: 100%;
-  position: relative;
+  height: var(--app-height, 100dvh);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background-color: var(--wa-bg-main);
 }
 
 .screen-view {
   width: 100%;
   height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -259,6 +281,10 @@ button,
 .app-bar-icon-btn:active {
   background: rgba(255, 255, 255, 0.1);
   color: var(--wa-text-primary);
+}
+
+[data-theme="light"] .app-bar-icon-btn:active {
+  background: rgba(17, 27, 33, 0.08);
 }
 
 .app-bar-text-btn {

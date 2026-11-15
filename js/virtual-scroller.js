@@ -1671,6 +1671,155 @@ export class VirtualMessageScroller {
     }
   }
 
+  /**
+   * Surgically patch an edited message in DOM without clearing or flashing the scroller.
+   */
+  async updateMessageInPlace(updatedMsg) {
+    if (!updatedMsg || !this.container) return;
+
+    const inMem = this.allMessages.find((m) => String(m.id) === String(updatedMsg.id));
+    if (inMem && inMem !== updatedMsg) {
+      Object.assign(inMem, updatedMsg);
+    }
+
+    const row = this.findMessageElement(updatedMsg.id);
+    if (!row) return;
+
+    const wasNearBottom = (this.container.scrollHeight - this.container.scrollTop - this.container.clientHeight) < 40;
+
+    if (row.classList.contains('album-msg-row')) {
+      const albumIds = (row.dataset.albumIds || '').split(',').filter(Boolean);
+      const albumMsgs = albumIds
+        .map((id) => this.allMessages.find((m) => String(m.id) === id))
+        .filter(Boolean);
+      if (albumMsgs.length > 1) {
+        const freshAlbumRow = await this.createAlbumElement(albumMsgs);
+        row.replaceWith(freshAlbumRow);
+      } else if (albumMsgs.length === 1) {
+        const freshRow = await this.createMessageElement(albumMsgs[0]);
+        row.replaceWith(freshRow);
+      }
+      if (wasNearBottom) this.container.scrollTop = this.container.scrollHeight;
+      return;
+    }
+
+    const bubble = row.querySelector('.msg-bubble');
+    if (!bubble) return;
+
+    // 1. Quoted reply box (add, update, or remove)
+    const oldQuote = bubble.querySelector('.quoted-reply-box');
+    if (updatedMsg.replyTo && updatedMsg.replyTo.id) {
+      const newQuote = await this.renderQuotedReplyBox(updatedMsg.replyTo);
+      if (newQuote) {
+        if (oldQuote) {
+          oldQuote.replaceWith(newQuote);
+        } else {
+          const afterForwarded = bubble.querySelector('.forwarded-header');
+          const afterSender = bubble.querySelector('.group-sender-title');
+          const anchor = afterForwarded ? afterForwarded.nextSibling : (afterSender ? afterSender.nextSibling : bubble.firstChild);
+          bubble.insertBefore(newQuote, anchor);
+        }
+      }
+    } else if (oldQuote) {
+      oldQuote.remove();
+    }
+
+    // 2. Message text / media caption
+    const metaSpan = bubble.querySelector('.msg-meta');
+    let textDiv = bubble.querySelector('.msg-text');
+    if (updatedMsg.text && updatedMsg.text.trim() !== '') {
+      if (!textDiv) {
+        textDiv = document.createElement('div');
+        textDiv.className = 'msg-text';
+        textDiv.setAttribute('dir', 'auto');
+        bubble.insertBefore(textDiv, metaSpan || null);
+      }
+      textDiv.className = 'msg-text';
+      textDiv.setAttribute('dir', 'auto');
+      textDiv.innerHTML = this.formatMessageText(updatedMsg.text);
+    } else if (textDiv) {
+      textDiv.remove();
+    }
+
+    // 3. Edited badge
+    if (metaSpan && updatedMsg.isEdited && !metaSpan.querySelector('.edited-tag')) {
+      const tag = document.createElement('span');
+      tag.className = 'edited-tag';
+      tag.textContent = 'Edited';
+      metaSpan.prepend(tag);
+    }
+
+    if (wasNearBottom) {
+      this.container.scrollTop = this.container.scrollHeight;
+    }
+  }
+
+  /**
+   * Remove deleted messages from memory and DOM in-place without flashing or full reload.
+   */
+  async removeMessagesInPlace(deletedIds) {
+    if (!deletedIds || deletedIds.length === 0 || !this.container) return;
+
+    const delSet = new Set(Array.from(deletedIds).map((id) => String(id)));
+
+    let removedBeforeStart = 0;
+    let removedInWindow = 0;
+    const kept = [];
+
+    for (let idx = 0; idx < this.allMessages.length; idx++) {
+      const m = this.allMessages[idx];
+      if (delSet.has(String(m.id))) {
+        if (idx < this.visibleStartIndex) removedBeforeStart++;
+        else if (idx < this.visibleEndIndex) removedInWindow++;
+      } else {
+        kept.push(m);
+      }
+    }
+
+    this.allMessages = kept;
+    this.visibleStartIndex = Math.max(0, this.visibleStartIndex - removedBeforeStart);
+    this.visibleEndIndex = Math.max(this.visibleStartIndex, this.visibleEndIndex - removedBeforeStart - removedInWindow);
+
+    if (this.allMessages.length === 0) {
+      await this.loadInitial();
+      return;
+    }
+
+    const rows = Array.from(this.container.querySelectorAll('.msg-row'));
+    for (const row of rows) {
+      if (row.classList.contains('album-msg-row')) {
+        const albumIds = (row.dataset.albumIds || '').split(',').filter(Boolean);
+        if (albumIds.some((id) => delSet.has(id))) {
+          const remainingMsgs = albumIds
+            .filter((id) => !delSet.has(id))
+            .map((id) => this.allMessages.find((m) => String(m.id) === id))
+            .filter(Boolean);
+
+          if (remainingMsgs.length === 0) {
+            row.remove();
+          } else if (remainingMsgs.length === 1) {
+            const singleRow = await this.createMessageElement(remainingMsgs[0]);
+            row.replaceWith(singleRow);
+          } else {
+            const updatedAlbumRow = await this.createAlbumElement(remainingMsgs);
+            row.replaceWith(updatedAlbumRow);
+          }
+        }
+      } else if (delSet.has(String(row.dataset.msgId))) {
+        row.remove();
+      }
+    }
+
+    // Prune any orphaned date pills (nothing after them or followed immediately by another date pill)
+    const datePills = Array.from(this.container.querySelectorAll('.date-pill-row'));
+    for (const pill of datePills) {
+      const next = pill.nextElementSibling;
+      if (!next || next.classList.contains('date-pill-row')) {
+        pill.remove();
+      }
+    }
+  }
+
   cleanup() {
     clearTimeout(this.autoScrollTimer);
     this.cancelPendingLongPress();

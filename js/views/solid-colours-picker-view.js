@@ -6,10 +6,12 @@ export class SolidColoursPickerView {
   constructor(router) {
     this.router = router;
     this.container = null;
+    this.chatId = null;
   }
 
   async render(rootEl, params = {}) {
     this.container = rootEl;
+    this.chatId = params.chatId || null;
 
     const cardsHtml = APP_COLOR_PALETTE.map((color) => {
       return `
@@ -47,7 +49,8 @@ export class SolidColoursPickerView {
     cards.forEach((card) => {
       card.addEventListener('click', () => {
         const color = card.dataset.color;
-        this.router.navigate(`#/theme-preview?wallpaper=color:${encodeURIComponent(color)}`);
+        const chatAmp = this.chatId ? `&chatId=${encodeURIComponent(this.chatId)}` : '';
+        this.router.navigate(`#/theme-preview?wallpaper=color:${encodeURIComponent(color)}${chatAmp}`);
       });
     });
   }

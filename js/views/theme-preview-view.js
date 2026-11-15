@@ -2,7 +2,14 @@
 import { Icons } from '../icons.js';
 import { db } from '../db.js';
 import { WALLPAPER_PRESETS, getWallpaperPreset } from '../config/wallpapers.js';
-import { APP_COLOR_PALETTE, applyOutgoingBubbleColor } from '../config/palette.js';
+import {
+  getBubblePaletteForCurrentTheme,
+  resolveBubbleColorForTheme,
+  getBubbleThemeTokens,
+  isColorDark,
+  isLightThemeActive,
+  applyOutgoingBubbleColor
+} from '../config/palette.js';
 import { assetUrl } from '../config/base-path.js';
 import { Toast } from '../components/toast.js';
 import { DrawerResizer } from '../utils/drawer-resizer.js';
@@ -37,7 +44,9 @@ export class ThemePreviewView {
       if (chat) {
         if (!params.wallpaper && !params.id && chat.wallpaper) this.currentId = chat.wallpaper;
         const loadedDim = chat.wallpaperDimming;
-        this.dimming = loadedDim !== undefined ? loadedDim : 35;
+        this.dimming = (loadedDim !== undefined && loadedDim !== null)
+          ? loadedDim
+          : await db.getSetting('defaultDimming', 35);
         this.bubbleColor = params.bubbleColor || chat.outgoingBubbleColor || (await db.getSetting('defaultBubbleColor', '#1d3c4e'));
       }
     } else {
@@ -45,9 +54,11 @@ export class ThemePreviewView {
         this.currentId = await db.getSetting('defaultWallpaper', 'default');
       }
       const loadedDim = await db.getSetting('defaultDimming', 35);
-      this.dimming = loadedDim !== undefined ? loadedDim : 35;
+      this.dimming = (loadedDim !== undefined && loadedDim !== null) ? loadedDim : 35;
       this.bubbleColor = params.bubbleColor || (await db.getSetting('defaultBubbleColor', '#1d3c4e'));
     }
+
+    this.bubbleColor = resolveBubbleColorForTheme(this.bubbleColor);
 
     this.savedDimming = this.dimming > 0 ? this.dimming : 35;
     this.isDimmingEnabled = this.dimming > 0;
@@ -153,15 +164,19 @@ export class ThemePreviewView {
           <!-- Scrollable Swatches -->
           <div class="sheet-content-scroll">
             <div class="sheet-swatch-grid">
-              ${APP_COLOR_PALETTE.map((hex) => `
-                <button type="button" class="sheet-colour-swatch ${hex.toLowerCase() === this.bubbleColor.toLowerCase() ? 'active' : ''}" data-color="${hex}" style="background-color: ${hex};" aria-label="Color ${hex}">
-                  ${hex.toLowerCase() === this.bubbleColor.toLowerCase() ? `
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="#ffffff">
-                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                    </svg>
-                  ` : ''}
-                </button>
-              `).join('')}
+              ${getBubblePaletteForCurrentTheme().map((hex) => {
+                const checkColor = isColorDark(hex) ? '#ffffff' : '#111b21';
+                const isSelected = hex.toLowerCase() === this.bubbleColor.toLowerCase();
+                return `
+                  <button type="button" class="sheet-colour-swatch ${isSelected ? 'active' : ''}" data-color="${hex}" style="background-color: ${hex};" aria-label="Color ${hex}">
+                    ${isSelected ? `
+                      <svg viewBox="0 0 24 24" width="18" height="18" fill="${checkColor}">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                      </svg>
+                    ` : ''}
+                  </button>
+                `;
+              }).join('')}
             </div>
           </div>
         </div>
@@ -225,12 +240,17 @@ export class ThemePreviewView {
     }
     this.updateDimmerThumb();
 
-    // 2. Update Bubble Color
+    // 2. Update Bubble Color & Adaptive Text Contrast
+    const bubbleTokens = getBubbleThemeTokens(this.bubbleColor);
     if (outgoingBubble) {
-      outgoingBubble.style.backgroundColor = this.bubbleColor;
+      outgoingBubble.style.backgroundColor = bubbleTokens.bubbleBg;
+      outgoingBubble.style.color = bubbleTokens.textColor;
+      outgoingBubble.style.setProperty('--preview-bubble-text', bubbleTokens.textColor);
+      const metaEl = outgoingBubble.querySelector('.preview-meta');
+      if (metaEl) metaEl.style.color = bubbleTokens.metaColor;
     }
     if (colorDot) {
-      colorDot.style.backgroundColor = this.bubbleColor;
+      colorDot.style.backgroundColor = bubbleTokens.bubbleBg;
     }
 
     // 3. Update Wallpaper Background
@@ -252,9 +272,8 @@ export class ThemePreviewView {
         wpLayer.style.backgroundImage = `url(${fullUrl})`;
         wpLayer.style.backgroundColor = 'transparent';
       } else {
-        // Default clean dark background
         wpLayer.style.backgroundImage = 'none';
-        wpLayer.style.backgroundColor = '#0b141a';
+        wpLayer.style.backgroundColor = isLightThemeActive() ? '#efeae2' : '#0b141a';
       }
     }
 
@@ -373,8 +392,9 @@ export class ThemePreviewView {
           s.innerHTML = '';
         });
         swatch.classList.add('active');
+        const checkColor = isColorDark(hex) ? '#ffffff' : '#111b21';
         swatch.innerHTML = `
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="#ffffff">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="${checkColor}">
             <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
           </svg>
         `;

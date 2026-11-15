@@ -1038,7 +1038,7 @@ class Database {
     });
 
     return {
-      version: '2.2.3',
+      version: '2.3.0',
       exportedAt: Date.now(),
       chats,
       messages,

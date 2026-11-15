@@ -28,7 +28,7 @@ import { applyAppIcon } from './config/app-icons.js';
 import { assetUrl } from './config/base-path.js';
 
 // Application Version Constant
-window.APP_VERSION = '2.2.3';
+window.APP_VERSION = '2.3.0';
 
 // Global deferred PWA install prompt holder
 window.deferredInstallPrompt = null;
@@ -44,7 +44,56 @@ class Application {
     this.importModal = null;
   }
 
+  setupViewportSync() {
+    const syncViewport = () => {
+      const vv = window.visualViewport;
+      const height = vv ? vv.height : window.innerHeight;
+      const offsetTop = vv ? vv.offsetTop : 0;
+      const rootStyle = document.documentElement.style;
+      rootStyle.setProperty('--app-height', `${Math.round(height)}px`);
+      rootStyle.setProperty('--app-offset-top', `${Math.round(offsetTop)}px`);
+
+      if (window.scrollX !== 0 || window.scrollY !== 0) {
+        window.scrollTo(0, 0);
+      }
+      if (document.documentElement.scrollTop !== 0) {
+        document.documentElement.scrollTop = 0;
+      }
+      if (document.body && document.body.scrollTop !== 0) {
+        document.body.scrollTop = 0;
+      }
+    };
+
+    syncViewport();
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', syncViewport);
+      window.visualViewport.addEventListener('scroll', syncViewport);
+    }
+    window.addEventListener('resize', syncViewport);
+    window.addEventListener('orientationchange', () => {
+      setTimeout(syncViewport, 120);
+    });
+    window.addEventListener('scroll', () => {
+      if (window.scrollX !== 0 || window.scrollY !== 0) {
+        window.scrollTo(0, 0);
+      }
+      syncViewport();
+    }, { passive: true });
+    document.addEventListener('focusin', () => {
+      requestAnimationFrame(syncViewport);
+      setTimeout(syncViewport, 120);
+      setTimeout(syncViewport, 320);
+    });
+    document.addEventListener('focusout', () => {
+      requestAnimationFrame(syncViewport);
+      setTimeout(syncViewport, 120);
+    });
+  }
+
   async init() {
+    this.setupViewportSync();
+
     // 0. Apply Saved Theme Mode (Light / Dark) & Accent Colors
     const savedTheme = localStorage.getItem('wa_theme_mode') || 'dark';
     if (savedTheme === 'light') {
@@ -77,7 +126,9 @@ class Application {
       if (dbAccent) applyAppAccent(dbAccent);
 
       const dbBubbleColor = await db.getSetting('defaultBubbleColor', null);
-      if (dbBubbleColor) applyOutgoingBubbleColor(dbBubbleColor);
+      if (dbBubbleColor || savedBubbleColor) {
+        applyOutgoingBubbleColor(dbBubbleColor || savedBubbleColor);
+      }
 
       const dbAppIcon = await db.getSetting('app_icon_id', localStorage.getItem('wa_app_icon_id') || 'icon-1');
       if (dbAppIcon) applyAppIcon(dbAppIcon);

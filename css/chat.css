@@ -1,11 +1,12 @@
 /* WhatsApp Android Inside Chat View Styles */
 
 .chat-screen {
-  background-color: var(--wa-bg-main);
+  background-color: var(--wa-chat-bg, var(--wa-bg-main));
   background-size: cover;
   background-position: center;
   position: relative;
   height: 100%;
+  min-height: 0;
 }
 
 .chat-screen::before {
@@ -126,6 +127,12 @@
   z-index: 30;
 }
 
+[data-theme="light"] .wa-dropdown-menu {
+  background-color: #ffffff;
+  box-shadow: 0 4px 18px rgba(11, 20, 26, 0.16);
+  border: 1px solid rgba(11, 20, 26, 0.06);
+}
+
 .dropdown-item {
   display: flex;
   align-items: center;
@@ -139,6 +146,10 @@
 
 .dropdown-item:active {
   background-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="light"] .dropdown-item:active {
+  background-color: rgba(11, 20, 26, 0.06);
 }
 
 .dropdown-item .dropdown-item-icon {
@@ -158,9 +169,12 @@
 
 /* Messages Scroller Area */
 .chat-messages-container {
-  flex: 1;
+  flex: 1 1 0%;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
   padding: 12px 16px;
   display: flex;
   flex-direction: column;
@@ -186,6 +200,11 @@
   transform: translateY(12px);
   pointer-events: none;
   transition: opacity 0.2s, transform 0.2s;
+}
+
+[data-theme="light"] .chat-scroll-bottom {
+  background-color: #ffffff;
+  box-shadow: 0 2px 8px rgba(11, 20, 26, 0.16);
 }
 
 .chat-scroll-bottom.visible {
@@ -283,6 +302,16 @@
   color: #ffd279;
 }
 
+[data-theme="light"] .encryption-pill {
+  background-color: #ffeecd;
+  color: #54656f;
+  box-shadow: 0 1px 2px rgba(11, 20, 26, 0.1);
+}
+
+[data-theme="light"] .encryption-pill svg {
+  color: #54656f;
+}
+
 /* Message Rows & Bubbles */
 .msg-row {
   display: flex;
@@ -312,6 +341,12 @@
   text-align: center;
 }
 
+[data-theme="light"] .system-pill {
+  background-color: #ffffff;
+  color: #54656f;
+  box-shadow: 0 1px 1px rgba(11, 20, 26, 0.1);
+}
+
 .msg-bubble {
   max-width: 82%;
   min-width: 80px;
@@ -330,12 +365,29 @@
 
 .bubble-outgoing {
   background-color: var(--wa-bubble-outgoing);
-  color: var(--wa-text-primary);
+  color: var(--wa-bubble-outgoing-text, var(--wa-text-primary));
   border-top-right-radius: 0;
 }
 
+.bubble-outgoing .msg-meta,
+.bubble-outgoing .edited-tag,
+.bubble-outgoing .forwarded-header,
+.bubble-outgoing .album-caption-meta,
+.bubble-outgoing .album-meta-row,
+.bubble-outgoing .receipt-grey {
+  color: var(--wa-bubble-outgoing-meta, var(--wa-text-secondary)) !important;
+}
+
+.bubble-outgoing .quoted-reply-box {
+  background-color: var(--wa-bubble-inner-card, rgba(0, 0, 0, 0.18));
+}
+
+.bubble-outgoing .quoted-reply-snippet {
+  color: var(--wa-bubble-outgoing-text, var(--wa-text-primary));
+}
+
 .bubble-outgoing.theme-green {
-  background-color: var(--wa-bubble-outgoing-green);
+  background-color: var(--wa-bubble-outgoing, var(--wa-bubble-outgoing-green));
 }
 
 .group-sender-title {
@@ -471,13 +523,18 @@
   bottom: -9px;
   right: 10px;
   background-color: #202c33;
-  border: 1.5px solid var(--wa-bg-main);
+  border: 1.5px solid var(--wa-chat-bg, var(--wa-bg-main));
   border-radius: 12px;
   font-size: 12px;
   padding: 1px 5px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Segoe UI Symbol", sans-serif;
   user-select: none;
+}
+
+[data-theme="light"] .msg-reaction-badge {
+  background-color: #ffffff;
+  box-shadow: 0 1px 3px rgba(11, 20, 26, 0.18);
 }
 
 .highlight-flash,
@@ -785,16 +842,19 @@
   gap: 6px;
   position: relative;
   z-index: 5;
-  background-color: var(--wa-bg-main);
+  background-color: var(--wa-chat-bg, var(--wa-bg-main));
   padding-bottom: calc(8px + var(--safe-bottom));
+}
+
+.chat-screen.has-custom-wallpaper .chat-input-bar {
+  background-color: transparent;
 }
 
 .chat-input-bar.is-input-fullscreen {
   position: fixed;
   inset: 0;
   width: 100%;
-  height: 100vh;
-  height: 100dvh;
+  height: var(--app-height, 100dvh);
   z-index: 900;
   padding: 0;
   gap: 0;
@@ -814,6 +874,11 @@
   padding: 4px 8px;
   min-height: 48px;
   transition: height 0.16s cubic-bezier(0.2, 0.9, 0.3, 1), border-radius 0.18s ease;
+}
+
+[data-theme="light"] .input-pill {
+  background-color: #ffffff;
+  box-shadow: 0 1px 2px rgba(11, 20, 26, 0.1);
 }
 
 .chat-input-bar.is-input-dragging .input-pill {
@@ -954,16 +1019,40 @@
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background-color: var(--wa-cyan);
-  color: #0b141a;
+  background-color: var(--wa-chat-fab-bg, var(--app-accent, var(--wa-green)));
+  color: var(--wa-chat-fab-fg, #0b141a);
   flex-shrink: 0;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-  transition: background-color 0.2s, transform 0.15s;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.15s ease;
+  position: relative;
+  overflow: hidden;
 }
 
-.mic-send-btn.is-send {
-  background-color: var(--wa-green);
-  color: #ffffff;
+[data-theme="light"] .mic-send-btn {
+  color: var(--wa-chat-fab-fg, #ffffff);
+}
+
+.mic-send-btn .mic-send-icon-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+
+.mic-send-btn .mic-send-icon-slot.anim-swap {
+  animation: fabIconMorph 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes fabIconMorph {
+  0% {
+    opacity: 0.35;
+    transform: scale(0.52) rotate(-22deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
 }
 
 .mic-send-btn:active {
@@ -1423,7 +1512,7 @@
   .stacked-photo-item {
     width: auto;
     height: 100%;
-    max-height: calc(100vh - 120px);
+    max-height: calc(var(--app-height, 100dvh) - 120px);
     flex-shrink: 0;
     display: flex;
     align-items: center;
@@ -1434,7 +1523,7 @@
   .stacked-photo-img {
     width: auto;
     height: 100%;
-    max-height: calc(100vh - 120px);
+    max-height: calc(var(--app-height, 100dvh) - 120px);
     max-width: 75vw;
     object-fit: contain;
   }
@@ -1590,9 +1679,8 @@
 
 .mic-send-btn.recording-active {
   transform: scale(1.12);
-  background-color: #2ea5db !important;
-  /* Highlighted blue as on reference 1 & 2 */
-  box-shadow: 0 0 16px rgba(46, 165, 219, 0.5) !important;
+  background-color: var(--wa-chat-fab-bg, var(--app-accent, var(--wa-green))) !important;
+  box-shadow: 0 0 0 6px rgba(37, 211, 102, 0.22), 0 4px 16px rgba(0, 0, 0, 0.35) !important;
   z-index: 25;
 }
 
@@ -2096,7 +2184,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  max-height: 100vh;
+  max-height: var(--app-height, 100dvh);
   min-height: 40px;
   transform: translateY(100%);
   transition: transform 0.28s cubic-bezier(0.2, 0, 0, 1), height 0.28s cubic-bezier(0.32, 0.72, 0, 1);
@@ -2115,9 +2203,8 @@
 }
 
 .sticker-drawer-sheet.is-fullscreen:not(.is-dragging) {
-  height: 100vh !important;
-  height: 100dvh !important;
-  max-height: 100dvh !important;
+  height: var(--app-height, 100dvh) !important;
+  max-height: var(--app-height, 100dvh) !important;
 }
 
 .drawer-drag-header {
@@ -2199,7 +2286,12 @@
 }
 
 .chat-header.selection-bar {
-  background-color: var(--wa-surface-secondary, #1f2c34);
+  background-color: var(--wa-surface-elevated, #1f2c34);
+}
+
+[data-theme="light"] .chat-header.selection-bar {
+  background-color: #ffffff;
+  border-bottom: 1px solid rgba(11, 20, 26, 0.08);
 }
 
 /* ===================================================================
@@ -2220,7 +2312,7 @@
   height: 32px;
   border-radius: 50%;
   background-color: #202c33;
-  color: #25d366;
+  color: var(--wa-chat-fab-bg, var(--app-accent, #25d366));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2229,6 +2321,11 @@
   z-index: 1;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
   transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+[data-theme="light"] .swipe-reply-icon {
+  background-color: #ffffff;
+  box-shadow: 0 1px 4px rgba(11, 20, 26, 0.18);
 }
 
 .msg-row.swiping-right .swipe-reply-icon {
@@ -2282,7 +2379,7 @@
   align-self: stretch;
   border-top-left-radius: 8px;
   border-bottom-left-radius: 8px;
-  background-color: #25d366 !important;
+  background-color: var(--wa-chat-fab-bg, var(--app-accent, #25d366)) !important;
   flex-shrink: 0;
 }
 
@@ -2299,8 +2396,7 @@
 .reply-banner-sender {
   font-size: 13.5px !important;
   font-weight: 600 !important;
-  color: #25d366 !important;
-  /* Bright WhatsApp green */
+  color: var(--wa-chat-fab-bg, var(--app-accent, #25d366)) !important;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2394,6 +2490,80 @@
   background-color: rgba(0, 0, 0, 0.06) !important;
 }
 
+/* --- Bottom Embedded Edit Preview Banner (Above Reply/Input Area) --- */
+.chat-edit-preview-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #202c33;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.25);
+  position: relative;
+  z-index: 10;
+  padding: 6px 12px;
+  min-height: 48px;
+  max-height: 58px;
+  box-sizing: border-box;
+  animation: slideUpFade 0.18s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.edit-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  background-color: #111b21;
+  border-radius: 8px;
+  padding: 6px 10px;
+  border-left: 4px solid var(--wa-chat-fab-bg, var(--app-accent, #25d366));
+}
+
+.edit-banner-icon {
+  color: var(--wa-chat-fab-bg, var(--app-accent, #25d366));
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.edit-banner-texts {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+
+.edit-banner-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--wa-chat-fab-bg, var(--app-accent, #25d366));
+  line-height: 1.2;
+}
+
+.edit-banner-snippet {
+  font-size: 12.5px;
+  color: #e9edef;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
+}
+
+[data-theme="light"] .chat-edit-preview-banner {
+  background-color: #f0f2f5;
+  border-top-color: rgba(0, 0, 0, 0.08);
+  border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .edit-banner-content {
+  background-color: #ffffff;
+}
+
+[data-theme="light"] .edit-banner-snippet {
+  color: #111b21;
+}
+
 /* --- Quoted Reply Box Inside Sent Message Bubble --- */
 .quoted-reply-box {
   display: flex;
@@ -2414,7 +2584,11 @@
 
 .theme-green .quoted-reply-box,
 .bubble-outgoing .quoted-reply-box {
-  background-color: rgba(0, 0, 0, 0.18);
+  background-color: var(--wa-bubble-inner-card, rgba(0, 0, 0, 0.18));
+}
+
+[data-theme="light"] .bubble-incoming .quoted-reply-box {
+  background-color: rgba(11, 20, 26, 0.05);
 }
 
 .quoted-reply-box:hover {

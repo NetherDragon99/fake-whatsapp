@@ -403,18 +403,25 @@ export class ChatStorageView {
 
     // Clear entire chat storage button
     this.container.querySelector('#btn-clear-all-chat-data')?.addEventListener('click', async () => {
-      const confirmed = await showConfirm({
+      const msgs = this.msgs || (await db.getMessages(this.chatId));
+      const hasStarred = msgs.some((m) => m.isStarred);
+
+      const confirmOpts = {
         title: 'Clear entire chat storage?',
         message: `Permanently delete all media and messages in "${this.chat.name}" (${this.stats.formattedTotal})? The contact will remain.`,
         confirmText: 'Clear All',
         cancelText: 'Cancel',
-        isDanger: true,
-        extraCheckbox: {
+        isDanger: true
+      };
+      if (hasStarred) {
+        confirmOpts.extraCheckbox = {
           id: 'checkbox-clear-starred-all',
           label: 'Delete starred messages too',
           checked: false
-        }
-      });
+        };
+      }
+
+      const confirmed = await showConfirm(confirmOpts);
 
       if (confirmed) {
         const deleteStarred = Boolean(document.getElementById('checkbox-clear-starred-all')?.checked);
@@ -435,18 +442,45 @@ export class ChatStorageView {
             category === 'audio' ? 'Voice Notes' :
               category === 'documents' ? 'Documents' : 'Text Messages';
 
-        const confirmed = await showConfirm({
+        const msgs = this.msgs || (await db.getMessages(this.chatId));
+        let hasStarredInCat = false;
+        if (category === 'messages' || category === 'all') {
+          hasStarredInCat = msgs.some((m) => m.isStarred);
+        } else {
+          const chatMedia = await db.getMediaByChat(this.chatId);
+          for (const m of chatMedia) {
+            const cat = db.categorizeMediaRecord(m);
+            const matches =
+              (category === 'photos' && (cat === 'photos' || cat === 'sticker')) ||
+              (category === 'videos' && cat === 'videos') ||
+              (category === 'audio' && cat === 'audio') ||
+              (category === 'documents' && cat === 'documents');
+            if (matches) {
+              const parentMsg = msgs.find((msg) => msg.mediaId === m.id);
+              if (parentMsg && parentMsg.isStarred) {
+                hasStarredInCat = true;
+                break;
+              }
+            }
+          }
+        }
+
+        const confirmOpts = {
           title: `Clear ${label}?`,
           message: `Delete all ${catData.count} ${label.toLowerCase()} (${catData.formatted}) from this conversation?`,
           confirmText: `Clear ${label}`,
           cancelText: 'Cancel',
-          isDanger: true,
-          extraCheckbox: {
+          isDanger: true
+        };
+        if (hasStarredInCat) {
+          confirmOpts.extraCheckbox = {
             id: 'checkbox-clear-cat-starred',
             label: 'Delete starred items too',
             checked: false
-          }
-        });
+          };
+        }
+
+        const confirmed = await showConfirm(confirmOpts);
 
         if (confirmed) {
           const deleteStarred = Boolean(document.getElementById('checkbox-clear-cat-starred')?.checked);

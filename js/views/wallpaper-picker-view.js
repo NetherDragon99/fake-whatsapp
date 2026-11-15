@@ -149,26 +149,29 @@ export class WallpaperPickerView {
         filtered.unshift('custom');
         await db.setSetting('recent_wallpapers', filtered.slice(0, 6));
 
-        this.router.navigate('#/theme-preview?wallpaper=custom');
+        this.router.navigate(`#/theme-preview?wallpaper=custom${this.chatId ? '&chatId=' + encodeURIComponent(this.chatId) : ''}`);
       }
     });
 
+    const chatAmp = this.chatId ? `&chatId=${encodeURIComponent(this.chatId)}` : '';
+    const chatQ = this.chatId ? `?chatId=${encodeURIComponent(this.chatId)}` : '';
+
     // Solid Colours
     this.container.querySelector('#btn-wp-solid-colours').addEventListener('click', () => {
-      this.router.navigate('#/solid-colours-picker');
+      this.router.navigate(`#/solid-colours-picker${chatQ}`);
     });
 
     // Section Title Clicks -> Open Grid Mode
     this.container.querySelector('#header-last-used').addEventListener('click', () => {
-      this.router.navigate('#/wallpaper-section?category=last-used');
+      this.router.navigate(`#/wallpaper-section?category=last-used${chatAmp}`);
     });
 
     this.container.querySelector('#header-nature').addEventListener('click', () => {
-      this.router.navigate('#/wallpaper-section?category=nature');
+      this.router.navigate(`#/wallpaper-section?category=nature${chatAmp}`);
     });
 
     this.container.querySelector('#header-vibrant').addEventListener('click', () => {
-      this.router.navigate('#/wallpaper-section?category=vibrant');
+      this.router.navigate(`#/wallpaper-section?category=vibrant${chatAmp}`);
     });
 
     // Wallpaper card clicks
@@ -176,7 +179,7 @@ export class WallpaperPickerView {
     cards.forEach((card) => {
       card.addEventListener('click', () => {
         const id = card.dataset.id;
-        this.router.navigate(`#/theme-preview?wallpaper=${encodeURIComponent(id)}`);
+        this.router.navigate(`#/theme-preview?wallpaper=${encodeURIComponent(id)}${chatAmp}`);
       });
     });
   }

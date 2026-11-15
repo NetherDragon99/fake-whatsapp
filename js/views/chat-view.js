@@ -18,6 +18,12 @@ import { ReactionBar } from '../components/reaction-bar.js';
 import { EmojiPickerSheet } from '../components/emoji-picker-sheet.js';
 import { MessageInfoSheet } from '../components/message-info-sheet.js';
 import { ShareOptionsModal } from '../components/share-options-modal.js';
+import {
+  applyOutgoingBubbleColor,
+  clearOutgoingBubbleColor,
+  deriveChatActionColor,
+  isLightThemeActive
+} from '../config/palette.js';
 
 export class ChatView {
   constructor(router) {
@@ -31,6 +37,11 @@ export class ChatView {
     this.selectedMessageIds = new Set();
     this.isSelectionMode = false;
     this.replyingTo = null;
+    this.editingMessage = null;
+    this._draftBeforeEdit = null;
+    this._currentFabMode = 'mic';
+    this._updateInputLayout = null;
+    this._resetInputComposerHeight = null;
     this.chatPins = [];
     this.pinPriorityMode = { mode: 'last_added', mixedDays: 7, switcherSeconds: 10 };
     this.pinnedBarDismissed = false;
@@ -63,6 +74,8 @@ export class ChatView {
     const defaultWp = await db.getSetting('defaultWallpaper', 'default');
     const defaultDimming = await db.getSetting('defaultDimming', 0);
     const outgoingTheme = await db.getSetting('theme', 'slate');
+    const defaultBubbleColor = await db.getSetting('defaultBubbleColor', null);
+    const effectiveBubbleColor = this.chat.outgoingBubbleColor || defaultBubbleColor;
     const targetMsgId = params.msgId || null;
 
     let subtitle = 'tap here for contact info';
@@ -71,7 +84,9 @@ export class ChatView {
 
     // Resolve wallpaper & dimming
     const wpSelection = this.chat.wallpaper || defaultWp;
-    const dimmingVal = this.chat.wallpaperDimming !== undefined ? this.chat.wallpaperDimming : defaultDimming;
+    const dimmingVal = (this.chat.wallpaperDimming !== undefined && this.chat.wallpaperDimming !== null)
+      ? this.chat.wallpaperDimming
+      : defaultDimming;
     let wpBgStyle = '';
 
     if (wpSelection && typeof wpSelection === 'string') {
@@ -157,8 +172,8 @@ export class ChatView {
             <span>Edit Chat Info</span>
           </div>
           <div class="dropdown-item" id="menu-chat-wallpaper">
-            <span class="dropdown-item-icon">${Icons.gallery('', 20)}</span>
-            <span>Wallpaper</span>
+            <span class="dropdown-item-icon">${Icons.palette('', 20)}</span>
+            <span>Chat theme</span>
           </div>
           <div class="dropdown-item danger-item" id="menu-clear-chat">
             <span class="dropdown-item-icon">${Icons.trash('', 20)}</span>
@@ -195,6 +210,9 @@ export class ChatView {
           ${Icons.chevronDown('', 22)}
         </button>
 
+        <!-- Edit Message Banner (above reply banner / input bar) -->
+        <div class="chat-edit-preview-banner" id="chat-edit-banner" style="display: none;"></div>
+
         <!-- Reply Preview Banner (above input bar) -->
         <div class="chat-reply-preview-banner" id="chat-reply-banner" style="display: none;"></div>
 
@@ -222,7 +240,7 @@ export class ChatView {
             </div>
           </div>
           <button type="button" class="mic-send-btn" id="btn-mic-send" aria-label="Send or record audio">
-            ${Icons.mic('mic-icon', 22)}
+            <span class="mic-send-icon-slot">${Icons.mic('mic-icon', 22)}</span>
           </button>
         </footer>
 
@@ -304,6 +322,20 @@ export class ChatView {
         <input type="date" id="chat-hidden-date-picker" style="display:none;" />
       </div>
     `;
+
+    // Apply per-chat bubble theme and matching send/mic FAB color onto .chat-screen
+    const chatScreenEl = this.container.querySelector('.chat-screen');
+    if (chatScreenEl) {
+      if (effectiveBubbleColor) {
+        applyOutgoingBubbleColor(effectiveBubbleColor, chatScreenEl, false);
+      } else {
+        clearOutgoingBubbleColor(chatScreenEl);
+        const isLight = isLightThemeActive();
+        const defaultAction = deriveChatActionColor(outgoingTheme === 'green' ? '#005c4b' : '#25d366', isLight);
+        chatScreenEl.style.setProperty('--wa-chat-fab-bg', defaultAction.bg);
+        chatScreenEl.style.setProperty('--wa-chat-fab-fg', defaultAction.fg);
+      }
+    }
 
     await this.bindEvents(outgoingTheme, targetMsgId, params);
   }
@@ -389,10 +421,13 @@ export class ChatView {
       setTimeout(() => this.jumpToSelectedDate(params.jumpDate), 200);
     }
 
-    // Profile Picture Subtle Scroll Animation in Header (Step 6)
+    // Profile Picture Subtle Scroll Animation in Header (Step 6) + Keep-at-bottom tracking for keyboard open
     let scrollRafTicking = false;
+    this._wasNearBottom = true;
     const headerAvatar = this.container.querySelector('.chat-header-avatar');
     messagesWrap.addEventListener('scroll', () => {
+      const distFromBottom = messagesWrap.scrollHeight - messagesWrap.scrollTop - messagesWrap.clientHeight;
+      this._wasNearBottom = distFromBottom < 80;
       if (!scrollRafTicking) {
         window.requestAnimationFrame(() => {
           const scrollTop = messagesWrap.scrollTop;
@@ -525,7 +560,7 @@ export class ChatView {
 
       this.container.querySelector('#menu-chat-wallpaper')?.addEventListener('click', () => {
         Motion.closeMenu(dropdownMenu);
-        this.router.navigate('#/wallpaper-picker?chatId=' + this.chatId);
+        this.router.navigate('#/chat-theme?chatId=' + encodeURIComponent(this.chatId));
       });
 
       this.container.querySelector('#menu-clear-chat')?.addEventListener('click', () => {
@@ -712,20 +747,35 @@ export class ChatView {
       const hasRawText = textarea.value.length > 0;
       const hasSendableText = textarea.value.trim().length > 0;
 
-      // Right button: mic ↔ send
-      if (hasSendableText) {
-        sendBtn.innerHTML = Icons.send('', 22);
-        sendBtn.classList.add('is-send');
-      } else {
-        sendBtn.innerHTML = Icons.mic('mic-icon', 22);
-        sendBtn.classList.remove('is-send');
+      // Right button: mic ↔ send ↔ edit (same theme color, animated icon swap)
+      const targetMode = this.editingMessage ? 'edit' : (hasSendableText ? 'send' : 'mic');
+      if (targetMode !== this._currentFabMode) {
+        this._currentFabMode = targetMode;
+        const iconHtml = targetMode === 'edit'
+          ? Icons.check('mic-send-check-icon', 22)
+          : (targetMode === 'send' ? Icons.send('', 22) : Icons.mic('mic-icon', 22));
+        const slot = sendBtn.querySelector('.mic-send-icon-slot');
+        if (slot) {
+          slot.innerHTML = iconHtml;
+          slot.classList.remove('anim-swap');
+          void slot.offsetWidth;
+          slot.classList.add('anim-swap');
+        } else {
+          sendBtn.innerHTML = `<span class="mic-send-icon-slot anim-swap">${iconHtml}</span>`;
+        }
       }
+      sendBtn.classList.toggle('is-send', targetMode !== 'mic');
+      sendBtn.classList.toggle('is-edit', targetMode === 'edit');
+      sendBtn.setAttribute(
+        'aria-label',
+        targetMode === 'edit' ? 'Save edited message' : (targetMode === 'send' ? 'Send message' : 'Record audio')
+      );
 
       // Left button: sticker ↔ emoji icon
       if (leftBtn) {
-        leftBtn.innerHTML = hasSendableText ? _emojiIconHTML : _stickerIconHTML;
-        leftBtn.dataset.mode = hasSendableText ? 'emoji' : 'sticker';
-        leftBtn.setAttribute('aria-label', hasSendableText ? 'Emoji' : 'Stickers');
+        leftBtn.innerHTML = (hasSendableText || this.editingMessage) ? _emojiIconHTML : _stickerIconHTML;
+        leftBtn.dataset.mode = (hasSendableText || this.editingMessage) ? 'emoji' : 'sticker';
+        leftBtn.setAttribute('aria-label', (hasSendableText || this.editingMessage) ? 'Emoji' : 'Stickers');
       }
 
       // Hide camera & reveal drag dash as soon as typing begins
@@ -883,13 +933,41 @@ export class ChatView {
       });
     }
 
-    this._onInputResize = () => updateInputLayout();
+    this._updateInputLayout = updateInputLayout;
+    this._resetInputComposerHeight = () => {
+      manualPillHeightPx = null;
+      setFullscreenState(false, true);
+      updateInputLayout();
+    };
+
+    this._onInputResize = () => {
+      updateInputLayout();
+      if (this._wasNearBottom && messagesWrap) {
+        requestAnimationFrame(() => {
+          messagesWrap.scrollTop = messagesWrap.scrollHeight;
+        });
+      }
+    };
     window.addEventListener('resize', this._onInputResize);
     window.visualViewport?.addEventListener('resize', this._onInputResize);
 
+    textarea.addEventListener('focus', () => {
+      if (this._wasNearBottom && messagesWrap) {
+        setTimeout(() => {
+          if (this._wasNearBottom && messagesWrap) {
+            messagesWrap.scrollTop = messagesWrap.scrollHeight;
+          }
+        }, 120);
+      }
+    });
+
     textarea.addEventListener('input', updateInputLayout);
 
-    sendBtn.addEventListener('click', () => {
+    sendBtn.addEventListener('click', async () => {
+      if (this.editingMessage) {
+        await this.submitMessageEdit(textarea.value);
+        return;
+      }
       const text = textarea.value.trim();
       if (text) {
         this.sendNewMessage(text);
@@ -954,8 +1032,8 @@ export class ChatView {
     });
 
     const onPointerDown = async (e) => {
-      // If textarea has text, sendBtn acts as regular text send button
-      if (sendBtn.classList.contains('is-send') || textarea.value.trim().length > 0) return;
+      // If editing or textarea has text, sendBtn acts as regular text send/save button
+      if (this.editingMessage || sendBtn.classList.contains('is-send') || textarea.value.trim().length > 0) return;
       if (e.button !== 0 && e.pointerType === 'mouse') return;
 
       e.preventDefault();
@@ -1314,6 +1392,7 @@ export class ChatView {
     });
 
     this.scroller.allMessages.push(newMsg);
+    this.scroller.visibleEndIndex = this.scroller.allMessages.length;
     const msgEl = await this.scroller.createMessageElement(newMsg);
     this.container.querySelector('#chat-messages-wrap').appendChild(msgEl);
     this.scroller.scrollToBottom(true);
@@ -1422,6 +1501,7 @@ export class ChatView {
     });
 
     this.scroller.allMessages.push(newMsg);
+    this.scroller.visibleEndIndex = this.scroller.allMessages.length;
     const msgEl = await this.scroller.createMessageElement(newMsg);
     this.container.querySelector('#chat-messages-wrap').appendChild(msgEl);
     this.scroller.scrollToBottom(true);
@@ -1489,6 +1569,7 @@ export class ChatView {
     });
 
     this.scroller.allMessages.push(newMsg);
+    this.scroller.visibleEndIndex = this.scroller.allMessages.length;
     const msgEl = await this.scroller.createMessageElement(newMsg);
     this.container.querySelector('#chat-messages-wrap').appendChild(msgEl);
     this.scroller.scrollToBottom(true);
@@ -1535,6 +1616,7 @@ export class ChatView {
     });
 
     this.scroller.allMessages.push(newMsg);
+    this.scroller.visibleEndIndex = this.scroller.allMessages.length;
     const msgEl = await this.scroller.createMessageElement(newMsg);
     this.container.querySelector('#chat-messages-wrap').appendChild(msgEl);
     this.scroller.scrollToBottom(true);
@@ -1697,109 +1779,132 @@ export class ChatView {
     }
   }
 
-  // --- In-Place Message Inline Editing ---
-  _startInlineEdit(msg) {
+  // --- Message Editing via Bottom Composer (Preserves Draft & Reply) ---
+  async startEditMessage(msg) {
     this.exitSelectionMode();
-    const rowEl = this.scroller?.findMessageElement(msg.id);
-    if (!rowEl) return;
+    if (!msg || msg.isDeleted) return;
 
-    const bubble = rowEl.querySelector('.msg-bubble');
-    if (!bubble) return;
+    const textarea = this.container.querySelector('#chat-input-textarea');
+    if (!textarea) return;
 
-    const existingTextEl = bubble.querySelector('.bubble-text-content') || bubble.querySelector('.msg-text');
-    const originalDisplay = existingTextEl ? existingTextEl.style.display : '';
-    if (existingTextEl) existingTextEl.style.display = 'none';
+    // Save existing draft & active reply only when entering edit mode from normal composer
+    if (!this.editingMessage) {
+      this._draftBeforeEdit = {
+        text: textarea.value || '',
+        replyingTo: this.replyingTo ? { ...this.replyingTo } : null
+      };
+    }
 
-    // Remove any previous inline edit box
-    const oldBox = bubble.querySelector('.msg-inline-edit-box');
-    if (oldBox) oldBox.remove();
+    this.editingMessage = msg;
+    textarea.value = msg.text || '';
+    this.replyingTo = msg.replyTo ? { ...msg.replyTo } : null;
 
-    const editBox = document.createElement('div');
-    editBox.className = 'msg-inline-edit-box';
-    editBox.innerHTML = `
-      <textarea class="msg-inline-edit-textarea" rows="2" dir="auto">${this.escapeHtml(msg.text || '')}</textarea>
-      <div class="msg-inline-edit-actions">
-        <button type="button" class="inline-edit-btn cancel" title="Cancel" aria-label="Cancel edit">${Icons.close('', 18)}</button>
-        <button type="button" class="inline-edit-btn save" title="Save" aria-label="Save edit">${Icons.check('', 18)}</button>
-      </div>
-    `;
+    this.renderEditBanner();
+    await this.renderReplyBanner();
 
-    bubble.appendChild(editBox);
-
-    const textarea = editBox.querySelector('.msg-inline-edit-textarea');
-    const cancelBtn = editBox.querySelector('.inline-edit-btn.cancel');
-    const saveBtn = editBox.querySelector('.inline-edit-btn.save');
+    if (this._updateInputLayout) {
+      this._updateInputLayout();
+    }
 
     textarea.focus();
     textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+  }
 
-    const cleanupEdit = () => {
-      editBox.remove();
-      if (existingTextEl) existingTextEl.style.display = originalDisplay;
+  renderEditBanner() {
+    const banner = this.container.querySelector('#chat-edit-banner');
+    if (!banner) return;
+
+    const msg = this.editingMessage;
+    if (!msg) {
+      banner.style.display = 'none';
+      banner.innerHTML = '';
+      return;
+    }
+
+    const originalPreview = msg.text
+      ? msg.text
+      : (msg.mediaType ? `[${msg.mediaType}]` : 'Message');
+
+    banner.innerHTML = `
+      <div class="edit-banner-content">
+        <div class="edit-banner-bar"></div>
+        <div class="edit-banner-texts">
+          <div class="edit-banner-title">Edit message</div>
+          <div class="edit-banner-snippet" dir="auto">${this._escHtml(originalPreview)}</div>
+        </div>
+      </div>
+      <button type="button" class="edit-banner-close-btn" id="btn-cancel-edit" aria-label="Cancel editing">${Icons.close('', 18)}</button>
+    `;
+    banner.style.display = 'flex';
+    banner.querySelector('#btn-cancel-edit')?.addEventListener('click', () => this.cancelEdit());
+  }
+
+  async cancelEdit(restoreDraft = true) {
+    if (!this.editingMessage) return;
+    this.editingMessage = null;
+    this.renderEditBanner();
+
+    const textarea = this.container.querySelector('#chat-input-textarea');
+    const saved = this._draftBeforeEdit;
+    this._draftBeforeEdit = null;
+
+    if (restoreDraft && saved) {
+      if (textarea) textarea.value = saved.text || '';
+      this.replyingTo = saved.replyingTo ? { ...saved.replyingTo } : null;
+    } else {
+      if (textarea) textarea.value = '';
+      this.replyingTo = null;
+    }
+
+    await this.renderReplyBanner();
+    if (this._resetInputComposerHeight) {
+      this._resetInputComposerHeight();
+    } else if (this._updateInputLayout) {
+      this._updateInputLayout();
+    }
+  }
+
+  async submitMessageEdit(rawText) {
+    const msg = this.editingMessage;
+    if (!msg) return;
+
+    const nextText = (rawText || '').trim();
+    const hasMedia = Boolean(msg.mediaId || msg.mediaType);
+    if (!nextText && !hasMedia) {
+      Toast.show('Message cannot be empty');
+      return;
+    }
+
+    const nextReplyTo = this.replyingTo ? { ...this.replyingTo } : null;
+    const prevReplyJson = JSON.stringify(msg.replyTo || null);
+    const nextReplyJson = JSON.stringify(nextReplyTo);
+    const textChanged = nextText !== (msg.text || '');
+    const replyChanged = prevReplyJson !== nextReplyJson;
+
+    if (!textChanged && !replyChanged) {
+      await this.cancelEdit(true);
+      return;
+    }
+
+    const updates = {
+      text: nextText,
+      replyTo: nextReplyTo,
+      isEdited: true
     };
 
-    cancelBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      cleanupEdit();
-    });
+    await db.updateMessage(msg.id, updates);
+    Object.assign(msg, updates);
 
-    const doSave = async () => {
-      const newText = textarea.value.trim();
-      if (!newText) {
-        Toast.show('Message cannot be empty');
-        return;
-      }
-      if (newText === msg.text) {
-        cleanupEdit();
-        return;
-      }
+    await this.scroller?.updateMessageInPlace(msg);
 
-      await db.updateMessage(msg.id, { text: newText, isEdited: true });
-      msg.text = newText;
-      msg.isEdited = true;
+    const allMsgs = this.scroller?.allMessages || [];
+    if (allMsgs.length > 0 && String(allMsgs[allMsgs.length - 1].id) === String(msg.id)) {
+      const previewText = nextText || (msg.mediaType ? `[${msg.mediaType}]` : '');
+      await db.updateChat(this.chatId, { lastMessage: previewText, updatedAt: Date.now() });
+    }
 
-      // Update scroller in-memory message
-      const inMem = this.scroller?.allMessages.find((m) => String(m.id) === String(msg.id));
-      if (inMem) {
-        inMem.text = newText;
-        inMem.isEdited = true;
-      }
-
-      cleanupEdit();
-      if (existingTextEl) {
-        existingTextEl.textContent = newText;
-      }
-
-      // Ensure (Edited) badge is shown in bubble meta
-      const metaSpan = rowEl.querySelector('.msg-meta') || rowEl.querySelector('.album-caption-meta');
-      if (metaSpan && !metaSpan.querySelector('.edited-tag')) {
-        const tag = document.createElement('span');
-        tag.className = 'edited-tag';
-        tag.textContent = 'Edited';
-        const timeEl = metaSpan.querySelector('.msg-time');
-        if (timeEl) {
-          metaSpan.insertBefore(tag, timeEl);
-        } else {
-          metaSpan.prepend(tag);
-        }
-      }
-
-      Toast.show('Message edited');
-    };
-
-    saveBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      doSave();
-    });
-
-    textarea.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        doSave();
-      } else if (e.key === 'Escape') {
-        cleanupEdit();
-      }
-    });
+    Toast.show('Message edited');
+    await this.cancelEdit(true);
   }
 
   // --- Share Media Messages ---
@@ -1912,7 +2017,7 @@ export class ChatView {
     if (count === 1) {
       const msg = selectedMsgs[0];
       const isPinned = this.chatPins.some((p) => String(p.messageId) === String(msg.id));
-      const canEdit = Boolean(msg.isOutgoing && msg.text && !msg.isDeleted && !msg.mediaId);
+      const canEdit = Boolean(!msg.isDeleted && (msg.text || msg.mediaId));
 
       // Single select tools arrangement:
       // 1. Reply
@@ -1926,14 +2031,14 @@ export class ChatView {
         }
       });
 
-      // 2. Edit (only for outgoing text messages)
+      // 2. Edit (any non-deleted text or media caption message)
       if (canEdit) {
         tools.push({
           id: 'edit',
           label: 'Edit',
           icon: Icons.edit('', 20),
           action: () => {
-            this._startInlineEdit(msg);
+            this.startEditMessage(msg);
           }
         });
       }
@@ -2265,26 +2370,64 @@ export class ChatView {
     const count = this.selectedMessageIds.size;
     if (count === 0) return;
 
-    const confirmed = await showConfirm({
+    const selectedIds = Array.from(this.selectedMessageIds);
+    const allMsgs = this.scroller?.allMessages || [];
+    const selectedMsgs = selectedIds
+      .map((id) => allMsgs.find((m) => String(m.id) === String(id)))
+      .filter(Boolean);
+    const hasStarred = selectedMsgs.some((m) => m.isStarred);
+
+    const confirmOptions = {
       title: `Delete ${count} message${count > 1 ? 's' : ''}?`,
       message: 'Do you want to delete the selected messages?',
       confirmText: 'Delete for me',
       cancelText: 'Cancel',
-      isDanger: true,
-      extraCheckbox: {
+      isDanger: true
+    };
+    if (hasStarred) {
+      confirmOptions.extraCheckbox = {
         id: 'chk-del-starred-msgs',
         label: 'Delete starred messages too',
         checked: false
-      }
-    });
+      };
+    }
+
+    const confirmed = await showConfirm(confirmOptions);
 
     if (confirmed) {
       const chk = document.getElementById('chk-del-starred-msgs');
       const deleteStarred = chk ? chk.checked : false;
-      await db.deleteMessagesBatch(Array.from(this.selectedMessageIds), !deleteStarred);
-      Toast.show(`${count} messages deleted`);
+      const actuallyDeletedIds = deleteStarred
+        ? selectedIds
+        : selectedIds.filter((id) => {
+            const m = allMsgs.find((item) => String(item.id) === String(id));
+            return !m || !m.isStarred;
+          });
+
+      await db.deleteMessagesBatch(selectedIds, !deleteStarred);
       this.exitSelectionMode();
-      this.scroller.loadInitial();
+      await this.scroller?.removeMessagesInPlace(actuallyDeletedIds);
+
+      // Update chat pins & lastMessage preview without full scroller flash
+      const deletedSet = new Set(actuallyDeletedIds.map((id) => String(id)));
+      if (this.chatPins.some((p) => deletedSet.has(String(p.messageId)))) {
+        this.chatPins = this.chatPins.filter((p) => !deletedSet.has(String(p.messageId)));
+        await db.savePinsForChat(this.chatId, this.chatPins);
+        this.scroller?.setPinnedMessageIds(this.chatPins.map((p) => String(p.messageId)));
+        this.renderPinnedBar();
+      }
+
+      const remaining = this.scroller?.allMessages || [];
+      const last = remaining.length > 0 ? remaining[remaining.length - 1] : null;
+      const lastPreview = last ? (last.text || (last.mediaType ? `[${last.mediaType}]` : '')) : null;
+      await db.updateChat(this.chatId, { lastMessage: lastPreview, updatedAt: Date.now() });
+
+      const deletedCount = actuallyDeletedIds.length;
+      if (deletedCount > 0) {
+        Toast.show(`${deletedCount} message${deletedCount > 1 ? 's' : ''} deleted`);
+      } else {
+        Toast.show('Starred messages were kept');
+      }
     }
   }
 
@@ -2560,6 +2703,10 @@ export class ChatView {
 
   cleanup() {
     this.exitSelectionMode();
+    this.editingMessage = null;
+    this._draftBeforeEdit = null;
+    this._updateInputLayout = null;
+    this._resetInputComposerHeight = null;
     if (this._onResize) {
       window.removeEventListener('resize', this._onResize);
       this._onResize = null;

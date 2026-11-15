@@ -320,22 +320,35 @@ export class ManageStorageView {
       if (this.selectedChatIds.size === 0) return;
 
       const count = this.selectedChatIds.size;
-      const confirmed = await showConfirm({
+      const chatIds = Array.from(this.selectedChatIds);
+      let hasStarred = false;
+      for (const cid of chatIds) {
+        const msgs = await db.getMessages(cid);
+        if (msgs.some((m) => m.isStarred)) {
+          hasStarred = true;
+          break;
+        }
+      }
+
+      const confirmOpts = {
         title: `Clear storage for ${count} chat${count > 1 ? 's' : ''}?`,
         message: `This will delete all media and messages in the selected ${count} conversation${count > 1 ? 's' : ''}. The chat contacts will remain.`,
         confirmText: 'Clear Storage',
         cancelText: 'Cancel',
-        isDanger: true,
-        extraCheckbox: {
+        isDanger: true
+      };
+      if (hasStarred) {
+        confirmOpts.extraCheckbox = {
           id: 'checkbox-delete-starred-bulk',
           label: 'Delete starred messages too',
           checked: false
-        }
-      });
+        };
+      }
+
+      const confirmed = await showConfirm(confirmOpts);
 
       if (confirmed) {
         const deleteStarred = Boolean(document.getElementById('checkbox-delete-starred-bulk')?.checked);
-        const chatIds = Array.from(this.selectedChatIds);
 
         await db.clearChatsStorageBatch(chatIds, deleteStarred);
         Toast.show(`Cleared storage for ${count} chat${count > 1 ? 's' : ''}`);
