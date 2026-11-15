@@ -18,7 +18,13 @@ export class SettingsView {
       let ownerName = 'You';
       let userAvatarBlob = null;
       let storageStats = { formattedSize: '0 B', chatCount: 0, messageCount: 0 };
-      const appVersion = window.APP_VERSION || '2.3.0';
+      const appVersion = window.APP_VERSION || '2.3.1';
+      const cacheStatus = window.__waCacheStatus || null;
+      const cacheSubText = cacheStatus
+        ? (cacheStatus.complete
+          ? `v${appVersion} • All ${cacheStatus.cached}/${cacheStatus.total} files & media cached offline`
+          : `v${appVersion} • ${cacheStatus.cached}/${cacheStatus.total} files cached offline`)
+        : `v${appVersion} • Tap to check for updates & sync offline media`;
 
       try {
         ownerName = await db.getSetting('ownerName', 'You');
@@ -153,6 +159,27 @@ export class SettingsView {
               <div class="settings-texts">
                 <div class="setting-title danger-text">Clear All Restored Data</div>
                 <div class="setting-sub">Permanently delete all chats, media, and settings</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="thick-section-divider"></div>
+
+          <!-- App Updates & Offline Sync -->
+          <div class="settings-section">
+            <div class="settings-section-header">App Updates</div>
+            <div class="settings-option-row clickable" id="row-check-updates">
+              <span class="settings-icon">
+                <svg viewBox="0 0 24 24" width="21" height="21" fill="currentColor">
+                  <path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8A5.87 5.87 0 0 1 6 12c0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/>
+                </svg>
+              </span>
+              <div class="settings-texts">
+                <div class="setting-title">Check for Updates &amp; Offline Sync</div>
+                <div class="setting-sub" id="settings-update-status-sub">${cacheSubText}</div>
+              </div>
+              <div class="settings-chevron">
+                ${Icons.chevronRight('', 18)}
               </div>
             </div>
           </div>
@@ -324,6 +351,45 @@ export class SettingsView {
         } catch (err) {
           await showAlert({ title: 'Invalid Backup', message: err.message || 'Failed to read backup file.' });
         }
+      }
+    });
+
+    // Check for Updates & Sync Offline Cache
+    const appVersion = window.APP_VERSION || '2.3.1';
+    const updateRow = this.container.querySelector('#row-check-updates');
+    const updateSubEl = this.container.querySelector('#settings-update-status-sub');
+    const refreshCacheLabel = (status) => {
+      if (!updateSubEl || !status || !this.container.contains(updateSubEl)) return;
+      updateSubEl.textContent = status.complete
+        ? `v${appVersion} • All ${status.cached}/${status.total} files & media cached offline`
+        : `v${appVersion} • ${status.cached}/${status.total} files cached offline`;
+    };
+
+    if (window.app && typeof window.app.getCacheStatus === 'function') {
+      window.app.getCacheStatus().then(refreshCacheLabel).catch(() => { });
+    }
+
+    const onCacheStatusEvent = (e) => {
+      if (!this.container || !document.body.contains(this.container)) {
+        window.removeEventListener('wa:cache-status', onCacheStatusEvent);
+        return;
+      }
+      refreshCacheLabel(e.detail);
+    };
+    window.addEventListener('wa:cache-status', onCacheStatusEvent);
+
+    updateRow?.addEventListener('click', async () => {
+      if (!window.app || typeof window.app.checkForUpdates !== 'function') {
+        Toast.show('Updater not available in this context');
+        return;
+      }
+      if (updateSubEl) updateSubEl.textContent = `v${appVersion} • Checking for updates...`;
+      await window.app.checkForUpdates({ manual: true, syncMissing: true });
+      const latest = await window.app.getCacheStatus().catch(() => null);
+      if (latest) {
+        refreshCacheLabel(latest);
+      } else if (updateSubEl) {
+        updateSubEl.textContent = `v${appVersion} • Tap to check for updates & sync offline media`;
       }
     });
 

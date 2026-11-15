@@ -24,7 +24,7 @@ export class ChatThemeView {
       console.warn('[ChatThemeView] Could not fetch chat-themes.json, using bundled presets:', e);
     }
 
-    // Bundled fallback presets (keep in sync with assets/data/chat-themes.json v2.3.0)
+    // Bundled fallback presets (keep in sync with assets/data/chat-themes.json v2.3.1)
     this.themeData = {
       categories: [
         {

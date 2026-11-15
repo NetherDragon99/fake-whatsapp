@@ -28,7 +28,8 @@ import { applyAppIcon } from './config/app-icons.js';
 import { assetUrl } from './config/base-path.js';
 
 // Application Version Constant
-window.APP_VERSION = '2.3.0';
+window.APP_VERSION = '2.3.1';
+window.APP_CACHE_NAME = 'wa-clone-v2.3.1';
 
 // Global deferred PWA install prompt holder
 window.deferredInstallPrompt = null;
@@ -42,6 +43,10 @@ class Application {
   constructor() {
     this.router = null;
     this.importModal = null;
+    this.swRegistration = null;
+    this._updateCheckPromise = null;
+    this._cacheStatus = null;
+    this._pendingVersionReload = null;
   }
 
   setupViewportSync() {
@@ -311,55 +316,353 @@ class Application {
     }
   }
 
+  _ensureUpdateOverlay() {
+    let overlay = document.getElementById('wa-update-overlay');
+    if (overlay) return overlay;
+
+    overlay = document.createElement('div');
+    overlay.id = 'wa-update-overlay';
+    overlay.className = 'wa-update-overlay';
+    overlay.innerHTML = `
+      <div class="wa-update-card" role="dialog" aria-modal="true" aria-live="polite">
+        <div class="wa-update-header">
+          <div class="wa-update-spinner" aria-hidden="true"></div>
+          <div class="wa-update-title" id="wa-update-title">Updating WhatsApp...</div>
+        </div>
+        <div class="wa-update-subtitle" id="wa-update-subtitle">Clearing old cache &amp; downloading files and media...</div>
+        <div class="wa-update-progress-track">
+          <div class="wa-update-progress-fill" id="wa-update-progress-fill"></div>
+        </div>
+        <div class="wa-update-meta-row">
+          <span id="wa-update-count">Checking...</span>
+          <span id="wa-update-percent">0%</span>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    return overlay;
+  }
+
+  showUpdateOverlay({ title, subtitle, completed = 0, total = 0 } = {}) {
+    const overlay = this._ensureUpdateOverlay();
+    const titleEl = overlay.querySelector('#wa-update-title');
+    const subEl = overlay.querySelector('#wa-update-subtitle');
+    const fillEl = overlay.querySelector('#wa-update-progress-fill');
+    const countEl = overlay.querySelector('#wa-update-count');
+    const pctEl = overlay.querySelector('#wa-update-percent');
+
+    if (title && titleEl) titleEl.textContent = title;
+    if (subtitle && subEl) subEl.textContent = subtitle;
+
+    if (total > 0) {
+      const clamped = Math.max(0, Math.min(completed, total));
+      const pct = Math.round((clamped / total) * 100);
+      if (fillEl) fillEl.style.width = `${pct}%`;
+      if (countEl) countEl.textContent = `${clamped} / ${total} files & media`;
+      if (pctEl) pctEl.textContent = `${pct}%`;
+    } else {
+      if (fillEl) fillEl.style.width = '12%';
+      if (countEl) countEl.textContent = 'Checking server...';
+      if (pctEl) pctEl.textContent = '...';
+    }
+
+    requestAnimationFrame(() => overlay.classList.add('active'));
+  }
+
+  hideUpdateOverlay() {
+    const overlay = document.getElementById('wa-update-overlay');
+    if (!overlay) return;
+    overlay.classList.remove('active');
+    setTimeout(() => {
+      if (!overlay.classList.contains('active') && overlay.parentNode) {
+        overlay.remove();
+      }
+    }, 220);
+  }
+
+  _setCacheStatus(status) {
+    if (!status) return;
+    this._cacheStatus = status;
+    window.__waCacheStatus = status;
+    window.dispatchEvent(new CustomEvent('wa:cache-status', { detail: status }));
+  }
+
+  async purgeOldCachesClient(keepCacheName = window.APP_CACHE_NAME) {
+    if (!('caches' in window)) return [];
+    const names = await caches.keys();
+    const deleted = [];
+    await Promise.all(
+      names.map(async (name) => {
+        if (name !== keepCacheName) {
+          const ok = await caches.delete(name);
+          if (ok) deleted.push(name);
+        }
+      })
+    );
+    return deleted;
+  }
+
+  async sendSwMessage(payload, timeoutMs = 60000) {
+    if (!('serviceWorker' in navigator)) return null;
+    let target = navigator.serviceWorker.controller;
+    if (!target) {
+      try {
+        const reg = await Promise.race([
+          navigator.serviceWorker.ready,
+          new Promise((resolve) => setTimeout(() => resolve(null), 5000))
+        ]);
+        target = reg && (reg.active || reg.waiting || reg.installing);
+      } catch (e) {
+        return null;
+      }
+    }
+    if (!target) return null;
+
+    return new Promise((resolve) => {
+      const channel = new MessageChannel();
+      const timer = setTimeout(() => resolve(null), timeoutMs);
+      channel.port1.onmessage = (event) => {
+        clearTimeout(timer);
+        resolve(event.data || null);
+      };
+      try {
+        target.postMessage(payload, [channel.port2]);
+      } catch (e) {
+        clearTimeout(timer);
+        resolve(null);
+      }
+    });
+  }
+
+  async getCacheStatus() {
+    const res = await this.sendSwMessage({ type: 'GET_CACHE_STATUS' }, 8000);
+    if (res && res.status) {
+      this._setCacheStatus(res.status);
+      return res.status;
+    }
+    return this._cacheStatus;
+  }
+
+  async checkForUpdates({ manual = false, syncMissing = true } = {}) {
+    if (this._updateCheckPromise) {
+      return this._updateCheckPromise;
+    }
+
+    this._updateCheckPromise = (async () => {
+      if (!navigator.onLine) {
+        await this.getCacheStatus().catch(() => null);
+        if (manual) {
+          Toast.show('You are offline. Connect to internet to check for updates.');
+        }
+        return { offline: true };
+      }
+
+      if (manual) {
+        Toast.show('Checking for updates...');
+      }
+
+      let remoteMeta = null;
+      try {
+        const resp = await fetch(`./version.json?t=${Date.now()}`, {
+          cache: 'no-store'
+        });
+        if (resp && resp.ok) {
+          remoteMeta = await resp.json();
+        }
+      } catch (err) {
+        console.warn('[Updater] version.json check skipped:', err);
+      }
+
+      const hasNewVersion = Boolean(
+        remoteMeta &&
+        remoteMeta.version &&
+        remoteMeta.version !== window.APP_VERSION
+      );
+
+      if (hasNewVersion) {
+        console.log(`[Updater] New version ${remoteMeta.version} detected (current ${window.APP_VERSION})`);
+        this._pendingVersionReload = remoteMeta.version;
+        this.showUpdateOverlay({
+          title: `Updating WhatsApp to v${remoteMeta.version}`,
+          subtitle: 'Clearing old cache and downloading updated files & media...',
+          completed: 0,
+          total: 0
+        });
+
+        try {
+          if (this.swRegistration) {
+            await this.swRegistration.update();
+            const sw = this.swRegistration.installing || this.swRegistration.waiting;
+            if (sw) {
+              if (sw.state === 'installed' && this.swRegistration.waiting) {
+                sw.postMessage({ type: 'SKIP_WAITING' });
+              }
+              return { updating: true, targetVersion: remoteMeta.version };
+            }
+          }
+        } catch (err) {
+          console.warn('[Updater] Service Worker update failed:', err);
+        }
+
+        // Fallback if remote version changed without a new SW installing yet
+        const reloadedFor = sessionStorage.getItem('wa_reloaded_version');
+        if (reloadedFor !== remoteMeta.version) {
+          sessionStorage.setItem('wa_reloaded_version', remoteMeta.version);
+          await this.purgeOldCachesClient('__force_reload_purge__').catch(() => []);
+          window.location.reload();
+          return { updating: true, reloaded: true };
+        }
+        this.hideUpdateOverlay();
+      }
+
+      // Same code version: purge obsolete caches from older versions & ensure SW checks anyway
+      await this.purgeOldCachesClient(window.APP_CACHE_NAME).catch(() => []);
+      if (this.swRegistration) {
+        try {
+          await this.swRegistration.update();
+        } catch (e) { }
+      }
+
+      const status = await this.getCacheStatus();
+      if (syncMissing && (!status || !status.complete)) {
+        this.showUpdateOverlay({
+          title: manual ? 'Syncing offline files & media...' : 'Downloading app media & data...',
+          subtitle: 'Caching all icons, stickers, wallpapers & app files for offline use...',
+          completed: status ? status.cached : 0,
+          total: status ? status.total : 0
+        });
+
+        const synced = await this.sendSwMessage({
+          type: 'SYNC_CACHE',
+          forceRefresh: false,
+          reason: manual ? 'manual-sync' : 'launch-sync'
+        }, 120000);
+
+        if (synced && synced.status) {
+          this._setCacheStatus(synced.status);
+          this.showUpdateOverlay({
+            title: 'Offline cache ready',
+            subtitle: `All ${synced.status.cached}/${synced.status.total} files & media downloaded.`,
+            completed: synced.status.cached,
+            total: synced.status.total
+          });
+        }
+        setTimeout(() => this.hideUpdateOverlay(), 350);
+        if (manual && synced && synced.status) {
+          Toast.show(`Synced ${synced.status.cached}/${synced.status.total} offline files & media`);
+        }
+        return { synced: true, status: synced && synced.status };
+      }
+
+      if (manual) {
+        const countText = status ? ` — ${status.cached}/${status.total} files cached` : '';
+        Toast.show(`You are up to date (v${window.APP_VERSION}${countText})`);
+      }
+      return { upToDate: true, status };
+    })();
+
+    try {
+      return await this._updateCheckPromise;
+    } finally {
+      this._updateCheckPromise = null;
+    }
+  }
+
   initServiceWorker() {
     if ('serviceWorker' in navigator) {
-      // Seamless SW Auto-Update: Only reload if an existing controller was replaced
+      // Seamless SW Auto-Update: Only reload if an existing controller was replaced or update was triggered
       const hadController = Boolean(navigator.serviceWorker.controller);
       let refreshing = false;
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (!hadController) return;
+
+      const triggerCleanReload = (label = 'Update complete! Restarting...') => {
         if (refreshing) return;
         refreshing = true;
-        window.location.reload();
+        this.showUpdateOverlay({
+          title: 'Update ready',
+          subtitle: label,
+          completed: 1,
+          total: 1
+        });
+        setTimeout(() => window.location.reload(), 250);
+      };
+
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController && !this._pendingVersionReload) return;
+        triggerCleanReload('Applying latest version...');
       });
 
-      // Listen for activation messages from sw.js
+      // Listen for live precache progress, cache status & activation messages from sw.js
       navigator.serviceWorker.addEventListener('message', (event) => {
-        if (event.data && event.data.type === 'UPDATE_ACTIVATED') {
-          if (!hadController) return;
-          if (refreshing) return;
-          refreshing = true;
-          window.location.reload();
+        const msg = event.data;
+        if (!msg || typeof msg !== 'object') return;
+
+        if (msg.type === 'PRECACHE_PROGRESS') {
+          if (msg.status) this._setCacheStatus(msg.status);
+          const isVersionUpdate = Boolean(this._pendingVersionReload || (msg.reason === 'install' && hadController));
+          const title = isVersionUpdate
+            ? `Updating WhatsApp to v${msg.version || window.APP_VERSION}`
+            : 'Downloading app media & files...';
+          const subtitle = msg.done
+            ? 'Finishing installation...'
+            : 'Downloading updated app data, icons, stickers & wallpapers...';
+
+          this.showUpdateOverlay({
+            title,
+            subtitle,
+            completed: msg.completed || 0,
+            total: msg.total || 0
+          });
+
+          if (msg.done && !hadController && !this._pendingVersionReload) {
+            setTimeout(() => this.hideUpdateOverlay(), 350);
+          }
+          return;
+        }
+
+        if (msg.type === 'CACHE_STATUS' && msg.status) {
+          this._setCacheStatus(msg.status);
+          return;
+        }
+
+        if (msg.type === 'UPDATE_ACTIVATED') {
+          if (msg.status) this._setCacheStatus(msg.status);
+          if (!hadController && !this._pendingVersionReload) {
+            this.hideUpdateOverlay();
+            return;
+          }
+          triggerCleanReload(`Updated to v${msg.version || window.APP_VERSION}. Restarting...`);
         }
       });
 
       const registerSW = () => {
-        navigator.serviceWorker.register('./sw.js', { scope: './' })
+        navigator.serviceWorker.register('./sw.js', {
+          scope: './',
+          updateViaCache: 'none'
+        })
           .then((registration) => {
-            console.log('[SW] Registered with scope:', registration.scope);
+            this.swRegistration = registration;
+            console.log('[SW] Registered with updateViaCache:none, scope:', registration.scope);
 
-            // Silent background update check when online
-            if (navigator.onLine) {
-              registration.update().catch(() => { });
-            }
+            // Immediately verify remote version & ensure all 100% files/media are downloaded on launch
+            this.checkForUpdates({ manual: false, syncMissing: true }).catch(() => { });
 
             // Check for new version when device reconnects to internet
             window.addEventListener('online', () => {
               console.log('[SW] Reconnected to internet, checking for updates...');
-              registration.update().catch(() => { });
+              this.checkForUpdates({ manual: false, syncMissing: true }).catch(() => { });
             });
 
             // Check for updates when app tab becomes active again
             document.addEventListener('visibilitychange', () => {
               if (document.visibilityState === 'visible' && navigator.onLine) {
-                registration.update().catch(() => { });
+                this.checkForUpdates({ manual: false, syncMissing: true }).catch(() => { });
               }
             });
 
             // Periodic background check every 30 minutes while online
             setInterval(() => {
               if (navigator.onLine) {
-                registration.update().catch(() => { });
+                this.checkForUpdates({ manual: false, syncMissing: false }).catch(() => { });
               }
             }, 30 * 60 * 1000);
 
@@ -367,10 +670,19 @@ class Application {
             registration.addEventListener('updatefound', () => {
               const installingWorker = registration.installing;
               if (installingWorker) {
+                if (hadController) {
+                  this.showUpdateOverlay({
+                    title: 'Updating WhatsApp...',
+                    subtitle: 'Downloading new app version & media...',
+                    completed: 0,
+                    total: 0
+                  });
+                }
                 installingWorker.addEventListener('statechange', () => {
                   if (installingWorker.state === 'installed') {
                     if (navigator.serviceWorker.controller) {
-                      console.log('[SW] New version available, activating...');
+                      console.log('[SW] New version installed, activating...');
+                      installingWorker.postMessage({ type: 'SKIP_WAITING' });
                     }
                   }
                 });
