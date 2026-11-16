@@ -1,39 +1,65 @@
-// Lightweight Zero-Dependency HTML5 Canvas Image Crop & Zoom Modal
+// Lightweight Zero-Dependency HTML5 Canvas Image Crop, Zoom & Edit Modal
+import { Icons } from '../icons.js';
 
 /**
- * Opens an interactive Crop & Zoom modal for an image file.
- * @param {File|Blob} file - Selected image file
- * @returns {Promise<Blob|null>} - Resolves with cropped square JPEG Blob or null if cancelled
+ * Opens an interactive Crop & Zoom modal for an image file or existing Blob.
+ * @param {File|Blob|string} fileOrBlob - Selected image file, blob, or URL
+ * @param {Object} options - Custom options: allowDelete, allowChange, title
+ * @returns {Promise<Blob|'delete'|null>} - Resolves with cropped square JPEG Blob, 'delete' if removed, or null if cancelled
  */
-export function openImageCropper(file) {
+export function openImageCropper(fileOrBlob, options = {}) {
+  const allowDelete = !!options.allowDelete;
+  const allowChange = !!options.allowChange;
+  const title = options.title || 'Profile photo';
+
   return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        initModal(img, resolve);
-      };
-      img.onerror = () => resolve(null);
-      img.src = reader.result;
+    let sourceUrl = '';
+    let isCreatedUrl = false;
+
+    if (typeof fileOrBlob === 'string') {
+      sourceUrl = fileOrBlob;
+    } else if (fileOrBlob instanceof Blob) {
+      sourceUrl = URL.createObjectURL(fileOrBlob);
+      isCreatedUrl = true;
+    } else {
+      resolve(null);
+      return;
+    }
+
+    const img = new Image();
+    img.onload = () => {
+      initModal(img, resolve, { allowDelete, allowChange, title, sourceUrl, isCreatedUrl });
     };
-    reader.onerror = () => resolve(null);
-    reader.readAsDataURL(file);
+    img.onerror = () => {
+      if (isCreatedUrl) URL.revokeObjectURL(sourceUrl);
+      resolve(null);
+    };
+    img.src = sourceUrl;
   });
 }
 
-function initModal(img, resolve) {
+function initModal(initialImg, resolve, options = {}) {
+  let currentImg = initialImg;
+
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay cropper-modal-overlay active';
 
   overlay.innerHTML = `
     <div class="cropper-card" role="dialog" aria-modal="true" aria-label="Crop Image">
       <div class="cropper-header">
-        <h3 class="cropper-title">Profile photo</h3>
-        <button type="button" class="icon-btn cropper-close-btn" aria-label="Close">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-          </svg>
-        </button>
+        <h3 class="cropper-title">${options.title || 'Profile photo'}</h3>
+        <div class="cropper-header-actions" style="display:flex; align-items:center; gap:8px;">
+          ${options.allowDelete ? `
+            <button type="button" class="icon-btn cropper-delete-btn" title="Delete photo" aria-label="Delete photo">
+              ${Icons.trash('', 20)}
+            </button>
+          ` : ''}
+          <button type="button" class="icon-btn cropper-close-btn" aria-label="Close">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+            </svg>
+          </button>
+        </div>
       </div>
       
       <div class="cropper-canvas-container">
@@ -50,9 +76,20 @@ function initModal(img, resolve) {
         </svg>
       </div>
 
-      <div class="cropper-actions">
-        <button type="button" class="dialog-btn cropper-btn-cancel">Cancel</button>
-        <button type="button" class="dialog-btn cropper-btn-done">Done</button>
+      <div class="cropper-actions" style="width:100%; display:flex; align-items:center; justify-content:space-between;">
+        <div class="cropper-actions-left">
+          ${options.allowChange ? `
+            <button type="button" class="cropper-btn-change">
+              ${Icons.camera('', 18)}
+              <span>Change</span>
+            </button>
+            <input type="file" class="cropper-file-input" accept="image/*" style="display:none;" />
+          ` : ''}
+        </div>
+        <div class="cropper-actions-right" style="display:flex; align-items:center; gap:10px;">
+          <button type="button" class="dialog-btn cropper-btn-cancel">Cancel</button>
+          <button type="button" class="dialog-btn cropper-btn-done">Done</button>
+        </div>
       </div>
     </div>
   `;
@@ -63,15 +100,18 @@ function initModal(img, resolve) {
   const ctx = canvas.getContext('2d');
   const slider = overlay.querySelector('.cropper-zoom-slider');
   const closeBtn = overlay.querySelector('.cropper-close-btn');
+  const deleteBtn = overlay.querySelector('.cropper-delete-btn');
   const cancelBtn = overlay.querySelector('.cropper-btn-cancel');
   const doneBtn = overlay.querySelector('.cropper-btn-done');
+  const changeBtn = overlay.querySelector('.cropper-btn-change');
+  const fileInput = overlay.querySelector('.cropper-file-input');
 
   const canvasSize = 300;
   canvas.width = canvasSize;
   canvas.height = canvasSize;
 
-  // Initial scale to cover canvas
-  const minScale = Math.max(canvasSize / img.naturalWidth, canvasSize / img.naturalHeight);
+  // Scale and offset state
+  let minScale = Math.max(canvasSize / currentImg.naturalWidth, canvasSize / currentImg.naturalHeight);
   let scaleMultiplier = 1;
   let offsetX = 0;
   let offsetY = 0;
@@ -84,8 +124,8 @@ function initModal(img, resolve) {
     ctx.clearRect(0, 0, canvasSize, canvasSize);
 
     const currentScale = minScale * scaleMultiplier;
-    const drawWidth = img.naturalWidth * currentScale;
-    const drawHeight = img.naturalHeight * currentScale;
+    const drawWidth = currentImg.naturalWidth * currentScale;
+    const drawHeight = currentImg.naturalHeight * currentScale;
 
     // Constrain offset so image always covers the circle
     const maxOffsetX = Math.max(0, (drawWidth - canvasSize) / 2);
@@ -97,7 +137,7 @@ function initModal(img, resolve) {
     const x = (canvasSize - drawWidth) / 2 + offsetX;
     const y = (canvasSize - drawHeight) / 2 + offsetY;
 
-    ctx.drawImage(img, x, y, drawWidth, drawHeight);
+    ctx.drawImage(currentImg, x, y, drawWidth, drawHeight);
 
     // Draw circular mask overlay
     ctx.save();
@@ -156,12 +196,47 @@ function initModal(img, resolve) {
     render();
   }, { passive: false });
 
-  function cleanup(resultBlob) {
+  // "Change photo" picker listener
+  if (changeBtn && fileInput) {
+    changeBtn.addEventListener('click', () => {
+      fileInput.click();
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        const newImg = new Image();
+        newImg.onload = () => {
+          currentImg = newImg;
+          minScale = Math.max(canvasSize / currentImg.naturalWidth, canvasSize / currentImg.naturalHeight);
+          scaleMultiplier = 1;
+          slider.value = 1;
+          offsetX = 0;
+          offsetY = 0;
+          render();
+        };
+        newImg.src = URL.createObjectURL(file);
+        fileInput.value = '';
+      }
+    });
+  }
+
+  function cleanup(result) {
+    if (options.isCreatedUrl && options.sourceUrl) {
+      try { URL.revokeObjectURL(options.sourceUrl); } catch (_) {}
+    }
     overlay.classList.remove('active');
     setTimeout(() => {
       if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
     }, 200);
-    resolve(resultBlob);
+    resolve(result);
+  }
+
+  // Delete button
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', () => {
+      cleanup('delete');
+    });
   }
 
   closeBtn.addEventListener('click', () => cleanup(null));
@@ -181,12 +256,12 @@ function initModal(img, resolve) {
     const currentScale = minScale * scaleMultiplier;
     const factor = exportSize / canvasSize;
 
-    const drawWidth = img.naturalWidth * currentScale * factor;
-    const drawHeight = img.naturalHeight * currentScale * factor;
+    const drawWidth = currentImg.naturalWidth * currentScale * factor;
+    const drawHeight = currentImg.naturalHeight * currentScale * factor;
     const x = (exportSize - drawWidth) / 2 + offsetX * factor;
     const y = (exportSize - drawHeight) / 2 + offsetY * factor;
 
-    eCtx.drawImage(img, x, y, drawWidth, drawHeight);
+    eCtx.drawImage(currentImg, x, y, drawWidth, drawHeight);
 
     exportCanvas.toBlob((blob) => {
       cleanup(blob);

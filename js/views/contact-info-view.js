@@ -64,16 +64,16 @@ export class ContactInfoView {
         <div class="contact-info-scroll-body" id="contact-scroll-body">
           <!-- Hero Section (Collapsible on scroll - Task 7 Avatar fix) -->
           <div class="contact-hero-card">
-            <div class="hero-avatar-wrap" id="contact-hero-avatar">
+            <div class="hero-avatar-wrap" id="contact-hero-avatar" title="Click to view or edit profile photo">
               <div class="hero-avatar-circle">
                 ${avatarUrl ? `<img src="${avatarUrl}" class="hero-avatar-img" alt="Avatar" />` : (this.chat.isGroup ? Icons.groupAvatar('', 120) : Icons.userAvatar('', 120))}
               </div>
-              <label class="hero-avatar-edit-badge" title="Change photo">
-                <input type="file" id="hero-avatar-input" accept="image/*" style="display:none;" />
+              <div class="hero-avatar-edit-badge" title="Change photo">
                 ${Icons.camera('', 18)}
-              </label>
+              </div>
+              <input type="file" id="hero-avatar-file-fallback" accept="image/*" style="display:none;" />
             </div>
-            <h2 class="hero-contact-name" id="contact-hero-name" dir="auto">${this.chat.name}</h2>
+            <h2 class="hero-contact-name" id="contact-hero-name" dir="auto" title="Click to edit name">${this.chat.name}</h2>
             <div class="hero-contact-sub">${this.chat.isGroup ? 'Group conversation' : (this.chat.isSelfChat ? 'Message yourself' : 'Contact')}</div>
           </div>
 
@@ -121,14 +121,6 @@ export class ContactInfoView {
                 <div class="option-subtitle">Navigate to messages from a specific date</div>
               </div>
               <input type="date" id="info-date-picker" style="display:none;" />
-            </div>
-
-            <div class="option-row clickable" id="row-edit-chat-info">
-              <span class="option-icon">${Icons.userAvatar('', 20)}</span>
-              <div class="option-texts">
-                <div class="option-title">Edit Chat Info</div>
-                <div class="option-subtitle">Change contact or group name</div>
-              </div>
             </div>
 
             <div class="option-row clickable" id="row-starred-messages">
@@ -264,24 +256,130 @@ export class ContactInfoView {
       }
     }, { passive: true });
 
-    // Avatar upload with Crop & Scale Modal
-    const avatarInput = this.container.querySelector('#hero-avatar-input');
-    avatarInput.addEventListener('change', async (e) => {
-      if (e.target.files && e.target.files[0]) {
-        const file = e.target.files[0];
-        const croppedBlob = await openImageCropper(file);
-        if (croppedBlob) {
-          await db.updateChat(this.chatId, { avatarBlob: croppedBlob, updatedAt: Date.now() });
-          this.chat.avatarBlob = croppedBlob;
-          const url = URL.createObjectURL(croppedBlob);
-          const heroImg = this.container.querySelector('.hero-avatar-wrap img');
-          if (heroImg) heroImg.src = url;
-          const compactImg = this.container.querySelector('.compact-avatar-img');
-          if (compactImg) compactImg.src = url;
-          Toast.show('Avatar updated');
-        }
+    // Avatar Click & Edit Flow
+    const heroAvatarWrap = this.container.querySelector('#contact-hero-avatar');
+    const hiddenAvatarInput = this.container.querySelector('#hero-avatar-file-fallback');
+
+    const updateAvatarUI = (blob) => {
+      const heroCircle = this.container.querySelector('.hero-avatar-circle');
+      const compactAvatar = this.container.querySelector('.compact-header-avatar');
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        if (heroCircle) heroCircle.innerHTML = `<img src="${url}" class="hero-avatar-img" alt="Avatar" />`;
+        if (compactAvatar) compactAvatar.innerHTML = `<img src="${url}" class="compact-avatar-img" alt="Avatar" />`;
+      } else {
+        const defaultIcon = this.chat.isGroup ? Icons.groupAvatar('', 120) : Icons.userAvatar('', 120);
+        const compactIcon = this.chat.isGroup ? Icons.groupAvatar('', 34) : Icons.userAvatar('', 34);
+        if (heroCircle) heroCircle.innerHTML = defaultIcon;
+        if (compactAvatar) compactAvatar.innerHTML = compactIcon;
       }
-    });
+    };
+
+    if (heroAvatarWrap && hiddenAvatarInput) {
+      heroAvatarWrap.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (this.chat.avatarBlob) {
+          // Already has an avatar -> Open Cropper Modal directly with the current photo
+          const result = await openImageCropper(this.chat.avatarBlob, {
+            allowDelete: true,
+            allowChange: true,
+            title: 'Profile photo'
+          });
+
+          if (result === 'delete') {
+            await db.updateChat(this.chatId, { avatarBlob: null, updatedAt: Date.now() });
+            this.chat.avatarBlob = null;
+            updateAvatarUI(null);
+            Toast.show('Profile photo removed');
+          } else if (result instanceof Blob) {
+            await db.updateChat(this.chatId, { avatarBlob: result, updatedAt: Date.now() });
+            this.chat.avatarBlob = result;
+            updateAvatarUI(result);
+            Toast.show('Profile photo updated');
+          }
+        } else {
+          // No photo yet -> Trigger file picker directly from device
+          hiddenAvatarInput.click();
+        }
+      });
+
+      hiddenAvatarInput.addEventListener('change', async (e) => {
+        if (e.target.files && e.target.files[0]) {
+          const file = e.target.files[0];
+          const croppedBlob = await openImageCropper(file, {
+            allowDelete: false,
+            allowChange: true,
+            title: 'Profile photo'
+          });
+          if (croppedBlob instanceof Blob) {
+            await db.updateChat(this.chatId, { avatarBlob: croppedBlob, updatedAt: Date.now() });
+            this.chat.avatarBlob = croppedBlob;
+            updateAvatarUI(croppedBlob);
+            Toast.show('Profile photo updated');
+          }
+          hiddenAvatarInput.value = '';
+        }
+      });
+    }
+
+    // Inline Name Editing on Click (Saves on blur or Enter, cancels on Escape)
+    if (heroName) {
+      heroName.addEventListener('click', () => {
+        if (heroName.querySelector('input')) return;
+
+        const currentName = this.chat.name || '';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'hero-name-inline-input';
+        input.dir = 'auto';
+        input.value = currentName;
+
+        heroName.innerHTML = '';
+        heroName.appendChild(input);
+        input.focus();
+        input.select();
+
+        let isCommitted = false;
+
+        const commitChange = async () => {
+          if (isCommitted) return;
+          isCommitted = true;
+
+          const newName = input.value.trim();
+          if (newName && newName !== this.chat.name) {
+            await db.updateChat(this.chatId, { name: newName, updatedAt: Date.now() });
+            this.chat.name = newName;
+            const compactName = this.container.querySelector('.compact-header-name');
+            if (compactName) compactName.textContent = newName;
+            Toast.show('Chat name updated');
+          }
+
+          heroName.textContent = this.chat.name;
+        };
+
+        const cancelChange = () => {
+          if (isCommitted) return;
+          isCommitted = true;
+          heroName.textContent = this.chat.name;
+        };
+
+        input.addEventListener('blur', () => {
+          commitChange();
+        });
+
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            input.blur();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cancelChange();
+          }
+        });
+      });
+    }
 
     // View all media in gallery
     this.container.querySelector('#btn-view-all-media').addEventListener('click', () => {
@@ -385,11 +483,6 @@ export class ContactInfoView {
       if (e.target.value) {
         this.router.navigate(`#/chat/${this.chatId}?jumpDate=${e.target.value}`);
       }
-    });
-
-    // Edit Chat Info (Task 9)
-    this.container.querySelector('#row-edit-chat-info').addEventListener('click', () => {
-      this.openEditChatModal();
     });
 
     // Export Chat (Prompt: Without media vs Include media)
@@ -525,27 +618,6 @@ export class ContactInfoView {
         console.error('Error swapping perspective:', err);
         Toast.show('Failed to swap perspective');
       }
-    }
-  }
-
-  async openEditChatModal() {
-    const newName = await showPrompt({
-      title: 'Edit Chat Info',
-      message: 'Enter new contact or group name:',
-      defaultValue: this.chat.name,
-      placeholder: 'Name',
-      confirmText: 'Save',
-      cancelText: 'Cancel'
-    });
-    if (newName && newName.trim()) {
-      const trimmed = newName.trim();
-      await db.updateChat(this.chatId, { name: trimmed, updatedAt: Date.now() });
-      this.chat.name = trimmed;
-      const heroName = this.container.querySelector('#contact-hero-name');
-      if (heroName) heroName.textContent = trimmed;
-      const compactName = this.container.querySelector('.compact-header-name');
-      if (compactName) compactName.textContent = trimmed;
-      Toast.show('Chat name updated');
     }
   }
 

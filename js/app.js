@@ -29,8 +29,8 @@ import { assetUrl } from './config/base-path.js';
 import { backgroundTasks } from './utils/background-tasks.js';
 
 // Application Version Constant
-window.APP_VERSION = '2.3.1';
-window.APP_CACHE_NAME = 'wa-clone-v2.3.1';
+window.APP_VERSION = '2.3.2';
+window.APP_CACHE_NAME = 'wa-clone-v2.3.2';
 
 // Global deferred PWA install prompt holder
 window.deferredInstallPrompt = null;
