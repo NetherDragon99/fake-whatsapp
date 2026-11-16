@@ -18,7 +18,7 @@ export class SettingsView {
       let ownerName = 'You';
       let userAvatarBlob = null;
       let storageStats = { formattedSize: '0 B', chatCount: 0, messageCount: 0 };
-      const appVersion = window.APP_VERSION || '2.3.2';
+      const appVersion = window.APP_VERSION || '2.3.3';
       const cacheStatus = window.__waCacheStatus || null;
       const cacheSubText = cacheStatus
         ? (cacheStatus.complete
@@ -355,7 +355,7 @@ export class SettingsView {
     });
 
     // Check for Updates & Sync Offline Cache
-    const appVersion = window.APP_VERSION || '2.3.2';
+    const appVersion = window.APP_VERSION || '2.3.3';
     const updateRow = this.container.querySelector('#row-check-updates');
     const updateSubEl = this.container.querySelector('#settings-update-status-sub');
     const refreshCacheLabel = (status) => {

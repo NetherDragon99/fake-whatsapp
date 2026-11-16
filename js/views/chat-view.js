@@ -167,10 +167,6 @@ export class ChatView {
             <span class="dropdown-item-icon">${Icons.calendar('', 20)}</span>
             <span>Jump to Date</span>
           </div>
-          <div class="dropdown-item" id="menu-edit-chat-info">
-            <span class="dropdown-item-icon">${Icons.userAvatar('', 20)}</span>
-            <span>Edit Chat Info</span>
-          </div>
           <div class="dropdown-item" id="menu-chat-wallpaper">
             <span class="dropdown-item-icon">${Icons.palette('', 20)}</span>
             <span>Chat theme</span>
@@ -551,11 +547,6 @@ export class ChatView {
             dp.click();
           }
         }
-      });
-
-      this.container.querySelector('#menu-edit-chat-info')?.addEventListener('click', () => {
-        Motion.closeMenu(dropdownMenu);
-        this.openEditChatModal();
       });
 
       this.container.querySelector('#menu-chat-wallpaper')?.addEventListener('click', () => {
@@ -2441,24 +2432,6 @@ export class ChatView {
       }
     });
     this.updateMessageSelectionBar();
-  }
-
-  async openEditChatModal() {
-    const newName = await showPrompt({
-      title: 'Edit Chat Name',
-      message: 'Enter new name for this contact or group:',
-      defaultValue: this.chat.name,
-      placeholder: 'Chat name',
-      confirmText: 'Save',
-      cancelText: 'Cancel'
-    });
-    if (newName && newName.trim()) {
-      await db.updateChat(this.chatId, { name: newName.trim(), updatedAt: Date.now() });
-      this.chat.name = newName.trim();
-      const titleEl = this.container.querySelector('.chat-header-title');
-      if (titleEl) titleEl.textContent = newName.trim();
-      Toast.show('Chat name updated');
-    }
   }
 
   async clearChatHistory() {

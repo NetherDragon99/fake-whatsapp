@@ -1,4 +1,4 @@
-// Hash-based Client-Side Router with Deep State Back Stack & Android Exit Guard for WhatsApp Android Clone
+// Hash-based Client-Side Hierarchical Router with Strict Parent Navigation & Android Exit Guard for WhatsApp Android Clone
 import { backgroundTasks } from './utils/background-tasks.js';
 
 export class Router {
@@ -6,19 +6,28 @@ export class Router {
     this.routes = routes;
     this.rootContainer = rootContainer;
     this.currentViewInstance = null;
-    this.historyStack = [];
+    this.currentHash = window.location.hash || '#/chats';
+    this.historyStack = this.getAncestorChain(this.currentHash);
     this.overlayStack = [];
     this.isExitDialogVisible = false;
     this.isInternalNavigating = false;
     this._routeToken = 0;
+    this._navDirection = null;
 
     window.router = this;
 
     window.addEventListener('hashchange', () => {
       if (!this.isInternalNavigating) {
         const newHash = window.location.hash || '#/chats';
-        this.syncHistoryStack(newHash);
-        this.handleRoute();
+        if (newHash !== this.currentHash) {
+          const oldChain = this.historyStack;
+          const newChain = this.getAncestorChain(newHash);
+          const dir = newChain.length < oldChain.length ? 'back' : 'forward';
+          this.currentHash = newHash;
+          this.historyStack = newChain;
+          this.saveHistoryStack();
+          this.handleRoute(dir);
+        }
       }
     });
 
@@ -28,6 +37,176 @@ export class Router {
       }
       this.handlePopState(e);
     });
+  }
+
+  /**
+   * Deterministically returns the logical parent route for any given route hash.
+   * Enforces strict WhatsApp Android hierarchy:
+   * - '#/chats': null (root)
+   * - '#/calls', '#/settings': '#/chats'
+   * - '#/chat/:id': '#/chats'
+   * - '#/chat/:id/info': '#/chat/:id'
+   * - Sub-screens with ?chatId=...: return to the chat info screen '#/chat/:id/info'
+   * - Settings sub-screens: return to '#/settings' or their direct section parent
+   */
+  getParentRoute(rawHash) {
+    if (!rawHash) return null;
+    const cleanWithLeading = rawHash.startsWith('#') ? rawHash : ('#' + rawHash);
+    const [pathPart, queryPart] = cleanWithLeading.split('?');
+    const query = new URLSearchParams(queryPart || '');
+    const chatId = query.get('chatId');
+
+    // 1. Root Screen: '#/chats' has no parent (triggers exit confirmation)
+    if (pathPart === '#/chats' || pathPart === '#/' || pathPart === '#' || pathPart === '') {
+      return null;
+    }
+
+    // 2. Main tabs: '#/calls' and '#/settings' return to '#/chats'
+    if (pathPart === '#/calls' || pathPart === '#/settings') {
+      return '#/chats';
+    }
+
+    // 3. Contact Info: '#/chat/:id/info' returns to '#/chat/:id'
+    const contactInfoMatch = pathPart.match(/^#\/chat\/([^\/]+)\/info$/);
+    if (contactInfoMatch) {
+      const cId = contactInfoMatch[1];
+      return `#/chat/${cId}`;
+    }
+
+    // 4. Chat Screen: '#/chat/:id' ALWAYS returns to '#/chats'
+    const chatMatch = pathPart.match(/^#\/chat\/([^\/]+)$/);
+    if (chatMatch) {
+      return '#/chats';
+    }
+
+    // 5. Storage Hierarchy:
+    // '#/manage-storage/:id' returns to '#/manage-storage'
+    if (pathPart.match(/^#\/manage-storage\/[^\/]+$/)) {
+      return '#/manage-storage';
+    }
+    // '#/manage-storage' returns to '#/settings'
+    if (pathPart === '#/manage-storage') {
+      return '#/settings';
+    }
+
+    // 6. Settings Sub-pages:
+    // '#/settings/appearance/theme' and '#/settings/appearance/app-icon' return to '#/settings/appearance'
+    if (pathPart === '#/settings/appearance/theme' || pathPart === '#/settings/appearance/app-icon') {
+      return '#/settings/appearance';
+    }
+    // '#/app-icon' returns to '#/settings/appearance'
+    if (pathPart === '#/app-icon') {
+      return '#/settings/appearance';
+    }
+    // '#/settings/appearance' returns to '#/settings'
+    if (pathPart === '#/settings/appearance') {
+      return '#/settings';
+    }
+
+    // 7. Theme & Wallpaper Hierarchy:
+    // Theme Preview:
+    if (pathPart === '#/theme-preview') {
+      const wp = query.get('wallpaper') || '';
+      if (wp.startsWith('color:')) {
+        return `#/solid-colours-picker${chatId ? `?chatId=${encodeURIComponent(chatId)}` : ''}`;
+      }
+      const cat = query.get('category');
+      if (cat) {
+        return `#/wallpaper-section?category=${encodeURIComponent(cat)}${chatId ? `&chatId=${encodeURIComponent(chatId)}` : ''}`;
+      }
+      if (chatId) {
+        return `#/wallpaper-picker?chatId=${encodeURIComponent(chatId)}`;
+      }
+      return '#/chat-theme';
+    }
+
+    // Solid Colours Picker:
+    if (pathPart === '#/solid-colours-picker') {
+      return `#/wallpaper-picker${chatId ? `?chatId=${encodeURIComponent(chatId)}` : ''}`;
+    }
+
+    // Wallpaper Section:
+    if (pathPart === '#/wallpaper-section') {
+      return `#/wallpaper-picker${chatId ? `?chatId=${encodeURIComponent(chatId)}` : ''}`;
+    }
+
+    // Wallpaper Picker:
+    if (pathPart === '#/wallpaper-picker') {
+      if (chatId) {
+        return `#/chat/${encodeURIComponent(chatId)}/info`;
+      }
+      return '#/chat-theme';
+    }
+
+    // Chat Bubble Picker:
+    if (pathPart === '#/chat-bubble-picker') {
+      if (chatId) {
+        return `#/chat-theme?chatId=${encodeURIComponent(chatId)}`;
+      }
+      return '#/chat-theme';
+    }
+
+    // Chat Theme View:
+    if (pathPart === '#/chat-theme') {
+      if (chatId) {
+        return `#/chat/${encodeURIComponent(chatId)}`;
+      }
+      return '#/settings/appearance';
+    }
+
+    // 8. Shared Screens: Gallery, Starred, New-List:
+    // Gallery:
+    if (pathPart === '#/gallery') {
+      if (chatId) {
+        return `#/chat/${encodeURIComponent(chatId)}/info`;
+      }
+      return '#/chats';
+    }
+
+    // Starred Messages:
+    if (pathPart === '#/starred') {
+      if (chatId) {
+        return `#/chat/${encodeURIComponent(chatId)}/info`;
+      }
+      return '#/chats';
+    }
+
+    // New List:
+    if (pathPart === '#/new-list') {
+      if (chatId) {
+        return `#/chat/${encodeURIComponent(chatId)}/info`;
+      }
+      return '#/chats';
+    }
+
+    // Default fallback:
+    return '#/chats';
+  }
+
+  /**
+   * Generates a strict array of ancestor routes from '#/chats' up to target hash.
+   * Guarantees no stale or disconnected routes can ever exist in historyStack.
+   */
+  getAncestorChain(hash) {
+    if (!hash || hash === '#/chats' || hash === '#/' || hash === '#' || hash === '') {
+      return ['#/chats'];
+    }
+    const chain = [hash];
+    let curr = hash;
+    const visited = new Set([hash]);
+    while (curr) {
+      const parent = this.getParentRoute(curr);
+      if (!parent || parent === curr || visited.has(parent)) {
+        break;
+      }
+      chain.unshift(parent);
+      visited.add(parent);
+      curr = parent;
+    }
+    if (chain[0] !== '#/chats') {
+      chain.unshift('#/chats');
+    }
+    return chain;
   }
 
   saveHistoryStack() {
@@ -52,10 +231,10 @@ export class Router {
   setupRootGuard() {
     try {
       const currentHash = (window.location.hash || '#/chats').split('?')[0];
-      if (currentHash === '#/chats') {
+      if (currentHash === '#/chats' || currentHash === '#/' || currentHash === '#' || currentHash === '') {
         if (!window.history.state || window.history.state.guard !== 'active') {
-          window.history.replaceState({ guard: 'root' }, '');
-          window.history.pushState({ guard: 'active' }, '');
+          window.history.replaceState({ guard: 'root', hash: '#/chats' }, '');
+          window.history.pushState({ guard: 'active', hash: '#/chats' }, '');
         }
       }
     } catch (e) {}
@@ -64,35 +243,8 @@ export class Router {
   init() {
     const rawHash = window.location.hash;
     const currentHash = rawHash || '#/chats';
-
-    const savedStack = this.loadHistoryStack();
-    if (savedStack && savedStack.length > 0) {
-      const lastIndex = savedStack.lastIndexOf(currentHash);
-      if (lastIndex !== -1) {
-        this.historyStack = savedStack.slice(0, lastIndex + 1);
-      } else {
-        if (savedStack[0] === '#/chats') {
-          this.historyStack = [...savedStack, currentHash];
-        } else {
-          this.historyStack = ['#/chats', currentHash];
-        }
-      }
-    } else {
-      if (currentHash === '#/chats') {
-        this.historyStack = ['#/chats'];
-      } else if (currentHash.startsWith('#/chat/') && currentHash.endsWith('/info')) {
-        const baseChat = currentHash.replace('/info', '');
-        this.historyStack = ['#/chats', baseChat, currentHash];
-      } else {
-        this.historyStack = ['#/chats', currentHash];
-      }
-    }
-
-    // Guarantee that '#/chats' is always the absolute foundation of the history stack
-    if (this.historyStack.length === 0 || this.historyStack[0] !== '#/chats') {
-      this.historyStack.unshift('#/chats');
-    }
-
+    this.currentHash = currentHash;
+    this.historyStack = this.getAncestorChain(currentHash);
     this.saveHistoryStack();
     this.setupRootGuard();
 
@@ -107,93 +259,54 @@ export class Router {
     }
   }
 
-  async navigate(hash) {
+  async navigate(hash, options = {}) {
     if (!hash) return;
-    const cleanHash = hash.split('?')[0];
-    const current = this.historyStack[this.historyStack.length - 1];
+    const previousHash = this.currentHash || window.location.hash || '#/chats';
+    if (previousHash === hash) return;
 
-    if (current !== hash) {
-      if (cleanHash === '#/chats') {
-        this.historyStack = ['#/chats'];
-      } else if (cleanHash === '#/calls' || cleanHash === '#/settings') {
-        this.historyStack = ['#/chats', hash];
-      } else {
-        if (this.historyStack.length === 0 || this.historyStack[0] !== '#/chats') {
-          this.historyStack.unshift('#/chats');
-        }
-        if (this.historyStack[this.historyStack.length - 1] !== hash) {
-          this.historyStack.push(hash);
-        }
-      }
-      this.saveHistoryStack();
-    }
+    const currentChain = this.getAncestorChain(previousHash);
+    const targetChain = this.getAncestorChain(hash);
+    const direction = options.direction || (targetChain.length < currentChain.length ? 'back' : 'forward');
+
+    this._navDirection = direction;
+    this.historyStack = targetChain;
+    this.saveHistoryStack();
+    this.currentHash = hash;
 
     this.isInternalNavigating = true;
     try {
-      window.location.hash = hash;
-      await this.handleRoute();
+      if (options.replace) {
+        window.history.replaceState({ guard: 'active', hash }, '', hash);
+      } else {
+        window.history.pushState({ guard: 'active', hash }, '', hash);
+      }
+      await this.handleRoute(direction);
     } finally {
       setTimeout(() => {
         this.isInternalNavigating = false;
-      }, 50);
+        this._navDirection = null;
+      }, 60);
     }
   }
 
   syncTab(hash) {
     if (!hash) return;
     const cleanHash = hash.split('?')[0];
-    const current = (window.location.hash || '#/chats').split('?')[0];
-    if (current === cleanHash) return;
+    const previous = (this.currentHash || window.location.hash || '#/chats').split('?')[0];
+    if (previous === cleanHash) return;
 
-    if (cleanHash === '#/chats') {
-      this.historyStack = ['#/chats'];
-    } else if (cleanHash === '#/calls' || cleanHash === '#/settings') {
-      this.historyStack = ['#/chats', cleanHash];
-    }
+    this.historyStack = this.getAncestorChain(cleanHash);
     this.saveHistoryStack();
+    this.currentHash = cleanHash;
 
     this.isInternalNavigating = true;
     try {
-      window.location.hash = cleanHash;
+      window.history.replaceState({ guard: 'active', hash: cleanHash }, '', cleanHash);
     } finally {
       setTimeout(() => {
         this.isInternalNavigating = false;
       }, 50);
     }
-  }
-
-  syncHistoryStack(newHash) {
-    if (!newHash) newHash = '#/chats';
-    const cleanHash = newHash.split('?')[0];
-
-    if (cleanHash === '#/chats') {
-      this.historyStack = ['#/chats'];
-      this.saveHistoryStack();
-      return;
-    }
-
-    // If newHash is the previous item in stack (user navigated back in browser)
-    if (this.historyStack.length > 1 && this.historyStack[this.historyStack.length - 2] === newHash) {
-      this.historyStack.pop();
-      this.saveHistoryStack();
-      return;
-    }
-
-    // If already at top of stack, do nothing
-    if (this.historyStack[this.historyStack.length - 1] === newHash) {
-      return;
-    }
-
-    // Otherwise, push newHash ensuring root foundation
-    if (cleanHash === '#/calls' || cleanHash === '#/settings') {
-      this.historyStack = ['#/chats', newHash];
-    } else {
-      if (this.historyStack.length === 0 || this.historyStack[0] !== '#/chats') {
-        this.historyStack.unshift('#/chats');
-      }
-      this.historyStack.push(newHash);
-    }
-    this.saveHistoryStack();
   }
 
   pushOverlay(id, closeFn) {
@@ -326,8 +439,11 @@ export class Router {
   }
 
   handlePopState(e) {
+    if (this.isInternalNavigating) return;
+
     // 1. If an overlay / modal / drawer is open, dismiss it and stay on the current view
     if (this.overlayStack.length > 0 || this.hasActiveDomOverlay()) {
+      window.history.pushState({ guard: 'active', hash: this.currentHash }, '', this.currentHash);
       this.handleBack(true);
       return;
     }
@@ -345,22 +461,40 @@ export class Router {
       return;
     }
 
-    const currentHash = (window.location.hash || '#/chats').split('?')[0];
+    const fromHash = this.currentHash || window.location.hash || '#/chats';
+    const cleanFromHash = fromHash.split('?')[0];
 
-    // 3. Check if user was already at root '#/chats' when back was pressed
-    if (
-      currentHash === '#/chats' &&
-      this.historyStack.length === 1 &&
-      this.historyStack[0] === '#/chats'
-    ) {
-      // User pressed back at the root home chats screen -> Prompt with exit confirmation dialog
+    // 3. User pressed back at the root '#/chats' screen -> Prompt exit dialog
+    if (cleanFromHash === '#/chats' || cleanFromHash === '#/' || cleanFromHash === '#' || cleanFromHash === '') {
+      this.setupRootGuard();
       this.showExitDialog();
       return;
     }
 
-    // 4. Normal route popstate: synchronize stack and render view
-    this.syncHistoryStack(window.location.hash || '#/chats');
-    this.handleRoute();
+    // 4. In all other screens: calculate exact hierarchical parent!
+    const targetParent = this.getParentRoute(fromHash);
+    if (!targetParent || targetParent === fromHash) {
+      this.setupRootGuard();
+      this.showExitDialog();
+      return;
+    }
+
+    // 5. Navigate to parent cleanly with back animation
+    this._navDirection = 'back';
+    this.historyStack = this.getAncestorChain(targetParent);
+    this.saveHistoryStack();
+    this.currentHash = targetParent;
+
+    this.isInternalNavigating = true;
+    try {
+      window.history.replaceState({ guard: 'active', hash: targetParent }, '', targetParent);
+      this.handleRoute('back');
+    } finally {
+      setTimeout(() => {
+        this.isInternalNavigating = false;
+        this._navDirection = null;
+      }, 60);
+    }
   }
 
   async handleBack(fromPopState = false) {
@@ -393,62 +527,38 @@ export class Router {
       return true;
     }
 
-    const currentHash = (window.location.hash || '#/chats').split('?')[0];
-    const fullCurrentHash = window.location.hash || '#/chats';
+    const current = this.currentHash || window.location.hash || '#/chats';
+    const cleanCurrent = current.split('?')[0];
 
-    // 4. Subpage / page navigation back
-    if (this.historyStack.length > 1) {
-      this.historyStack.pop();
-      let targetHash = this.historyStack[this.historyStack.length - 1];
-
-      // Avoid looping if targetHash matches the current active hash
-      while (
-        this.historyStack.length > 1 &&
-        (targetHash === fullCurrentHash || targetHash.split('?')[0] === currentHash)
-      ) {
-        this.historyStack.pop();
-        targetHash = this.historyStack[this.historyStack.length - 1];
-      }
-
-      // If targetHash is still same as current or invalid, fallback to '#/chats'
-      if (!targetHash || targetHash === fullCurrentHash || targetHash.split('?')[0] === currentHash) {
-        targetHash = '#/chats';
-        this.historyStack = ['#/chats'];
-      }
-
-      this.saveHistoryStack();
-      this.isInternalNavigating = true;
-      try {
-        window.location.hash = targetHash;
-        await this.handleRoute();
-      } finally {
-        setTimeout(() => {
-          this.isInternalNavigating = false;
-        }, 50);
-      }
+    // 4. Root check: If already at '#/chats', show exit dialog
+    if (cleanCurrent === '#/chats' || cleanCurrent === '#/' || cleanCurrent === '#' || cleanCurrent === '') {
+      this.showExitDialog();
       return true;
     }
 
-    // 5. CRITICAL BACKUP NAVIGATION:
-    // If anywhere other than '#/chats' (e.g. chat, info, calls, settings, etc.)
-    // and history was missing, depleted or corrupted, the backup navigation MUST ALWAYS be '#/chats'!
-    if (currentHash !== '#/chats') {
-      this.historyStack = ['#/chats'];
-      this.saveHistoryStack();
-      this.isInternalNavigating = true;
-      try {
-        window.location.hash = '#/chats';
-        await this.handleRoute();
-      } finally {
-        setTimeout(() => {
-          this.isInternalNavigating = false;
-        }, 50);
-      }
+    // 5. Hierarchical Parent resolution
+    const targetParent = this.getParentRoute(current);
+    if (!targetParent || targetParent === current) {
+      this.showExitDialog();
       return true;
     }
 
-    // 6. ONLY at root '#/chats' screen: Prompt with exit dialog
-    this.showExitDialog();
+    // 6. Navigate to parent with back animation
+    this._navDirection = 'back';
+    this.historyStack = this.getAncestorChain(targetParent);
+    this.saveHistoryStack();
+    this.currentHash = targetParent;
+
+    this.isInternalNavigating = true;
+    try {
+      window.history.replaceState({ guard: 'active', hash: targetParent }, '', targetParent);
+      await this.handleRoute('back');
+    } finally {
+      setTimeout(() => {
+        this.isInternalNavigating = false;
+        this._navDirection = null;
+      }, 60);
+    }
     return true;
   }
 
@@ -512,8 +622,10 @@ export class Router {
     }, 100);
   }
 
-  async handleRoute() {
-    const fullHash = window.location.hash.slice(1) || '/chats';
+  async handleRoute(forcedDirection = null) {
+    const rawHash = window.location.hash || '#/chats';
+    this.currentHash = rawHash;
+    const fullHash = rawHash.slice(1) || '/chats';
     const [pathPart, queryPart] = fullHash.split('?');
 
     // Parse query params
@@ -569,14 +681,19 @@ export class Router {
     this.finalizeLayers();
     const token = ++this._routeToken;
 
-    // Work out slide direction from the history stack
+    // Work out slide direction
     const stackLen = this.historyStack.length;
     const topHash = this.historyStack[stackLen - 1] || '';
-    let direction = 'none';
-    if (this._lastStackLen !== undefined) {
-      if (stackLen > this._lastStackLen) direction = 'forward';
-      else if (stackLen < this._lastStackLen) direction = 'back';
-      else if (topHash !== this._lastTopHash) direction = 'forward';
+    let direction = forcedDirection || this._navDirection;
+    if (!direction || direction === 'none') {
+      if (this._lastStackLen !== undefined) {
+        if (stackLen > this._lastStackLen) direction = 'forward';
+        else if (stackLen < this._lastStackLen) direction = 'back';
+        else if (topHash !== this._lastTopHash) direction = 'forward';
+        else direction = 'none';
+      } else {
+        direction = 'none';
+      }
     }
     this._lastStackLen = stackLen;
     this._lastTopHash = topHash;
