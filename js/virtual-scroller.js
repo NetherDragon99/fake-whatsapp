@@ -4,6 +4,7 @@ import { db } from './db.js';
 import { audioManager } from './audio-player.js';
 import { mediaLightbox } from './components/lightbox.js';
 import { Toast } from './components/toast.js';
+import { backgroundTasks } from './utils/background-tasks.js';
 
 export class VirtualMessageScroller {
   constructor(container, options = {}) {
@@ -21,6 +22,10 @@ export class VirtualMessageScroller {
     this.onMessageLongPress = null;    // (msg, row, e) => void
     this.onMessageTapInSelection = null; // (msg, row) => void
     this.selectionMode = false;
+
+    // Background task media listener
+    this._onMediaReadyBound = this.handleMediaReady.bind(this);
+    backgroundTasks.on('media-ready', this._onMediaReadyBound);
 
     this.CHUNK_SIZE = 50;
     this.MAX_DOM_MESSAGES = 250;
@@ -858,7 +863,12 @@ export class VirtualMessageScroller {
           openStacked();
         });
       } else {
-        thumbWrap.innerHTML = `<div class="media-placeholder">${Icons.gallery('', 24)}</div>`;
+        thumbWrap.innerHTML = `
+          <div class="media-placeholder wa-media-loading-container" style="min-height: 80px; width: 100%; height: 100%; border-radius: 0;">
+            <div class="wa-media-loading-badge" style="width: 36px; height: 36px;">
+              ${Icons.spinner('thumb-spinner', 18)}
+            </div>
+          </div>`;
         thumbWrap.addEventListener('click', (e) => {
           e.stopPropagation();
           openStacked();
@@ -1223,7 +1233,15 @@ export class VirtualMessageScroller {
         }
         wrap.appendChild(img);
       } else {
-        wrap.innerHTML = `<div class="media-placeholder">${type === 'sticker' ? Icons.emoji('', 32) : Icons.gallery('', 32)}<span>${msg.mediaName || (type === 'sticker' ? 'Sticker' : 'Image')}</span></div>`;
+        wrap.className = 'media-image-wrap wa-media-loading-container';
+        wrap.dataset.pendingMediaId = String(msg.mediaId || '');
+        wrap.dataset.msgId = String(msg.id);
+        wrap.innerHTML = `
+          <div class="wa-media-loading-badge" title="Loading media in background...">
+            ${Icons.spinner('media-spinner', 24)}
+          </div>
+          <div class="wa-media-loading-label">${msg.mediaName || (type === 'sticker' ? 'Sticker' : 'Photo')}</div>
+        `;
       }
       return wrap;
     }
@@ -1244,7 +1262,15 @@ export class VirtualMessageScroller {
         playOverlay.addEventListener('click', () => this.onMediaClick(mediaItem, msg));
         wrap.appendChild(playOverlay);
       } else {
-        wrap.innerHTML = `<div class="media-placeholder">${Icons.callVideo('', 32)}<span>${msg.mediaName || 'Video'}</span></div>`;
+        wrap.className = 'media-video-wrap wa-media-loading-container';
+        wrap.dataset.pendingMediaId = String(msg.mediaId || '');
+        wrap.dataset.msgId = String(msg.id);
+        wrap.innerHTML = `
+          <div class="wa-media-loading-badge" title="Loading video in background...">
+            ${Icons.spinner('media-spinner', 24)}
+          </div>
+          <div class="wa-media-loading-label">${msg.mediaName || 'Video'}</div>
+        `;
       }
       return wrap;
     }
@@ -1262,8 +1288,19 @@ export class VirtualMessageScroller {
         return audioManager.createVoiceNoteCard(item, mediaUrl);
       } else {
         const audioHolder = document.createElement('div');
-        audioHolder.className = 'media-placeholder';
-        audioHolder.innerHTML = `${Icons.mic('', 24)}<span>${msg.mediaName || 'Voice note'}</span>`;
+        audioHolder.className = 'media-placeholder wa-audio-loading-holder';
+        audioHolder.dataset.pendingMediaId = String(msg.mediaId || '');
+        audioHolder.dataset.msgId = String(msg.id);
+        audioHolder.style.cssText = 'display:flex; align-items:center; padding:10px 14px; gap:12px; border-radius:8px; background:rgba(0,0,0,0.18); min-width:180px;';
+        audioHolder.innerHTML = `
+          <div class="wa-media-loading-badge" style="width: 38px; height: 38px; min-width: 38px;" title="Processing voice note...">
+            ${Icons.spinner('media-spinner', 20)}
+          </div>
+          <div style="display:flex; flex-direction:column; overflow:hidden;">
+            <span style="font-size:13px; font-weight:500;">Voice note</span>
+            <span style="font-size:11px; opacity:0.75;">${msg.duration ? Math.round(msg.duration) + 's • ' : ''}Loading audio...</span>
+          </div>
+        `;
         return audioHolder;
       }
     }
@@ -1280,8 +1317,14 @@ export class VirtualMessageScroller {
       if (mediaItem && mediaItem.thumbnailBlob) {
         const thumbUrl = URL.createObjectURL(mediaItem.thumbnailBlob);
         thumbBox.innerHTML = `<img src="${thumbUrl}" alt="PDF Page 1" class="pdf-page-thumb" />`;
-      } else {
+      } else if (mediaUrl) {
         thumbBox.innerHTML = `<div class="pdf-icon-placeholder">${Icons.pdfIcon('', 44)}</div>`;
+      } else {
+        thumbBox.innerHTML = `
+          <div class="wa-media-loading-badge" style="width: 38px; height: 38px;">
+            ${Icons.spinner('media-spinner', 20)}
+          </div>
+        `;
       }
       card.appendChild(thumbBox);
 
@@ -1294,26 +1337,28 @@ export class VirtualMessageScroller {
       footer.innerHTML = `
         <div class="pdf-meta-left">
           <div class="pdf-filename" title="${msg.mediaName}">${msg.mediaName || 'Document.pdf'}</div>
-          <div class="pdf-submeta">${pageCountStr}${sizeStr} • PDF</div>
+          <div class="pdf-submeta">${mediaUrl ? `${pageCountStr}${sizeStr} • PDF` : 'Loading document...'}</div>
         </div>
         <button type="button" class="pdf-download-btn" title="Download Document">
-          ${Icons.download('', 18)}
+          ${mediaUrl ? Icons.download('', 18) : Icons.spinner('', 16)}
         </button>
       `;
 
-      footer.querySelector('.pdf-download-btn').addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (mediaUrl) {
+      if (mediaUrl) {
+        footer.querySelector('.pdf-download-btn').addEventListener('click', (e) => {
+          e.stopPropagation();
           const a = document.createElement('a');
           a.href = mediaUrl;
           a.download = msg.mediaName || 'document.pdf';
           a.click();
-        }
-      });
-
-      card.addEventListener('click', () => {
-        if (mediaUrl) window.open(mediaUrl, '_blank');
-      });
+        });
+        card.addEventListener('click', () => {
+          window.open(mediaUrl, '_blank');
+        });
+      } else {
+        card.dataset.pendingMediaId = String(msg.mediaId || '');
+        card.dataset.msgId = String(msg.id);
+      }
 
       return card;
     }
@@ -1323,12 +1368,12 @@ export class VirtualMessageScroller {
     docCard.className = 'generic-doc-card';
     const sizeStr = mediaItem ? db.formatBytes(mediaItem.size) : '';
     docCard.innerHTML = `
-      <div class="doc-icon-wrap">${Icons.documentIcon('', 24)}</div>
+      <div class="doc-icon-wrap">${mediaUrl ? Icons.documentIcon('', 24) : Icons.spinner('doc-spinner', 20)}</div>
       <div class="doc-meta">
         <div class="doc-filename">${msg.mediaName || 'Document'}</div>
-        <div class="doc-filesize">${sizeStr}</div>
+        <div class="doc-filesize">${mediaUrl ? sizeStr : 'Loading...'}</div>
       </div>
-      <button type="button" class="doc-download-btn">${Icons.download('', 18)}</button>
+      <button type="button" class="doc-download-btn">${mediaUrl ? Icons.download('', 18) : ''}</button>
     `;
 
     if (mediaUrl) {
@@ -1339,9 +1384,70 @@ export class VirtualMessageScroller {
         a.download = msg.mediaName || 'document';
         a.click();
       });
+    } else {
+      docCard.dataset.pendingMediaId = String(msg.mediaId || '');
+      docCard.dataset.msgId = String(msg.id);
     }
 
     return docCard;
+  }
+
+  async handleMediaReady(data) {
+    if (!data || data.chatId !== this.chatId) return;
+
+    if (data.mediaRecord && data.mediaRecord.blob) {
+      const url = URL.createObjectURL(data.mediaRecord.blob);
+      this.mediaCache.set(data.mediaId, url);
+    }
+
+    // 1. In-place update for single media cards
+    const pendingCards = this.container.querySelectorAll(`[data-pending-media-id="${data.mediaId}"]`);
+    for (const pendingEl of pendingCards) {
+      const msgId = pendingEl.dataset.msgId;
+      const msg = this.allMessages.find((m) => String(m.id) === String(msgId));
+      if (msg) {
+        const newCard = await this.renderMediaCard(msg);
+        newCard.classList.add('wa-media-loaded-fade');
+        pendingEl.replaceWith(newCard);
+      }
+    }
+
+    // 2. In-place update for album thumbnail slots
+    const pendingThumbs = this.container.querySelectorAll(`.album-thumb-wrap[data-media-id="${data.mediaId}"]`);
+    for (const thumb of pendingThumbs) {
+      const msgId = thumb.dataset.msgId;
+      const subMsg = this.allMessages.find((m) => String(m.id) === String(msgId));
+      if (subMsg) {
+        const mediaUrl = this.mediaCache.get(data.mediaId);
+        if (mediaUrl) {
+          const isVideo = subMsg.mediaType === 'video' || (subMsg.mediaName && /\.(mp4|mov|webm)$/i.test(subMsg.mediaName));
+          thumb.innerHTML = '';
+          const img = document.createElement('img');
+          img.className = 'album-thumb-img wa-media-loaded-fade';
+          img.src = mediaUrl;
+          img.alt = subMsg.mediaName || 'Photo';
+          img.loading = 'lazy';
+          thumb.appendChild(img);
+          if (isVideo) {
+            const playBadge = document.createElement('div');
+            playBadge.className = 'album-video-play-badge';
+            playBadge.innerHTML = `<svg viewBox="0 0 24 24" width="22" height="22" fill="#ffffff"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+            thumb.appendChild(playBadge);
+          } else {
+            const hdBadge = document.createElement('div');
+            hdBadge.className = 'album-thumb-hd-badge';
+            hdBadge.textContent = 'HD';
+            thumb.appendChild(hdBadge);
+          }
+        }
+      }
+    }
+  }
+
+  destroy() {
+    if (this._onMediaReadyBound) {
+      backgroundTasks.off('media-ready', this._onMediaReadyBound);
+    }
   }
 
   async scrollToBottom(smooth = true) {
@@ -1821,6 +1927,7 @@ export class VirtualMessageScroller {
   }
 
   cleanup() {
+    this.destroy();
     clearTimeout(this.autoScrollTimer);
     this.cancelPendingLongPress();
     audioManager.stopCurrent();

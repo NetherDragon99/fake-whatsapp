@@ -26,6 +26,7 @@ import { Toast } from './components/toast.js';
 import { applyAppAccent, applyOutgoingBubbleColor } from './config/palette.js';
 import { applyAppIcon } from './config/app-icons.js';
 import { assetUrl } from './config/base-path.js';
+import { backgroundTasks } from './utils/background-tasks.js';
 
 // Application Version Constant
 window.APP_VERSION = '2.3.1';
@@ -213,7 +214,7 @@ class Application {
       const chatText = new TextDecoder('utf-8').decode(unzipped[chatFileKey]);
       const parseResult = parser.parseChatLog(chatText);
 
-      const mediaBatch = [];
+      const extractedMediaFiles = new Map();
       const mediaIdMap = new Map();
       const msgTimestampMap = new Map();
 
@@ -230,26 +231,11 @@ class Application {
         const mediaId = 'media_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
         mediaIdMap.set(cleanName, mediaId);
 
-        const type = parser.categorizeMedia(cleanName);
-        let mimeType = 'application/octet-stream';
-        if (type === 'sticker') mimeType = 'image/webp';
-        else if (type === 'image') mimeType = 'image/jpeg';
-        else if (type === 'video') mimeType = 'video/mp4';
-        else if (type === 'pdf') mimeType = 'application/pdf';
-        else if (type === 'audio') mimeType = 'audio/ogg';
-
-        mediaBatch.push({
-          id: mediaId,
-          chatId,
-          filename: cleanName,
-          type,
-          mimeType,
-          blob: new Blob([fileData], { type: mimeType }),
-          thumbnailBlob: null,
-          size: fileData.byteLength,
-          duration: 0,
-          pageCount: 0,
-          timestamp: msgTimestampMap.get(cleanName) || Date.now()
+        extractedMediaFiles.set(cleanName, {
+          originalName: filename,
+          cleanName,
+          data: fileData,
+          size: fileData.byteLength
         });
       }
 
@@ -286,9 +272,8 @@ class Application {
         contactName: chatName
       }));
 
-      await db.saveMediaBatch(mediaBatch);
+      // Instantly save messages and update chat
       await db.saveMessages(messages);
-      await db.saveCallsBatch(calls);
 
       const lastMsg = messages[messages.length - 1];
       if (existingChat) {
@@ -303,12 +288,25 @@ class Application {
         });
       }
 
-      Toast.show('Demo data loaded successfully!');
+      // Re-render chat immediately with placeholders/spinners so user doesn't wait!
+      Toast.show('Demo messages loaded!');
       if (this.router.currentViewInstance && typeof this.router.currentViewInstance.render === 'function') {
         const appRootEl = document.getElementById('app-root');
         const layers = appRootEl.querySelectorAll(':scope > .page-layer');
         const root = layers.length ? layers[layers.length - 1] : appRootEl;
         await this.router.currentViewInstance.render(root, { id: chatId });
+      }
+
+      // Offload media decoding, thumbnails and calls to background manager
+      if (extractedMediaFiles.size > 0 || calls.length > 0) {
+        backgroundTasks.enqueueChatMedia({
+          chatId,
+          chatName,
+          extractedMediaFiles,
+          mediaIdMap,
+          msgTimestampByMediaName: msgTimestampMap,
+          calls
+        });
       }
     } catch (err) {
       console.error('Failed loading demo data for chat:', err);

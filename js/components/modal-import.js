@@ -7,6 +7,7 @@ import { showAlert } from './custom-dialog.js';
 import { openImageCropper } from './image-cropper.js';
 import { assetUrl } from '../config/base-path.js';
 import { DrawerResizer } from '../utils/drawer-resizer.js';
+import { backgroundTasks } from '../utils/background-tasks.js';
 
 export class ImportModal {
   constructor(options = {}) {
@@ -695,12 +696,10 @@ export class ImportModal {
     }
 
     this.showStep('step-progress');
-    this.updateProgress(75, 'Processing media & PDF previews...');
+    this.updateProgress(80, 'Setting up conversation...');
 
     const chatId = (overlapChoice === 'merge' && this.existingChatId) ? this.existingChatId : 'chat_' + Date.now();
-    const mediaBatch = [];
     const mediaIdMap = new Map(); // cleanName -> mediaId
-    const mediaDurationMap = new Map(); // cleanName -> duration seconds
 
     // Index message timestamps by normalized mediaName for authentic media dating
     const msgTimestampByMediaName = new Map();
@@ -715,97 +714,13 @@ export class ImportModal {
       }
     }
 
-    // Process media files and PDF thumbnails in advance
-    let processedCount = 0;
-    const totalMedia = this.extractedMediaFiles.size;
-
-    for (const [cleanName, fileItem] of this.extractedMediaFiles.entries()) {
+    // Pre-allocate mediaIds instantly
+    for (const cleanName of this.extractedMediaFiles.keys()) {
       const mediaId = 'media_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
       mediaIdMap.set(cleanName, mediaId);
-      const itemTimestamp = msgTimestampByMediaName.get(cleanName) || Date.now();
-
-      const type = this.parser.categorizeMedia(cleanName);
-      let mimeType = 'application/octet-stream';
-      if (type === 'sticker') mimeType = 'image/webp';
-      if (type === 'image') mimeType = 'image/jpeg';
-      if (type === 'video') mimeType = 'video/mp4';
-      if (type === 'pdf') mimeType = 'application/pdf';
-      if (type === 'audio') {
-        if (/\.(opus|ogg)$/i.test(cleanName)) mimeType = 'audio/ogg; codecs=opus';
-        else if (/\.(m4a|aac)$/i.test(cleanName)) mimeType = 'audio/mp4';
-        else if (/\.mp3$/i.test(cleanName)) mimeType = 'audio/mpeg';
-        else if (/\.wav$/i.test(cleanName)) mimeType = 'audio/wav';
-        else if (/\.webm$/i.test(cleanName)) mimeType = 'audio/webm';
-        else mimeType = 'audio/ogg';
-      }
-
-      let audioDuration = 0;
-      if (type === 'audio') {
-        try {
-          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-          if (AudioContextClass) {
-            const ctx = new AudioContextClass();
-            const decoded = await ctx.decodeAudioData(fileItem.data.buffer.slice(0));
-            if (decoded && isFinite(decoded.duration)) {
-              audioDuration = Math.max(1, Math.round(decoded.duration));
-            }
-            try { ctx.close(); } catch (e) { }
-          }
-        } catch (decErr) {
-          audioDuration = 0;
-        }
-        mediaDurationMap.set(cleanName, audioDuration);
-      }
-
-      const blob = new Blob([fileItem.data], { type: mimeType });
-      let thumbnailBlob = null;
-      let pageCount = 0;
-
-      // Generate PDF Thumbnail Page 1 if pdf.js is loaded
-      if (type === 'pdf' && window.pdfjsLib) {
-        try {
-          window.pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.js';
-          const loadingTask = window.pdfjsLib.getDocument({ data: fileItem.data });
-          const pdfDoc = await loadingTask.promise;
-          pageCount = pdfDoc.numPages;
-
-          const page = await pdfDoc.getPage(1);
-          const viewport = page.getViewport({ scale: 0.5 });
-          const canvas = document.createElement('canvas');
-          const context = canvas.getContext('2d');
-          canvas.height = viewport.height;
-          canvas.width = viewport.width;
-
-          await page.render({ canvasContext: context, viewport: viewport }).promise;
-          thumbnailBlob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.8));
-        } catch (pdfErr) {
-          console.warn('[PDF.js fallback] Failed to render thumbnail for:', cleanName, pdfErr);
-          thumbnailBlob = null;
-        }
-      }
-
-      mediaBatch.push({
-        id: mediaId,
-        chatId,
-        filename: cleanName,
-        type,
-        mimeType,
-        blob,
-        thumbnailBlob,
-        size: fileItem.size,
-        duration: audioDuration,
-        pageCount,
-        timestamp: itemTimestamp
-      });
-
-      processedCount++;
-      if (totalMedia > 0) {
-        const pct = 75 + Math.round((processedCount / totalMedia) * 15);
-        this.updateProgress(pct, `Processing media (${processedCount}/${totalMedia})...`);
-      }
     }
 
-    this.updateProgress(90, 'Writing messages to database...');
+    this.updateProgress(90, 'Writing messages...');
 
     // Assign perspective and link media
     const messages = this.rawParseResult.messages.map((m) => {
@@ -821,7 +736,6 @@ export class ImportModal {
       }
 
       const isVoice = m.mediaType === 'audio' || (cleanMediaName && /\.(opus|ogg|m4a|aac|mp3|wav)$/i.test(cleanMediaName));
-      const mediaDur = cleanMediaName ? (mediaDurationMap.get(cleanMediaName) || 0) : 0;
 
       return {
         ...m,
@@ -829,23 +743,20 @@ export class ImportModal {
         isOutgoing,
         mediaId: linkedMediaId,
         isVoiceNote: isVoice,
-        duration: m.duration || mediaDur || 0
+        duration: m.duration || 0
       };
     });
 
     // Prepare Calls records
-    const calls = this.rawParseResult.calls.map((c) => ({
+    const calls = (this.rawParseResult.calls || []).map((c) => ({
       ...c,
       chatId,
       contactName: chatName
     }));
 
-    // Save batch to IndexedDB
-    await db.saveMediaBatch(mediaBatch);
+    // Save Messages and Chat immediately to IndexedDB
     await db.saveMessages(messages);
-    await db.saveCallsBatch(calls);
 
-    // Save Chat metadata
     const lastMsg = messages[messages.length - 1] || null;
     const finalAvatar = this.pendingOverrideAvatar || this.chatAvatarBlob || null;
     const chatRecord = {
@@ -872,15 +783,26 @@ export class ImportModal {
 
     await db.saveChat(chatRecord);
 
-    this.updateProgress(100, 'Creation complete!');
-    Toast.show(`Chat ready: ${chatName}`);
+    // Enqueue media files and calls processing into the smart background manager!
+    if ((this.extractedMediaFiles && this.extractedMediaFiles.size > 0) || calls.length > 0) {
+      backgroundTasks.enqueueChatMedia({
+        chatId,
+        chatName,
+        extractedMediaFiles: this.extractedMediaFiles,
+        mediaIdMap,
+        msgTimestampByMediaName,
+        calls
+      });
+    }
 
-    setTimeout(() => {
-      this.close();
-      if (this.onComplete) {
-        this.onComplete(chatId);
-      }
-    }, 400);
+    this.updateProgress(100, 'Chat ready!');
+    Toast.show(`Chat opened: ${chatName}`);
+
+    // Instantly close and transition into the chat view
+    this.close();
+    if (this.onComplete) {
+      this.onComplete(chatId);
+    }
   }
 
   close() {

@@ -3,6 +3,7 @@ import { Icons } from '../icons.js';
 import { db } from '../db.js';
 import { Toast } from '../components/toast.js';
 import { showConfirm } from '../components/custom-dialog.js';
+import { backgroundTasks } from '../utils/background-tasks.js';
 
 export class CallsView {
   constructor(router) {
@@ -18,6 +19,12 @@ export class CallsView {
     this.isLoadingMore = false;
     this.lastScrollTop = 0;
     this.onScrollBound = this.handleScroll.bind(this);
+
+    // Auto-refresh when background calls indexing completes
+    this._onCallsUpdateBound = () => this.refresh();
+    backgroundTasks.on('calls-ready', this._onCallsUpdateBound);
+    backgroundTasks.on('calls-indexing-start', this._onCallsUpdateBound);
+    backgroundTasks.on('all-tasks-complete', this._onCallsUpdateBound);
   }
 
   async render(rootEl) {
@@ -121,6 +128,19 @@ export class CallsView {
     listWrap.innerHTML = '';
 
     if (this.allCalls.length === 0) {
+      if (backgroundTasks.isCallsIndexing() || backgroundTasks.hasPendingTasks()) {
+        listWrap.innerHTML = `
+          <div class="empty-calls-state calls-loading-state">
+            <div class="wa-loading-spinner-wrap">
+              ${Icons.spinner('calls-spinner', 36)}
+            </div>
+            <h3>Indexing call history...</h3>
+            <p>Processing call records in the background</p>
+          </div>
+        `;
+        return;
+      }
+
       listWrap.innerHTML = `
         <div class="empty-calls-state">
           <div class="empty-icon-circle">${Icons.callVoice('', 34)}</div>

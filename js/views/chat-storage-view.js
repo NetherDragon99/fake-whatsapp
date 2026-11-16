@@ -27,6 +27,25 @@ export class ChatStorageView {
       return;
     }
 
+    // Show instant loading state with functional back button
+    rootEl.innerHTML = `
+      <div class="screen-view chat-storage-screen">
+        <header class="wa-app-bar">
+          <button type="button" class="app-bar-icon-btn" id="btn-chat-storage-back-early" aria-label="Go back">
+            ${Icons.arrowBack('', 24)}
+          </button>
+          <div class="app-title">Storage</div>
+        </header>
+        <div class="storage-loading-indicator" style="padding: 60px 16px;">
+          ${Icons.spinner('storage-spinner', 32)}
+          <span style="margin-left: 12px;">Loading storage details...</span>
+        </div>
+      </div>
+    `;
+    rootEl.querySelector('#btn-chat-storage-back-early')?.addEventListener('click', () => {
+      this.router.back();
+    });
+
     await this.loadData();
     this.renderUI();
   }

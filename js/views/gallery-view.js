@@ -4,6 +4,7 @@ import { db } from '../db.js';
 import { mediaLightbox } from '../components/lightbox.js';
 import { Toast } from '../components/toast.js';
 import { showConfirm } from '../components/custom-dialog.js';
+import { backgroundTasks } from '../utils/background-tasks.js';
 
 export class GalleryView {
   constructor(router) {
@@ -19,6 +20,16 @@ export class GalleryView {
     this.allMediaItems = [];
     this.allMessages = [];
     this.filteredItems = [];
+
+    // Auto-update when background media finishes processing
+    this._onMediaReadyBound = async (data) => {
+      if (this.filterChatId === 'all' || (data && data.chatId === this.filterChatId)) {
+        await this.loadMediaData();
+        this.renderGrid();
+      }
+    };
+    backgroundTasks.on('media-ready', this._onMediaReadyBound);
+    backgroundTasks.on('all-tasks-complete', this._onMediaReadyBound);
 
     // Windowed Virtual Batch Scroller Configuration
     this.CHUNK_SIZE = 36; // Multiples of 3 and 4 for 3-col mobile / 4-col desktop grids
@@ -249,6 +260,19 @@ export class GalleryView {
     this.filteredItems.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
     if (this.filteredItems.length === 0) {
+      if (backgroundTasks.isChatProcessing(this.filterChatId) || backgroundTasks.hasPendingTasks()) {
+        this.gridContainer.innerHTML = `
+          <div class="empty-gallery-state calls-loading-state">
+            <div class="wa-loading-spinner-wrap">
+              ${Icons.spinner('gallery-spinner', 36)}
+            </div>
+            <h3>Loading media gallery...</h3>
+            <p>Processing files in background</p>
+          </div>
+        `;
+        return;
+      }
+
       this.gridContainer.innerHTML = `
         <div class="empty-gallery-state">
           <div class="empty-icon-circle">${Icons.gallery('', 34)}</div>

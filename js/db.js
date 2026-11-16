@@ -581,6 +581,10 @@ class Database {
         let calls = req.result || [];
         // If calls store is empty, scan messages for any callInfo records and backfill indexed calls
         if (calls.length === 0) {
+          if (typeof window !== 'undefined' && window.backgroundTasks) {
+            window.backgroundTasks.callsIndexingChats.add('all');
+            window.backgroundTasks.emit('calls-indexing-start', { chatId: 'all' });
+          }
           try {
             const allChats = await this.getChats();
             const backfilled = [];
@@ -607,6 +611,11 @@ class Database {
             }
           } catch (syncErr) {
             console.warn('[db.getCalls] Fallback sync check failed:', syncErr);
+          } finally {
+            if (typeof window !== 'undefined' && window.backgroundTasks) {
+              window.backgroundTasks.callsIndexingChats.delete('all');
+              window.backgroundTasks.emit('calls-ready', { chatId: 'all' });
+            }
           }
         }
         calls.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));

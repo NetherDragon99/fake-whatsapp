@@ -1,4 +1,6 @@
 // Hash-based Client-Side Router with Deep State Back Stack & Android Exit Guard for WhatsApp Android Clone
+import { backgroundTasks } from './utils/background-tasks.js';
+
 export class Router {
   constructor(routes, rootContainer) {
     this.routes = routes;
@@ -539,6 +541,13 @@ export class Router {
     if (!matchedRoute) {
       this.navigate('#/chats');
       return;
+    }
+
+    // Update active chat priority for background task manager
+    if (routeParams && routeParams.id && (matchedRoute.pattern.startsWith('/chat') || matchedRoute.pattern.includes('chat'))) {
+      backgroundTasks.setActiveChat(routeParams.id);
+    } else {
+      backgroundTasks.setActiveChat(null);
     }
 
     // Re-arm root guard if entering '#/chats'
