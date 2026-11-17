@@ -97,7 +97,10 @@ export class HomeView {
             <span class="tab-label">Calls</span>
           </a>
           <a href="#/settings" class="nav-tab">
-            <div class="tab-icon-wrap">${Icons.settingsTab('', 22)}</div>
+            <div class="tab-icon-wrap">
+              ${Icons.settingsTab('', 22)}
+              <span class="nav-update-dot ${window.app?.updateReady ? 'visible' : ''}" aria-hidden="true"></span>
+            </div>
             <span class="tab-label">Settings</span>
           </a>
         </nav>

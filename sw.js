@@ -1,6 +1,6 @@
-// WhatsApp Android Clone Service Worker v2.3.3
-const APP_VERSION = '2.3.3';
-const CACHE_NAME = 'wa-clone-v2.3.3';
+// WhatsApp Android Clone Service Worker v2.3.4
+const APP_VERSION = '2.3.4';
+const CACHE_NAME = 'wa-clone-v2.3.4';
 
 const APP_SHELL_FILES = [
   './',
@@ -241,7 +241,6 @@ async function ensureAllAssetsCached({ forceRefresh = false, reason = 'sync' } =
   }
 
   activeSyncPromise = (async () => {
-    await purgeOutdatedCaches();
     const cache = await caches.open(CACHE_NAME);
 
     if (forceRefresh) {
@@ -276,9 +275,8 @@ async function ensureAllAssetsCached({ forceRefresh = false, reason = 'sync' } =
   }
 }
 
-// Install: Download EVERY app file, data file, icon, sticker, wallpaper & demo archive up front bypassing HTTP cache
+// Install: Download EVERY app file, data file, icon, sticker, wallpaper & demo archive silently in background
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE_NAME);
@@ -287,6 +285,19 @@ self.addEventListener('install', (event) => {
         total: PRECACHE_ASSETS.length,
         reason: 'install'
       });
+
+      const controlledClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: false });
+      if (controlledClients.length === 0) {
+        // First install or no active controlled window: activate immediately
+        await self.skipWaiting();
+      } else {
+        // Existing active session: stay waiting quietly until the user clicks "Restart to Update"
+        await broadcastToClients({
+          type: 'UPDATE_READY',
+          version: APP_VERSION,
+          cacheName: CACHE_NAME
+        });
+      }
     })()
   );
 });
@@ -376,6 +387,12 @@ self.addEventListener('fetch', (event) => {
   if (request.mode === 'navigate') {
     event.respondWith(
       (async () => {
+        try {
+          const cache = await caches.open(CACHE_NAME);
+          const versionedCached = await cache.match('./index.html') || await cache.match('./');
+          if (versionedCached) return versionedCached;
+        } catch (e) { }
+
         if (self.navigator && self.navigator.onLine !== false) {
           try {
             const controller = new AbortController();
@@ -395,7 +412,7 @@ self.addEventListener('fetch', (event) => {
               return networkResponse;
             }
           } catch (e) {
-            // Network unavailable or slow -> fall back immediately to cached HTML
+            // Network unavailable or slow -> fall back to cached HTML
           }
         }
 
@@ -404,12 +421,6 @@ self.addEventListener('fetch', (event) => {
           await caches.match(request) ||
           await caches.match('index.html');
         if (cached) return cached;
-
-        try {
-          const cache = await caches.open(CACHE_NAME);
-          const fallback = await cache.match('./index.html') || await cache.match('./');
-          if (fallback) return fallback;
-        } catch (e) { }
 
         return new Response('WhatsApp', {
           headers: { 'Content-Type': 'text/html; charset=utf-8' }

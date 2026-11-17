@@ -17,13 +17,13 @@ export class CallsView {
     this.CHUNK_SIZE = 30;
     this.MAX_DOM_ITEMS = 90;
     this.isLoadingMore = false;
+    this._isRefreshing = false;
     this.lastScrollTop = 0;
     this.onScrollBound = this.handleScroll.bind(this);
 
     // Auto-refresh when background calls indexing completes
     this._onCallsUpdateBound = () => this.refresh();
     backgroundTasks.on('calls-ready', this._onCallsUpdateBound);
-    backgroundTasks.on('calls-indexing-start', this._onCallsUpdateBound);
     backgroundTasks.on('all-tasks-complete', this._onCallsUpdateBound);
   }
 
@@ -67,7 +67,10 @@ export class CallsView {
             <span class="tab-label">Calls</span>
           </a>
           <a href="#/settings" class="nav-tab">
-            <div class="tab-icon-wrap">${Icons.settingsTab('', 22)}</div>
+            <div class="tab-icon-wrap">
+              ${Icons.settingsTab('', 22)}
+              <span class="nav-update-dot ${window.app?.updateReady ? 'visible' : ''}" aria-hidden="true"></span>
+            </div>
             <span class="tab-label">Settings</span>
           </a>
         </nav>
@@ -78,12 +81,15 @@ export class CallsView {
   }
 
   async refresh() {
-    if (!this.container) return;
+    if (!this.container || this._isRefreshing) return;
+    this._isRefreshing = true;
     try {
       const calls = await db.getCalls();
       this.bindEvents(calls);
     } catch (err) {
       console.warn('[CallsView] Error refreshing calls:', err);
+    } finally {
+      this._isRefreshing = false;
     }
   }
 
@@ -342,6 +348,10 @@ export class CallsView {
   cleanup() {
     if (this.scrollerEl && this.onScrollBound) {
       this.scrollerEl.removeEventListener('scroll', this.onScrollBound);
+    }
+    if (this._onCallsUpdateBound) {
+      backgroundTasks.off('calls-ready', this._onCallsUpdateBound);
+      backgroundTasks.off('all-tasks-complete', this._onCallsUpdateBound);
     }
   }
 }

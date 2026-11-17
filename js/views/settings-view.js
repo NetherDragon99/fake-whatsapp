@@ -10,6 +10,8 @@ export class SettingsView {
   constructor(router) {
     this.router = router;
     this.container = null;
+    this._onUpdateStateEvent = null;
+    this._onCacheStatusEvent = null;
   }
 
   async render(rootEl) {
@@ -18,8 +20,11 @@ export class SettingsView {
       let ownerName = 'You';
       let userAvatarBlob = null;
       let storageStats = { formattedSize: '0 B', chatCount: 0, messageCount: 0 };
-      const appVersion = window.APP_VERSION || '2.3.3';
+      const appVersion = window.APP_VERSION || '2.3.4';
       const cacheStatus = window.__waCacheStatus || null;
+      const updateState = (window.app && typeof window.app.getUpdateState === 'function')
+        ? window.app.getUpdateState()
+        : { updateReady: Boolean(window.app?.updateReady), pendingUpdateVersion: window.app?.pendingUpdateVersion || null, updateDownloading: false, progress: { completed: 0, total: 0 } };
       const cacheSubText = cacheStatus
         ? (cacheStatus.complete
           ? `v${appVersion} • All ${cacheStatus.cached}/${cacheStatus.total} files & media cached offline`
@@ -168,6 +173,13 @@ export class SettingsView {
           <!-- App Updates & Offline Sync -->
           <div class="settings-section">
             <div class="settings-section-header">App Updates</div>
+            <div class="settings-update-ready-card" id="settings-update-ready-card" style="${updateState.updateReady ? '' : 'display:none;'}">
+              <div class="update-ready-texts">
+                <div class="update-ready-title" id="settings-update-ready-title">Update Ready${updateState.pendingUpdateVersion ? ` (v${updateState.pendingUpdateVersion})` : ''}</div>
+                <div class="update-ready-sub">Downloaded in background — restart to apply</div>
+              </div>
+              <button type="button" class="settings-restart-update-btn" id="btn-restart-to-update">Restart to Update</button>
+            </div>
             <div class="settings-option-row clickable" id="row-check-updates">
               <span class="settings-icon">
                 <svg viewBox="0 0 24 24" width="21" height="21" fill="currentColor">
@@ -205,6 +217,7 @@ export class SettingsView {
             <div class="tab-icon-wrap">
               <span class="tab-pill-indicator"></span>
               ${Icons.settingsTab('', 22)}
+              <span class="nav-update-dot ${updateState.updateReady ? 'visible' : ''}" id="settings-standalone-update-dot" aria-hidden="true"></span>
             </div>
             <span class="tab-label">Settings</span>
           </a>
@@ -354,41 +367,103 @@ export class SettingsView {
       }
     });
 
-    // Check for Updates & Sync Offline Cache
-    const appVersion = window.APP_VERSION || '2.3.3';
+    // Check for Updates, Background Download Progress & Restart to Update
+    const appVersion = window.APP_VERSION || '2.3.4';
     const updateRow = this.container.querySelector('#row-check-updates');
     const updateSubEl = this.container.querySelector('#settings-update-status-sub');
+    const updateReadyCard = this.container.querySelector('#settings-update-ready-card');
+    const updateReadyTitle = this.container.querySelector('#settings-update-ready-title');
+    const restartBtn = this.container.querySelector('#btn-restart-to-update');
+    const standaloneDot = this.container.querySelector('#settings-standalone-update-dot');
+
     const refreshCacheLabel = (status) => {
       if (!updateSubEl || !status || !this.container.contains(updateSubEl)) return;
+      if (window.app?.updateDownloading) return;
+      if (window.app?.updateReady) {
+        const verLabel = window.app.pendingUpdateVersion ? `v${window.app.pendingUpdateVersion}` : 'New version';
+        updateSubEl.textContent = `v${appVersion} • ${verLabel} ready — tap Restart to Update`;
+        return;
+      }
       updateSubEl.textContent = status.complete
         ? `v${appVersion} • All ${status.cached}/${status.total} files & media cached offline`
         : `v${appVersion} • ${status.cached}/${status.total} files cached offline`;
     };
 
+    const syncUpdateUI = (state) => {
+      if (!state) return;
+      if (updateReadyCard) {
+        updateReadyCard.style.display = state.updateReady ? 'flex' : 'none';
+      }
+      if (updateReadyTitle) {
+        updateReadyTitle.textContent = state.pendingUpdateVersion
+          ? `Update Ready (v${state.pendingUpdateVersion})`
+          : 'Update Ready';
+      }
+      if (standaloneDot) {
+        standaloneDot.classList.toggle('visible', Boolean(state.updateReady));
+      }
+      if (updateSubEl && this.container.contains(updateSubEl)) {
+        if (state.updateReady) {
+          const verLabel = state.pendingUpdateVersion ? `v${state.pendingUpdateVersion}` : 'New version';
+          updateSubEl.textContent = `v${appVersion} • ${verLabel} ready — tap Restart to Update`;
+        } else if (state.updateDownloading) {
+          const total = state.progress?.total || 0;
+          const completed = state.progress?.completed || 0;
+          const pct = total > 0 ? Math.min(99, Math.round((completed / total) * 100)) : 0;
+          updateSubEl.textContent = total > 0
+            ? `v${appVersion} • Downloading update in background... (${pct}%)`
+            : `v${appVersion} • Downloading update in background...`;
+        } else if (window.__waCacheStatus) {
+          refreshCacheLabel(window.__waCacheStatus);
+        }
+      }
+    };
+
+    if (window.app && typeof window.app.getUpdateState === 'function') {
+      syncUpdateUI(window.app.getUpdateState());
+    }
     if (window.app && typeof window.app.getCacheStatus === 'function') {
       window.app.getCacheStatus().then(refreshCacheLabel).catch(() => { });
     }
 
-    const onCacheStatusEvent = (e) => {
+    this._onCacheStatusEvent = (e) => {
       if (!this.container || !document.body.contains(this.container)) {
-        window.removeEventListener('wa:cache-status', onCacheStatusEvent);
+        this.cleanup();
         return;
       }
       refreshCacheLabel(e.detail);
     };
-    window.addEventListener('wa:cache-status', onCacheStatusEvent);
+    this._onUpdateStateEvent = (e) => {
+      if (!this.container || !document.body.contains(this.container)) {
+        this.cleanup();
+        return;
+      }
+      syncUpdateUI(e.detail);
+    };
+    window.addEventListener('wa:cache-status', this._onCacheStatusEvent);
+    window.addEventListener('wa:update-state', this._onUpdateStateEvent);
+
+    restartBtn?.addEventListener('click', async () => {
+      if (!window.app || typeof window.app.applyPendingUpdate !== 'function') return;
+      restartBtn.disabled = true;
+      restartBtn.textContent = 'Restarting...';
+      await window.app.applyPendingUpdate();
+    });
 
     updateRow?.addEventListener('click', async () => {
       if (!window.app || typeof window.app.checkForUpdates !== 'function') {
         Toast.show('Updater not available in this context');
         return;
       }
-      if (updateSubEl) updateSubEl.textContent = `v${appVersion} • Checking for updates...`;
+      if (updateSubEl && !window.app.updateReady) {
+        updateSubEl.textContent = `v${appVersion} • Checking for updates in background...`;
+      }
       await window.app.checkForUpdates({ manual: true, syncMissing: true });
+      syncUpdateUI(window.app.getUpdateState?.());
       const latest = await window.app.getCacheStatus().catch(() => null);
       if (latest) {
         refreshCacheLabel(latest);
-      } else if (updateSubEl) {
+      } else if (updateSubEl && !window.app.updateReady && !window.app.updateDownloading) {
         updateSubEl.textContent = `v${appVersion} • Tap to check for updates & sync offline media`;
       }
     });
@@ -417,5 +492,16 @@ export class SettingsView {
         if (href) this.router.navigate(href);
       });
     });
+  }
+
+  cleanup() {
+    if (this._onCacheStatusEvent) {
+      window.removeEventListener('wa:cache-status', this._onCacheStatusEvent);
+      this._onCacheStatusEvent = null;
+    }
+    if (this._onUpdateStateEvent) {
+      window.removeEventListener('wa:update-state', this._onUpdateStateEvent);
+      this._onUpdateStateEvent = null;
+    }
   }
 }

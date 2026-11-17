@@ -271,6 +271,7 @@ export class ImportModal {
     });
 
     this.overlay.querySelector('#btn-menu-import-archive').addEventListener('click', () => {
+      this.isAutoCreatingDemo = false;
       this.showStep('step-file-select');
       this.setTitle('Import Chat Archive');
     });
@@ -512,7 +513,7 @@ export class ImportModal {
       this.extractedMediaFiles = mediaFiles;
       this.archiveFileName = file.name;
 
-      this.showSetupStep(parseResult);
+      await this.showSetupStep(parseResult);
     } catch (err) {
       console.error('Import failed:', err);
       showAlert({ title: 'Import Failed', message: 'Import error: ' + (err.message || 'Failed to parse file') });
@@ -530,37 +531,40 @@ export class ImportModal {
 
     this.showStep('step-setup');
     this.setTitle('Chat Setup');
+
+    // Expand bottom sheet so participants + toggles + confirm button fit comfortably and scroll to top
+    if (this.resizer && typeof this.resizer.setHeightVh === 'function') {
+      this.resizer.setHeightVh(82, true);
+    }
+    const sheetBody = this.overlay.querySelector('#import-body');
+    if (sheetBody) sheetBody.scrollTop = 0;
+
     const participantsList = this.overlay.querySelector('#participants-list');
     participantsList.innerHTML = '';
 
-    const participants = parseResult.participants;
-
-    // Detect if any participant is named "Me", "You", or "أنا" or matches current user profile name
-    let defaultMeIndex = 0;
-    try {
-      const savedOwnerName = await db.getSetting('userProfileName', '');
-      if (participants.length === 2) {
-        const meIdx = participants.findIndex((p) => {
-          const lower = p.trim().toLowerCase();
-          return lower === 'me' || lower === 'you' || lower === 'أنا' || (savedOwnerName && lower === savedOwnerName.toLowerCase());
-        });
-        if (meIdx !== -1) {
-          defaultMeIndex = meIdx;
-        }
-      }
-    } catch (e) {
-      console.warn('Failed reading userProfileName setting:', e);
-    }
+    const participants = (parseResult && Array.isArray(parseResult.participants) && parseResult.participants.length > 0)
+      ? parseResult.participants
+      : ['Contact', 'You'];
+    if (parseResult) parseResult.participants = participants;
 
     const nameInput = this.overlay.querySelector('#chat-display-name');
     const selfChatToggle = this.overlay.querySelector('#toggle-self-chat');
     const groupChatToggle = this.overlay.querySelector('#toggle-group-chat');
+    const finishBtn = this.overlay.querySelector('#btn-finish-import');
 
-    if (participants.length === 1) {
-      selfChatToggle.checked = true;
-    }
-    if (participants.length >= 3) {
-      groupChatToggle.checked = true;
+    selfChatToggle.checked = participants.length === 1;
+    groupChatToggle.checked = participants.length >= 3;
+
+    // Detect synchronous default "Me" index first (before any async DB calls!)
+    let defaultMeIndex = 0;
+    if (participants.length === 2) {
+      const meIdx = participants.findIndex((p) => {
+        const lower = (p || '').trim().toLowerCase();
+        return lower === 'me' || lower === 'you' || lower === 'أنا' || lower === 'انا';
+      });
+      if (meIdx !== -1) {
+        defaultMeIndex = meIdx;
+      }
     }
 
     // Determine chat name: for 1-on-1, it is the OTHER participant
@@ -577,33 +581,47 @@ export class ImportModal {
 
     nameInput.value = getChatNameForMeIndex(defaultMeIndex);
 
-    // Render participant radio buttons with defaultMeIndex checked
+    // Render participant radio buttons synchronously using safe DOM nodes
     participants.forEach((name, idx) => {
       const option = document.createElement('div');
       option.className = 'participant-radio-item';
-      option.innerHTML = `
-        <label>
-          <input type="radio" name="me-selector" value="${name}" ${idx === defaultMeIndex ? 'checked' : ''} />
-          <span class="participant-name">${name}</span>
-        </label>
-      `;
+      const label = document.createElement('label');
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'me-selector';
+      radio.value = name;
+      radio.checked = idx === defaultMeIndex;
+      const span = document.createElement('span');
+      span.className = 'participant-name';
+      span.dir = 'auto';
+      span.textContent = name;
+      label.appendChild(radio);
+      label.appendChild(span);
+      option.appendChild(label);
       participantsList.appendChild(option);
     });
 
     const checkOverlap = async (chatNameToTest) => {
-      const existingChats = await db.getChats();
-      const matchingChat = existingChats.find((c) => c.name.toLowerCase() === chatNameToTest.toLowerCase());
-      const overlapBox = this.overlay.querySelector('#overlap-merge-box');
-      if (matchingChat) {
-        overlapBox.style.display = 'block';
-        this.existingChatId = matchingChat.id;
-      } else {
-        overlapBox.style.display = 'none';
-        this.existingChatId = null;
+      try {
+        const testLower = (chatNameToTest || '').trim().toLowerCase();
+        const existingChats = await Promise.race([
+          db.getChats(),
+          new Promise((resolve) => setTimeout(() => resolve([]), 3000))
+        ]);
+        const matchingChat = existingChats.find((c) => (c.name || '').trim().toLowerCase() === testLower);
+        const overlapBox = this.overlay?.querySelector('#overlap-merge-box');
+        if (!overlapBox) return;
+        if (matchingChat) {
+          overlapBox.style.display = 'block';
+          this.existingChatId = matchingChat.id;
+        } else {
+          overlapBox.style.display = 'none';
+          this.existingChatId = null;
+        }
+      } catch (err) {
+        console.warn('Overlap check warning:', err);
       }
     };
-
-    await checkOverlap(nameInput.value);
 
     // When user changes who "Me" is in a 1-on-1 conversation, dynamically set chat name to the OTHER participant
     const radios = participantsList.querySelectorAll('input[name="me-selector"]');
@@ -622,7 +640,7 @@ export class ImportModal {
 
     // Avatar preview management
     const updateAvatarPreview = () => {
-      const preview = this.overlay.querySelector('#setup-avatar-preview');
+      const preview = this.overlay?.querySelector('#setup-avatar-preview');
       if (!preview) return;
       if (this.chatAvatarBlob) {
         preview.innerHTML = `<img src="${URL.createObjectURL(this.chatAvatarBlob)}" class="setup-avatar-img" alt="Avatar" />`;
@@ -662,146 +680,193 @@ export class ImportModal {
       }
     });
 
-    // Wire Finish Button
-    this.overlay.querySelector('#btn-finish-import').onclick = () => {
-      this.executeFinalImport();
-    };
+    // Wire Finish Button IMMEDIATELY (synchronously before any async DB queries!)
+    if (finishBtn) {
+      finishBtn.disabled = false;
+      finishBtn.onclick = (e) => {
+        e.preventDefault();
+        this.executeFinalImport();
+      };
+    }
+
+    // Now safely run async refinement against DB settings & existing chats
+    try {
+      const savedOwnerName = await Promise.race([
+        db.getSetting('ownerName', ''),
+        new Promise((resolve) => setTimeout(() => resolve(''), 2000))
+      ]) || await Promise.race([
+        db.getSetting('userProfileName', ''),
+        new Promise((resolve) => setTimeout(() => resolve(''), 2000))
+      ]);
+      if (savedOwnerName && participants.length === 2 && defaultMeIndex === 0) {
+        const ownerIdx = participants.findIndex((p) => (p || '').trim().toLowerCase() === savedOwnerName.trim().toLowerCase());
+        if (ownerIdx !== -1 && ownerIdx !== defaultMeIndex && radios[ownerIdx]) {
+          radios[ownerIdx].checked = true;
+          nameInput.value = getChatNameForMeIndex(ownerIdx);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed reading ownerName setting:', e);
+    }
+
+    await checkOverlap(nameInput.value);
   }
 
   async executeFinalImport() {
-    let meName = '';
-    let isSelfChat = false;
-    let isGroup = false;
-    let chatName = 'WhatsApp Chat';
-    let overlapChoice = 'new';
+    const finishBtn = this.overlay?.querySelector('#btn-finish-import');
+    if (finishBtn) finishBtn.disabled = true;
 
-    if (this.isAutoCreatingDemo) {
-      chatName = this.pendingOverrideName || (this.rawParseResult?.participants?.find(p => !/^(me|you|أنا|انا)$/i.test(p.trim())) || 'Steven Mario');
-      meName = (this.rawParseResult && this.rawParseResult.participants)
-        ? (this.rawParseResult.participants.find(p => /^(me|you|أنا|انا)$/i.test(p.trim())) ||
-          this.rawParseResult.participants.find(p => p.toLowerCase() !== chatName.toLowerCase()) ||
-          this.rawParseResult.participants[1] ||
-          this.rawParseResult.participants[0])
-        : 'You';
-      isSelfChat = false;
-      isGroup = false;
-      overlapChoice = 'new';
-    } else {
-      const selectedMeRadio = this.overlay.querySelector('input[name="me-selector"]:checked');
-      meName = selectedMeRadio ? selectedMeRadio.value : '';
-      isSelfChat = this.overlay.querySelector('#toggle-self-chat').checked;
-      isGroup = this.overlay.querySelector('#toggle-group-chat').checked;
-      chatName = this.overlay.querySelector('#chat-display-name').value.trim() || 'WhatsApp Chat';
-      overlapChoice = this.overlay.querySelector('input[name="overlap-choice"]:checked')?.value || 'new';
-    }
+    try {
+      if (!this.rawParseResult || !Array.isArray(this.rawParseResult.messages)) {
+        throw new Error('Parsed conversation data is unavailable. Please select the chat file again.');
+      }
 
-    this.showStep('step-progress');
-    this.updateProgress(80, 'Setting up conversation...');
+      let meName = '';
+      let isSelfChat = false;
+      let isGroup = false;
+      let chatName = 'WhatsApp Chat';
+      let overlapChoice = 'new';
 
-    const chatId = (overlapChoice === 'merge' && this.existingChatId) ? this.existingChatId : 'chat_' + Date.now();
-    const mediaIdMap = new Map(); // cleanName -> mediaId
+      if (this.isAutoCreatingDemo) {
+        chatName = this.pendingOverrideName || (this.rawParseResult?.participants?.find(p => !/^(me|you|أنا|انا)$/i.test(p.trim())) || 'Steven Mario');
+        meName = (this.rawParseResult && this.rawParseResult.participants)
+          ? (this.rawParseResult.participants.find(p => /^(me|you|أنا|انا)$/i.test(p.trim())) ||
+            this.rawParseResult.participants.find(p => p.toLowerCase() !== chatName.toLowerCase()) ||
+            this.rawParseResult.participants[1] ||
+            this.rawParseResult.participants[0])
+          : 'You';
+        isSelfChat = false;
+        isGroup = false;
+        overlapChoice = 'new';
+      } else {
+        const selectedMeRadio = this.overlay?.querySelector('input[name="me-selector"]:checked');
+        meName = selectedMeRadio ? selectedMeRadio.value : ((this.rawParseResult.participants && this.rawParseResult.participants[0]) || '');
+        isSelfChat = Boolean(this.overlay?.querySelector('#toggle-self-chat')?.checked);
+        isGroup = Boolean(this.overlay?.querySelector('#toggle-group-chat')?.checked);
+        chatName = (this.overlay?.querySelector('#chat-display-name')?.value || '').trim() || 'WhatsApp Chat';
+        overlapChoice = this.overlay?.querySelector('input[name="overlap-choice"]:checked')?.value || 'new';
+      }
 
-    // Index message timestamps by normalized mediaName for authentic media dating
-    const msgTimestampByMediaName = new Map();
-    if (this.rawParseResult && this.rawParseResult.messages) {
-      for (const m of this.rawParseResult.messages) {
-        if (m.mediaName && m.timestamp) {
-          const norm = this.parser.normalizeFilename(m.mediaName);
-          if (!msgTimestampByMediaName.has(norm)) {
-            msgTimestampByMediaName.set(norm, m.timestamp);
+      this.showStep('step-progress');
+      this.updateProgress(80, 'Setting up conversation...');
+
+      const chatId = (overlapChoice === 'merge' && this.existingChatId) ? this.existingChatId : 'chat_' + Date.now();
+      const mediaIdMap = new Map(); // cleanName -> mediaId
+
+      // Index message timestamps by normalized mediaName for authentic media dating
+      const msgTimestampByMediaName = new Map();
+      if (this.rawParseResult && this.rawParseResult.messages) {
+        for (const m of this.rawParseResult.messages) {
+          if (m.mediaName && m.timestamp) {
+            const norm = this.parser.normalizeFilename(m.mediaName);
+            if (!msgTimestampByMediaName.has(norm)) {
+              msgTimestampByMediaName.set(norm, m.timestamp);
+            }
           }
         }
       }
-    }
 
-    // Pre-allocate mediaIds instantly
-    for (const cleanName of this.extractedMediaFiles.keys()) {
-      const mediaId = 'media_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
-      mediaIdMap.set(cleanName, mediaId);
-    }
-
-    this.updateProgress(90, 'Writing messages...');
-
-    // Assign perspective and link media
-    const messages = this.rawParseResult.messages.map((m) => {
-      const isOutgoing = isSelfChat || (m.sender === meName);
-      let linkedMediaId = null;
-      let cleanMediaName = null;
-
-      if (m.mediaName) {
-        cleanMediaName = this.parser.normalizeFilename(m.mediaName);
-        if (mediaIdMap.has(cleanMediaName)) {
-          linkedMediaId = mediaIdMap.get(cleanMediaName);
+      // Pre-allocate mediaIds instantly
+      if (this.extractedMediaFiles) {
+        for (const cleanName of this.extractedMediaFiles.keys()) {
+          const mediaId = 'media_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+          mediaIdMap.set(cleanName, mediaId);
         }
       }
 
-      const isVoice = m.mediaType === 'audio' || (cleanMediaName && /\.(opus|ogg|m4a|aac|mp3|wav)$/i.test(cleanMediaName));
+      this.updateProgress(90, 'Writing messages...');
 
-      return {
-        ...m,
-        chatId,
-        isOutgoing,
-        mediaId: linkedMediaId,
-        isVoiceNote: isVoice,
-        duration: m.duration || 0
-      };
-    });
+      // Assign perspective and link media
+      const messages = this.rawParseResult.messages.map((m) => {
+        const isOutgoing = isSelfChat || (m.sender === meName);
+        let linkedMediaId = null;
+        let cleanMediaName = null;
 
-    // Prepare Calls records
-    const calls = (this.rawParseResult.calls || []).map((c) => ({
-      ...c,
-      chatId,
-      contactName: chatName
-    }));
+        if (m.mediaName) {
+          cleanMediaName = this.parser.normalizeFilename(m.mediaName);
+          if (mediaIdMap.has(cleanMediaName)) {
+            linkedMediaId = mediaIdMap.get(cleanMediaName);
+          }
+        }
 
-    // Save Messages and Chat immediately to IndexedDB
-    await db.saveMessages(messages);
+        const isVoice = m.mediaType === 'audio' || (cleanMediaName && /\.(opus|ogg|m4a|aac|mp3|wav)$/i.test(cleanMediaName));
 
-    const lastMsg = messages[messages.length - 1] || null;
-    const finalAvatar = this.pendingOverrideAvatar || this.chatAvatarBlob || null;
-    const chatRecord = {
-      id: chatId,
-      name: chatName,
-      avatarBlob: finalAvatar,
-      participantNames: this.rawParseResult.participants,
-      meParticipant: meName,
-      isGroup,
-      isSelfChat,
-      isPinned: false,
-      isArchived: false,
-      isLocked: false,
-      unreadCount: 0,
-      lastMessage: lastMsg ? {
-        text: lastMsg.text,
-        timestamp: lastMsg.timestamp,
-        isOutgoing: lastMsg.isOutgoing,
-        mediaType: lastMsg.mediaType
-      } : null,
-      customFilterIds: [],
-      updatedAt: Date.now()
-    };
-
-    await db.saveChat(chatRecord);
-
-    // Enqueue media files and calls processing into the smart background manager!
-    if ((this.extractedMediaFiles && this.extractedMediaFiles.size > 0) || calls.length > 0) {
-      backgroundTasks.enqueueChatMedia({
-        chatId,
-        chatName,
-        extractedMediaFiles: this.extractedMediaFiles,
-        mediaIdMap,
-        msgTimestampByMediaName,
-        calls
+        return {
+          ...m,
+          chatId,
+          isOutgoing,
+          mediaId: linkedMediaId,
+          isVoiceNote: isVoice,
+          duration: m.duration || 0
+        };
       });
-    }
 
-    this.updateProgress(100, 'Chat ready!');
-    Toast.show(`Chat opened: ${chatName}`);
+      // Prepare Calls records
+      const calls = (this.rawParseResult.calls || []).map((c) => ({
+        ...c,
+        chatId,
+        contactName: chatName
+      }));
 
-    // Instantly close and transition into the chat view
-    this.close();
-    if (this.onComplete) {
-      this.onComplete(chatId);
+      // Save Messages and Chat immediately to IndexedDB
+      await db.saveMessages(messages);
+      db._callsBackfillChecked = false;
+
+      const lastMsg = messages[messages.length - 1] || null;
+      const finalAvatar = this.pendingOverrideAvatar || this.chatAvatarBlob || null;
+      const chatRecord = {
+        id: chatId,
+        name: chatName,
+        avatarBlob: finalAvatar,
+        participantNames: this.rawParseResult.participants,
+        meParticipant: meName,
+        isGroup,
+        isSelfChat,
+        isPinned: false,
+        isArchived: false,
+        isLocked: false,
+        unreadCount: 0,
+        lastMessage: lastMsg ? {
+          text: lastMsg.text,
+          timestamp: lastMsg.timestamp,
+          isOutgoing: lastMsg.isOutgoing,
+          mediaType: lastMsg.mediaType
+        } : null,
+        customFilterIds: [],
+        updatedAt: Date.now()
+      };
+
+      await db.saveChat(chatRecord);
+
+      // Enqueue media files and calls processing into the smart background manager!
+      if ((this.extractedMediaFiles && this.extractedMediaFiles.size > 0) || calls.length > 0) {
+        backgroundTasks.enqueueChatMedia({
+          chatId,
+          chatName,
+          extractedMediaFiles: this.extractedMediaFiles,
+          mediaIdMap,
+          msgTimestampByMediaName,
+          calls
+        });
+      }
+
+      this.updateProgress(100, 'Chat ready!');
+      Toast.show(`Chat opened: ${chatName}`);
+
+      // Instantly close and transition into the chat view
+      this.close();
+      if (this.onComplete) {
+        this.onComplete(chatId);
+      }
+    } catch (err) {
+      console.error('Final import failed:', err);
+      if (finishBtn) finishBtn.disabled = false;
+      this.showStep(this.isAutoCreatingDemo ? 'step-new-chat' : 'step-setup');
+      this.setTitle(this.isAutoCreatingDemo ? 'New Private Chat' : 'Chat Setup');
+      await showAlert({
+        title: 'Import Error',
+        message: 'Could not save conversation: ' + (err.message || 'Unknown database error')
+      });
     }
   }
 

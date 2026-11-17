@@ -14,6 +14,22 @@ export class WhatsAppParser {
       .trim();
   }
 
+  // Convert Eastern Arabic / Persian numerals to ASCII digits
+  normalizeDigits(text) {
+    if (!text) return '';
+    return text
+      .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+      .replace(/[\u06f0-\u06f9]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
+  }
+
+  // 1-to-1 normalization for matching header timestamps in Arabic & English exports
+  normalizeForMatching(line) {
+    if (!line) return '';
+    return this.normalizeDigits(line)
+      .replace(/\u060c/g, ',') // Arabic comma
+      .replace(/[\u2013\u2014]/g, '-'); // En/Em dash
+  }
+
   // Normalize filenames for matching inside ZIP archives
   normalizeFilename(filename) {
     if (!filename) return '';
@@ -25,21 +41,31 @@ export class WhatsAppParser {
     return parts[parts.length - 1].trim().toLowerCase();
   }
 
-  // Infer whether archive uses DD/MM or MM/DD by inspecting up to 200 date lines
+  // Infer whether archive uses DD/MM or MM/DD by inspecting up to 300 date lines
   inferDateFormat(rawLines) {
     let ddFound = false;
     let mmFound = false;
 
-    const datePattern = /(?:^|\[)(\d{1,2})[\/\.\-](\d{1,2})[\/\.\-](\d{2,4})/;
+    const datePattern = /(?:^|\[)(\d{1,4})[\/\.\-](\d{1,2})[\/\.\-](\d{1,4})/;
 
     for (let i = 0; i < Math.min(rawLines.length, 300); i++) {
-      const line = this.sanitize(rawLines[i]);
+      const line = this.normalizeForMatching(this.sanitize(rawLines[i]));
       const match = line.match(datePattern);
       if (match) {
         const first = parseInt(match[1], 10);
         const second = parseInt(match[2], 10);
+        const third = parseInt(match[3], 10);
 
-        if (first > 12 && second <= 12) {
+        if (first >= 1000) {
+          // YYYY/MM/DD vs YYYY/DD/MM
+          if (third > 12 && second <= 12) {
+            mmFound = true; // month second, day third
+            break;
+          } else if (second > 12 && third <= 12) {
+            ddFound = true;
+            break;
+          }
+        } else if (first > 12 && second <= 12) {
           ddFound = true;
           break;
         } else if (second > 12 && first <= 12) {
@@ -61,26 +87,31 @@ export class WhatsAppParser {
   // Convert parsed date + time strings into standard epoch timestamp
   parseTimestamp(dateStr, timeStr) {
     try {
-      const dateParts = dateStr.split(/[\/\.\-]/).map((p) => parseInt(p, 10));
+      const dateParts = this.normalizeDigits(dateStr).split(/[\/\.\-]/).map((p) => parseInt(p, 10));
       let day, month, year;
 
-      if (this.dateFormat === 'MM/DD') {
-        month = dateParts[0];
-        day = dateParts[1];
-      } else {
-        day = dateParts[0];
+      if (dateParts[0] >= 1000) {
+        year = dateParts[0];
         month = dateParts[1];
+        day = dateParts[2];
+      } else {
+        if (this.dateFormat === 'MM/DD') {
+          month = dateParts[0];
+          day = dateParts[1];
+        } else {
+          day = dateParts[0];
+          month = dateParts[1];
+        }
+        year = dateParts[2];
+        if (year < 100) {
+          year += 2000;
+        }
       }
 
-      year = dateParts[2];
-      if (year < 100) {
-        year += 2000;
-      }
-
-      // Parse time (e.g. 10:45 am, 14:30, 7:15:30 PM, 11:20 ص, 09:15 م)
-      let cleanTime = this.sanitize(timeStr).toLowerCase();
-      let isPM = cleanTime.includes('pm') || cleanTime.includes('p.m.') || cleanTime.includes('م');
-      let isAM = cleanTime.includes('am') || cleanTime.includes('a.m.') || cleanTime.includes('ص');
+      // Parse time (e.g. 10:45 am, 14:30, 7:15:30 PM, 11:20 ص, 09:15 مساءً)
+      let cleanTime = this.normalizeDigits(this.sanitize(timeStr)).toLowerCase();
+      let isPM = cleanTime.includes('pm') || cleanTime.includes('p.m.') || cleanTime.includes('مساء') || cleanTime.includes('م');
+      let isAM = cleanTime.includes('am') || cleanTime.includes('a.m.') || cleanTime.includes('صباح') || cleanTime.includes('ص');
 
       // Strip words/letters from time digits
       cleanTime = cleanTime.replace(/[^\d:]/g, '');
@@ -207,16 +238,16 @@ export class WhatsAppParser {
 
     // Regex 1: Android format:
     // 12/05/2026, 10:14 pm - Sender Name: Message text
-    const androidRegex = /^(\d{1,2}[\/\.\-]\d{1,2}[\/\.\-]\d{2,4}),?\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?m\.?|ص|م)?)\s*-\s*([^:]+):\s*([\s\S]*)$/i;
+    const androidRegex = /^(\d{1,4}[\/\.\-]\d{1,2}[\/\.\-]\d{1,4}),?\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?m\.?|صباح[\u064b\u0627]*|مساء[\u064b\u0627]*|[صم]\.?)?)\s*-\s*([^:]+):\s*([\s\S]*)$/i;
 
     // Regex 2: iOS format:
     // [12/05/2026, 10:14:22 PM] Sender Name: Message text
-    const iosRegex = /^\[(\d{1,2}[\/\.\-]\d{1,2}[\/\.\-]\d{2,4}),?\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?m\.?|ص|م)?)\]\s*([^:]+):\s*([\s\S]*)$/i;
+    const iosRegex = /^\[(\d{1,4}[\/\.\-]\d{1,2}[\/\.\-]\d{1,4}),?\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?m\.?|صباح[\u064b\u0627]*|مساء[\u064b\u0627]*|[صم]\.?)?)\]\s*([^:]+):\s*([\s\S]*)$/i;
 
     // Regex 3: System line (e.g. End-to-end encryption notice or call line without sender colon):
     // 12/05/2026, 10:14 pm - Missed voice call
-    const systemAndroidRegex = /^(\d{1,2}[\/\.\-]\d{1,2}[\/\.\-]\d{2,4}),?\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?m\.?|ص|م)?)\s*-\s*([^:]+)$/i;
-    const systemIosRegex = /^\[(\d{1,2}[\/\.\-]\d{1,2}[\/\.\-]\d{2,4}),?\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?m\.?|ص|م)?)\]\s*([^:]+)$/i;
+    const systemAndroidRegex = /^(\d{1,4}[\/\.\-]\d{1,2}[\/\.\-]\d{1,4}),?\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?m\.?|صباح[\u064b\u0627]*|مساء[\u064b\u0627]*|[صم]\.?)?)\s*-\s*([^:]+)$/i;
+    const systemIosRegex = /^\[(\d{1,4}[\/\.\-]\d{1,2}[\/\.\-]\d{1,4}),?\s+(\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]\.?m\.?|صباح[\u064b\u0627]*|مساء[\u064b\u0627]*|[صم]\.?)?)\]\s*([^:]+)$/i;
 
     const messages = [];
     const participantSet = new Set();
@@ -242,7 +273,8 @@ export class WhatsAppParser {
       const line = this.sanitize(rawLine);
       if (!line && !currentMsg) continue;
 
-      let match = line.match(androidRegex) || line.match(iosRegex);
+      const matchLine = this.normalizeForMatching(line);
+      let match = matchLine.match(androidRegex) || matchLine.match(iosRegex);
 
       if (match) {
         // Commit previous message
@@ -253,9 +285,12 @@ export class WhatsAppParser {
         const dateStr = match[1];
         const timeStr = match[2];
         const sender = this.sanitize(match[3]);
-        const content = match[4] || '';
+        const rawContentLen = (match[4] || '').length;
+        const content = rawContentLen > 0 ? line.slice(line.length - rawContentLen) : '';
 
-        participantSet.add(sender);
+        if (sender) {
+          participantSet.add(sender);
+        }
 
         const timestamp = this.parseTimestamp(dateStr, timeStr);
         const attachment = this.detectAttachment(content);
@@ -320,7 +355,7 @@ export class WhatsAppParser {
         }
       } else {
         // Check if it's a system notice / call line without colon
-        let sysMatch = line.match(systemAndroidRegex) || line.match(systemIosRegex);
+        let sysMatch = matchLine.match(systemAndroidRegex) || matchLine.match(systemIosRegex);
         if (sysMatch) {
           if (currentMsg) {
             finalizeMessage(currentMsg);
@@ -328,7 +363,8 @@ export class WhatsAppParser {
 
           const dateStr = sysMatch[1];
           const timeStr = sysMatch[2];
-          const sysText = this.sanitize(sysMatch[3]);
+          const sysTextLen = (sysMatch[3] || '').length;
+          const sysText = sysTextLen > 0 ? this.sanitize(line.slice(line.length - sysTextLen)) : '';
           const timestamp = this.parseTimestamp(dateStr, timeStr);
           const callInfo = this.detectCall(sysText);
 
@@ -369,9 +405,19 @@ export class WhatsAppParser {
       finalizeMessage(currentMsg);
     }
 
+    let participants = Array.from(participantSet).filter(Boolean);
+    if (participants.length === 0 && messages.length > 0) {
+      participants = ['Contact', 'You'];
+      for (const m of messages) {
+        if (!m.sender || m.sender === 'System') {
+          m.sender = 'Contact';
+        }
+      }
+    }
+
     return {
       messages,
-      participants: Array.from(participantSet),
+      participants,
       calls
     };
   }

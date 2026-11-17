@@ -6,6 +6,8 @@ class Database {
   constructor() {
     this.db = null;
     this.initPromise = null;
+    this._callsBackfillChecked = false;
+    this._isBackfillingCalls = false;
   }
 
   generateUUID() {
@@ -69,6 +71,9 @@ class Database {
 
       request.onsuccess = (event) => {
         this.db = event.target.result;
+        if (typeof navigator !== 'undefined' && navigator.storage && typeof navigator.storage.persist === 'function') {
+          navigator.storage.persist().catch(() => { });
+        }
         resolve(this.db);
       };
 
@@ -402,7 +407,10 @@ class Database {
         store.put(messages[i]);
       }
 
-      tx.oncomplete = () => resolve(true);
+      tx.oncomplete = () => {
+        this._callsBackfillChecked = false;
+        resolve(true);
+      };
       tx.onerror = () => reject(tx.error);
     });
   }
@@ -574,55 +582,53 @@ class Database {
 
   async getCalls() {
     await this.init();
-    return new Promise((resolve, reject) => {
+    let calls = await new Promise((resolve, reject) => {
       const tx = this.db.transaction('calls', 'readonly');
       const req = tx.objectStore('calls').getAll();
-      req.onsuccess = async () => {
-        let calls = req.result || [];
-        // If calls store is empty, scan messages for any callInfo records and backfill indexed calls
-        if (calls.length === 0) {
-          if (typeof window !== 'undefined' && window.backgroundTasks) {
-            window.backgroundTasks.callsIndexingChats.add('all');
-            window.backgroundTasks.emit('calls-indexing-start', { chatId: 'all' });
-          }
-          try {
-            const allChats = await this.getChats();
-            const backfilled = [];
-            for (const chat of allChats) {
-              const msgs = await this.getMessages(chat.id);
-              for (const m of msgs) {
-                if (m.callInfo && m.callInfo.isCall) {
-                  backfilled.push({
-                    id: 'call_' + m.timestamp + '_' + Math.random().toString(36).substr(2, 6),
-                    chatId: chat.id,
-                    contactName: chat.name,
-                    timestamp: m.timestamp,
-                    callType: m.callInfo.callType || 'voice',
-                    direction: m.callInfo.direction || 'incoming',
-                    isMissed: !!m.callInfo.isMissed,
-                    messageId: m.id
-                  });
-                }
-              }
-            }
-            if (backfilled.length > 0) {
-              await this.saveCallsBatch(backfilled);
-              calls = backfilled;
-            }
-          } catch (syncErr) {
-            console.warn('[db.getCalls] Fallback sync check failed:', syncErr);
-          } finally {
-            if (typeof window !== 'undefined' && window.backgroundTasks) {
-              window.backgroundTasks.callsIndexingChats.delete('all');
-              window.backgroundTasks.emit('calls-ready', { chatId: 'all' });
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(tx.error);
+    });
+
+    // If calls store is empty, scan messages once per session/import for any callInfo records and backfill indexed calls
+    if (calls.length === 0 && !this._callsBackfillChecked && !this._isBackfillingCalls) {
+      this._callsBackfillChecked = true;
+      this._isBackfillingCalls = true;
+      try {
+        const allChats = await this.getChats();
+        const backfilled = [];
+        for (const chat of allChats) {
+          const msgs = await this.getMessages(chat.id);
+          for (const m of msgs) {
+            if (m.callInfo && m.callInfo.isCall) {
+              backfilled.push({
+                id: 'call_' + m.timestamp + '_' + Math.random().toString(36).substr(2, 6),
+                chatId: chat.id,
+                contactName: chat.name,
+                timestamp: m.timestamp,
+                callType: m.callInfo.callType || 'voice',
+                direction: m.callInfo.direction || 'incoming',
+                isMissed: !!m.callInfo.isMissed,
+                messageId: m.id
+              });
             }
           }
         }
-        calls.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        resolve(calls);
-      };
-      req.onerror = () => reject(tx.error);
-    });
+        if (backfilled.length > 0) {
+          await this.saveCallsBatch(backfilled);
+          calls = backfilled;
+          if (typeof window !== 'undefined' && window.backgroundTasks) {
+            window.backgroundTasks.emit('calls-ready', { chatId: 'all', count: backfilled.length });
+          }
+        }
+      } catch (syncErr) {
+        console.warn('[db.getCalls] Fallback sync check failed:', syncErr);
+      } finally {
+        this._isBackfillingCalls = false;
+      }
+    }
+
+    calls.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return calls;
   }
 
   async getCallsByChat(chatId) {

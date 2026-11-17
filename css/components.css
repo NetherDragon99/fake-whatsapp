@@ -1337,6 +1337,9 @@ input:checked+.switch-slider::before {
 .sheet-body {
   padding: 20px;
   overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
 }
 
 .import-dropzone {
@@ -6994,5 +6997,103 @@ input:checked+.switch-slider::before {
 
 .storage-loading-indicator .wa-loading-spinner {
   color: var(--app-accent, #25d366);
+}
+
+/* --- Background App Update Badge & Settings Restart Button --- */
+.nav-update-dot {
+  position: absolute;
+  top: 4px;
+  right: 16px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background-color: var(--app-accent, #25d366);
+  border: 2px solid var(--wa-bg-main, #0b141a);
+  opacity: 0;
+  transform: scale(0.4);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.3);
+}
+
+.nav-update-dot.visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+[data-theme="light"] .nav-update-dot {
+  border-color: #ffffff;
+}
+
+.settings-update-ready-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 6px 16px 10px 16px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(37, 211, 102, 0.12);
+  border: 1px solid rgba(37, 211, 102, 0.3);
+}
+
+.update-ready-texts {
+  flex: 1;
+  min-width: 0;
+}
+
+.update-ready-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--wa-text-primary, #e9edef);
+  margin-bottom: 2px;
+}
+
+.update-ready-sub {
+  font-size: 12.5px;
+  color: var(--wa-text-secondary, #8696a0);
+  line-height: 1.35;
+}
+
+.settings-restart-update-btn {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background-color: var(--app-accent, #25d366);
+  color: #0b141a;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.settings-restart-update-btn:hover {
+  opacity: 0.92;
+}
+
+.settings-restart-update-btn:active {
+  transform: scale(0.96);
+}
+
+.settings-restart-update-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+[data-theme="light"] .settings-update-ready-card {
+  background: rgba(0, 168, 132, 0.1);
+  border-color: rgba(0, 168, 132, 0.32);
+}
+
+[data-theme="light"] .update-ready-title {
+  color: #111b21;
+}
+
+[data-theme="light"] .update-ready-sub {
+  color: #54656f;
+}
+
+[data-theme="light"] .settings-restart-update-btn {
+  color: #ffffff;
 }
 

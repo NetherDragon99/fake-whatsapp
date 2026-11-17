@@ -21,6 +21,7 @@ export class MainPagerView {
     this.programmaticScrollTimeout = null;
     this.scrollTimeout = null;
     this.resizeHandler = null;
+    this._onUpdateStateHandler = null;
 
     // Mouse drag support for desktop testing
     this.isMouseDown = false;
@@ -75,6 +76,7 @@ export class MainPagerView {
             <div class="tab-icon-wrap">
               <span class="tab-pill-indicator"></span>
               ${Icons.settingsTab('', 22)}
+              <span class="nav-update-dot ${window.app?.updateReady ? 'visible' : ''}" id="pager-settings-update-dot" aria-hidden="true"></span>
             </div>
             <span class="tab-label">Settings</span>
           </a>
@@ -111,6 +113,17 @@ export class MainPagerView {
 
   bindEvents() {
     if (!this.viewport || !this.bottomNav) return;
+
+    // Update Settings badge dot whenever background update readiness changes
+    const updateDotEl = this.bottomNav.querySelector('#pager-settings-update-dot');
+    const syncDotState = (state) => {
+      if (updateDotEl) {
+        updateDotEl.classList.toggle('visible', Boolean(state?.updateReady || window.app?.updateReady));
+      }
+    };
+    syncDotState(window.app?.getUpdateState?.());
+    this._onUpdateStateHandler = (e) => syncDotState(e.detail);
+    window.addEventListener('wa:update-state', this._onUpdateStateHandler);
 
     // Bottom Navigation tab clicks
     this.bottomNav.querySelectorAll('.nav-tab').forEach((tab) => {
@@ -271,6 +284,10 @@ export class MainPagerView {
   }
 
   cleanup() {
+    if (this._onUpdateStateHandler) {
+      window.removeEventListener('wa:update-state', this._onUpdateStateHandler);
+      this._onUpdateStateHandler = null;
+    }
     if (this.resizeHandler) {
       window.removeEventListener('resize', this.resizeHandler);
       this.resizeHandler = null;
