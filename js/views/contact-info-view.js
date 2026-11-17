@@ -7,6 +7,7 @@ import { Toast } from '../components/toast.js';
 import { showConfirm, showAlert, showPrompt, showLoadingDialog } from '../components/custom-dialog.js';
 import { openImageCropper } from '../components/image-cropper.js';
 import { ChatExporter } from '../components/chat-exporter.js';
+import { getLatestMessageDateKey, openDatePickerWithDefault } from '../utils/date-jump.js';
 
 export class ContactInfoView {
   constructor(router) {
@@ -120,7 +121,7 @@ export class ContactInfoView {
                 <div class="option-title">Jump to Date</div>
                 <div class="option-subtitle">Navigate to messages from a specific date</div>
               </div>
-              <input type="date" id="info-date-picker" style="display:none;" />
+              <input type="date" id="info-date-picker" class="wa-hidden-date-picker" aria-hidden="true" tabindex="-1" />
             </div>
 
             <div class="option-row clickable" id="row-starred-messages">
@@ -477,7 +478,7 @@ export class ContactInfoView {
     // Jump to Date
     const datePicker = this.container.querySelector('#info-date-picker');
     this.container.querySelector('#row-jump-to-date').addEventListener('click', () => {
-      datePicker.showPicker ? datePicker.showPicker() : datePicker.click();
+      openDatePickerWithDefault(datePicker, getLatestMessageDateKey(msgs));
     });
     datePicker.addEventListener('change', (e) => {
       if (e.target.value) {

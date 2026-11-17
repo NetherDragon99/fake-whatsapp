@@ -19,6 +19,12 @@ import { EmojiPickerSheet } from '../components/emoji-picker-sheet.js';
 import { MessageInfoSheet } from '../components/message-info-sheet.js';
 import { ShareOptionsModal } from '../components/share-options-modal.js';
 import {
+  findNearestDateMessage,
+  formatDateDisplay,
+  getLatestMessageDateKey,
+  openDatePickerWithDefault
+} from '../utils/date-jump.js';
+import {
   applyOutgoingBubbleColor,
   clearOutgoingBubbleColor,
   deriveChatActionColor,
@@ -178,13 +184,14 @@ export class ChatView {
           </div>
         </div>
 
-        <input type="date" id="chat-date-picker" style="display: none;" />
+        <input type="date" id="chat-date-picker" class="wa-hidden-date-picker" aria-hidden="true" tabindex="-1" />
 
         <!-- In-Chat Search Bar (Hidden by default) -->
         <div class="chat-search-bar" id="chat-search-header" style="display:none;">
           <button type="button" class="app-bar-icon-btn" id="btn-close-chat-search">${Icons.arrowBack('', 24)}</button>
           <input type="text" id="chat-search-query" placeholder="Search in chat..." />
           <span class="search-match-counter" id="search-match-count">0/0</span>
+          <button type="button" class="app-bar-icon-btn" id="btn-search-date" title="Jump to Date" aria-label="Jump to Date">${Icons.calendar('', 20)}</button>
           <button type="button" class="app-bar-icon-btn" id="btn-search-prev">${Icons.chevronDown('rotate-180', 20)}</button>
           <button type="button" class="app-bar-icon-btn" id="btn-search-next">${Icons.chevronDown('', 20)}</button>
         </div>
@@ -317,9 +324,6 @@ export class ChatView {
             </button>
           </div>
         </div>
-
-        <!-- Hidden Date Picker for Jump To Date -->
-        <input type="date" id="chat-hidden-date-picker" style="display:none;" />
       </div>
     `;
 
@@ -552,14 +556,7 @@ export class ChatView {
 
       this.container.querySelector('#menu-jump-to-date')?.addEventListener('click', () => {
         Motion.closeMenu(dropdownMenu);
-        const dp = this.container.querySelector('#chat-date-picker') || this.container.querySelector('#chat-hidden-date-picker');
-        if (dp) {
-          if (typeof dp.showPicker === 'function') {
-            dp.showPicker();
-          } else {
-            dp.click();
-          }
-        }
+        this.openDatePicker();
       });
 
       this.container.querySelector('#menu-chat-wallpaper')?.addEventListener('click', () => {
@@ -574,7 +571,7 @@ export class ChatView {
     }
 
     // Date picker for Jump to Date
-    const datePicker = this.container.querySelector('#chat-date-picker') || this.container.querySelector('#chat-hidden-date-picker');
+    const datePicker = this.container.querySelector('#chat-date-picker');
     if (datePicker) {
       datePicker.addEventListener('change', (e) => {
         if (e.target.value) {
@@ -1696,27 +1693,28 @@ export class ChatView {
     }
   }
 
+  openDatePicker() {
+    const dp = this.container?.querySelector('#chat-date-picker');
+    const latestKey = getLatestMessageDateKey(this.scroller?.allMessages || []);
+    openDatePickerWithDefault(dp, latestKey);
+  }
+
   async jumpToSelectedDate(dateString) {
-    const selectedDate = new Date(dateString);
-    selectedDate.setHours(0, 0, 0, 0);
+    const { targetMsg, matchedDateKey, isExactMatch } = findNearestDateMessage(
+      this.scroller?.allMessages || [],
+      dateString
+    );
 
-    const msgs = this.scroller.allMessages;
-    let targetMsg = null;
-
-    for (const m of msgs) {
-      const msgDate = new Date(m.timestamp);
-      msgDate.setHours(0, 0, 0, 0);
-      if (msgDate.getTime() >= selectedDate.getTime()) {
-        targetMsg = m;
-        break;
-      }
+    if (!targetMsg) {
+      Toast.show('No messages found in this chat');
+      return;
     }
 
-    if (targetMsg) {
-      await this.scroller.jumpToDate(targetMsg, dateString);
-      Toast.show(`Jumped to ${dateString}`);
+    await this.scroller.jumpToDate(targetMsg, matchedDateKey || dateString);
+    if (isExactMatch) {
+      Toast.show(`Jumped to ${formatDateDisplay(matchedDateKey || dateString)}`);
     } else {
-      Toast.show('No messages found around this date');
+      Toast.show(`No messages on ${formatDateDisplay(dateString)} — jumped to ${formatDateDisplay(matchedDateKey)}`);
     }
   }
 
@@ -1726,11 +1724,16 @@ export class ChatView {
     const searchInput = this.container.querySelector('#chat-search-query');
     const matchCountEl = this.container.querySelector('#search-match-count');
     const closeBtn = this.container.querySelector('#btn-close-chat-search');
+    const dateBtn = this.container.querySelector('#btn-search-date');
     const prevBtn = this.container.querySelector('#btn-search-prev');
     const nextBtn = this.container.querySelector('#btn-search-next');
 
     closeBtn.addEventListener('click', () => {
       this.toggleSearchHeader(false);
+    });
+
+    dateBtn?.addEventListener('click', () => {
+      this.openDatePicker();
     });
 
     searchInput.addEventListener('input', () => {

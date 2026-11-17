@@ -97,11 +97,29 @@
 
 .chat-search-bar input {
   flex: 1;
+  min-width: 0;
   font-size: 15px;
   padding: 6px 8px;
   background: var(--wa-surface-elevated);
   border-radius: 20px;
   padding-left: 14px;
+}
+
+.chat-search-bar .app-bar-icon-btn {
+  flex-shrink: 0;
+}
+
+.wa-hidden-date-picker {
+  position: fixed;
+  top: 56px;
+  right: 16px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
 }
 
 .search-match-counter {
