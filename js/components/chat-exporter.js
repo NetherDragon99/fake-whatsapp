@@ -31,14 +31,32 @@ export class ChatExporter {
 
       if (msg.isSystem) {
         lines.push(`${ts} - ${msg.text}`);
-      } else if (msg.mediaName) {
-        if (msg.text && msg.text.trim()) {
-          lines.push(`${ts} - ${sender}: ${msg.mediaName} (file attached)\n${msg.text.trim()}`);
-        } else {
-          lines.push(`${ts} - ${sender}: ${msg.mediaName} (file attached)`);
-        }
+        continue;
+      }
+
+      let replyPrefix = '';
+      if (msg.replyTo && (msg.replyTo.sender || msg.replyTo.text || msg.replyTo.mediaType)) {
+        const rawRSender = (msg.replyTo.sender === 'You' && chat.meParticipant) ? chat.meParticipant : (msg.replyTo.sender || 'Contact');
+        const rSender = String(rawRSender).replace(/[|>\r\n]/g, ' ').trim() || 'Contact';
+        const fallbackMediaLabel = msg.replyTo.mediaName || (msg.replyTo.mediaType ? msg.replyTo.mediaType : 'Message');
+        const rawSnippet = (msg.replyTo.text && msg.replyTo.text.trim()) ? msg.replyTo.text : fallbackMediaLabel;
+        const rSnippet = String(rawSnippet).replace(/[|>\r\n]/g, ' ').trim().slice(0, 120) || 'Message';
+        replyPrefix = `<Reply: ${rSender} | ${rSnippet}>\n`;
+      }
+
+      const fwdPrefix = msg.isForwarded ? '<Forwarded> ' : '';
+      const editedSuffix = msg.isEdited ? ' <This message was edited>' : '';
+      const reactSuffix = msg.reaction ? ` <Reaction: ${msg.reaction}>` : '';
+
+      if (msg.mediaName) {
+        const caption = (msg.text || '').trim();
+        const bodyPart = caption
+          ? `${fwdPrefix}${replyPrefix}${msg.mediaName} (file attached)\n${caption}${editedSuffix}${reactSuffix}`
+          : `${fwdPrefix}${replyPrefix}${msg.mediaName} (file attached)${editedSuffix}${reactSuffix}`;
+        lines.push(`${ts} - ${sender}: ${bodyPart}`);
       } else {
-        lines.push(`${ts} - ${sender}: ${msg.text || ''}`);
+        const bodyText = `${fwdPrefix}${replyPrefix}${msg.text || ''}${editedSuffix}${reactSuffix}`.trim();
+        lines.push(`${ts} - ${sender}: ${bodyText}`);
       }
     }
 

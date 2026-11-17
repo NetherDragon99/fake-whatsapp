@@ -22,6 +22,7 @@ export class VirtualMessageScroller {
     this.onMessageLongPress = null;    // (msg, row, e) => void
     this.onMessageTapInSelection = null; // (msg, row) => void
     this.selectionMode = false;
+    this.pickReplyMode = false;
 
     // Background task media listener
     this._onMediaReadyBound = this.handleMediaReady.bind(this);
@@ -415,9 +416,11 @@ export class VirtualMessageScroller {
       const targetIdx = foundIdx !== -1 ? foundIdx : this.allMessages.length - 1;
       this.visibleStartIndex = Math.max(0, targetIdx - Math.floor(this.CHUNK_SIZE / 2));
       this.visibleEndIndex = Math.min(this.allMessages.length, this.visibleStartIndex + this.CHUNK_SIZE);
+      this._prioritizeCurrentBatchMedia(targetIdx, [this.visibleStartIndex, this.visibleEndIndex], 'center');
     } else {
       this.visibleStartIndex = Math.max(0, this.allMessages.length - this.CHUNK_SIZE);
       this.visibleEndIndex = this.allMessages.length;
+      this._prioritizeCurrentBatchMedia(this.visibleEndIndex - 1, [this.visibleStartIndex, this.visibleEndIndex], 'up');
     }
 
     await this.renderBatch(this.visibleStartIndex, this.visibleEndIndex, 'replace');
@@ -487,6 +490,7 @@ export class VirtualMessageScroller {
     const newStart = Math.max(0, this.visibleStartIndex - this.CHUNK_SIZE);
     const newEnd = this.visibleStartIndex;
 
+    this._prioritizeCurrentBatchMedia(newEnd - 1, [newStart, newEnd], 'up');
     await this.renderBatch(newStart, newEnd, 'prepend');
     this.visibleStartIndex = newStart;
 
@@ -529,6 +533,7 @@ export class VirtualMessageScroller {
     const newStart = this.visibleEndIndex;
     const newEnd = Math.min(this.allMessages.length, this.visibleEndIndex + this.CHUNK_SIZE);
 
+    this._prioritizeCurrentBatchMedia(newStart, [newStart, newEnd], 'down');
     // Appending content at bottom has zero effect on viewport scroll position above
     await this.renderBatch(newStart, newEnd, 'append');
     this.visibleEndIndex = newEnd;
@@ -642,6 +647,8 @@ export class VirtualMessageScroller {
       this.container.innerHTML = '';
       this.container.appendChild(fragment);
     }
+
+    await this._hydrateReadyPlaceholders();
   }
 
   // --- Multi-Image Album Grid inside Chat Bubbles (Step 4) ---
@@ -804,6 +811,7 @@ export class VirtualMessageScroller {
     };
 
     gridContainer.addEventListener('click', () => {
+      if (this.selectionMode || this.pickReplyMode) return;
       openStacked();
     });
 
@@ -1155,28 +1163,30 @@ export class VirtualMessageScroller {
       snippetText = 'Sticker';
     }
 
-    // Thumbnail if mediaId exists
+    // Thumbnail if mediaId exists (or pending placeholder if media is still decoding in background)
     let thumbHtml = '';
-    if (replyTo.mediaId) {
-      let mediaItem = null;
-      try {
-        mediaItem = await db.getMedia(replyTo.mediaId);
-      } catch (_) {}
+    if (replyTo.mediaId && (replyTo.mediaType === 'image' || replyTo.mediaType === 'sticker' || replyTo.mediaType === 'video')) {
+      let mediaUrl = this.mediaCache.get(replyTo.mediaId) || null;
+      if (!mediaUrl) {
+        let mediaItem = null;
+        try {
+          mediaItem = await db.getMedia(replyTo.mediaId);
+        } catch (_) {}
 
-      if (mediaItem && mediaItem.blob) {
-        let mediaUrl;
-        if (this.mediaCache.has(mediaItem.id)) {
-          mediaUrl = this.mediaCache.get(mediaItem.id);
-        } else {
+        if (mediaItem && mediaItem.blob) {
           mediaUrl = URL.createObjectURL(mediaItem.blob);
           this.mediaCache.set(mediaItem.id, mediaUrl);
         }
+      }
 
+      if (mediaUrl) {
         if (replyTo.mediaType === 'image' || replyTo.mediaType === 'sticker') {
           thumbHtml = `<img src="${mediaUrl}" alt="Thumbnail" />`;
         } else if (replyTo.mediaType === 'video') {
           thumbHtml = `<video src="${mediaUrl}"></video>`;
         }
+      } else {
+        thumbHtml = `<div class="quoted-reply-thumb-pending" data-pending-reply-media-id="${this.escapeHtml(String(replyTo.mediaId))}" data-reply-media-type="${this.escapeHtml(replyTo.mediaType)}"></div>`;
       }
     }
 
@@ -1190,6 +1200,7 @@ export class VirtualMessageScroller {
     `;
 
     box.addEventListener('click', (e) => {
+      if (this.selectionMode || this.pickReplyMode) return;
       e.stopPropagation();
       e.preventDefault();
       if (this.onQuotedMessageClick) {
@@ -1392,16 +1403,100 @@ export class VirtualMessageScroller {
     return docCard;
   }
 
-  async handleMediaReady(data) {
-    if (!data || data.chatId !== this.chatId) return;
+  _prioritizeCurrentBatchMedia(anchorIdx = null, batchRange = null, direction = 'up') {
+    if (!this.chatId || !this.allMessages || this.allMessages.length === 0) return;
+    if (typeof backgroundTasks.prioritizeChatMedia !== 'function') return;
 
-    if (data.mediaRecord && data.mediaRecord.blob) {
-      const url = URL.createObjectURL(data.mediaRecord.blob);
-      this.mediaCache.set(data.mediaId, url);
+    const total = this.allMessages.length;
+    const start = Math.max(0, batchRange ? batchRange[0] : this.visibleStartIndex);
+    const end = Math.min(total, batchRange ? batchRange[1] : this.visibleEndIndex);
+    if (start >= end) return;
+
+    const orderedMediaIds = [];
+    const seen = new Set();
+    const pushMsgMedia = (msg) => {
+      if (!msg) return;
+      if (msg.mediaId) {
+        const idStr = String(msg.mediaId);
+        if (!seen.has(idStr)) {
+          seen.add(idStr);
+          orderedMediaIds.push(msg.mediaId);
+        }
+      }
+      if (msg.replyTo && msg.replyTo.mediaId) {
+        const replyIdStr = String(msg.replyTo.mediaId);
+        if (!seen.has(replyIdStr)) {
+          seen.add(replyIdStr);
+          orderedMediaIds.push(msg.replyTo.mediaId);
+        }
+      }
+    };
+
+    const clampedAnchor = Math.max(
+      start,
+      Math.min(end - 1, anchorIdx != null ? anchorIdx : (end - 1))
+    );
+
+    if (direction === 'down') {
+      for (let i = clampedAnchor; i < end; i++) pushMsgMedia(this.allMessages[i]);
+      for (let i = clampedAnchor - 1; i >= start; i--) pushMsgMedia(this.allMessages[i]);
+    } else if (direction === 'center') {
+      pushMsgMedia(this.allMessages[clampedAnchor]);
+      const maxDist = Math.max(clampedAnchor - start, end - 1 - clampedAnchor);
+      for (let d = 1; d <= maxDist; d++) {
+        if (clampedAnchor + d < end) pushMsgMedia(this.allMessages[clampedAnchor + d]);
+        if (clampedAnchor - d >= start) pushMsgMedia(this.allMessages[clampedAnchor - d]);
+      }
+    } else {
+      for (let i = clampedAnchor; i >= start; i--) pushMsgMedia(this.allMessages[i]);
+      for (let i = clampedAnchor + 1; i < end; i++) pushMsgMedia(this.allMessages[i]);
     }
 
+    backgroundTasks.prioritizeChatMedia(this.chatId, orderedMediaIds);
+  }
+
+  async _hydrateReadyPlaceholders() {
+    if (!this.container) return;
+    const candidateIds = new Set();
+
+    this.container.querySelectorAll('[data-pending-media-id]').forEach((el) => {
+      if (el.dataset.pendingMediaId) candidateIds.add(el.dataset.pendingMediaId);
+    });
+    this.container.querySelectorAll('.album-thumb-wrap[data-media-id]').forEach((el) => {
+      if (el.dataset.mediaId && !el.querySelector('img')) candidateIds.add(el.dataset.mediaId);
+    });
+    this.container.querySelectorAll('[data-pending-reply-media-id]').forEach((el) => {
+      if (el.dataset.pendingReplyMediaId) candidateIds.add(el.dataset.pendingReplyMediaId);
+    });
+
+    for (const mediaId of candidateIds) {
+      const hasCached = this.mediaCache.has(mediaId);
+      const stillPending = backgroundTasks.isMediaPending(this.chatId, mediaId);
+      if (!hasCached && stillPending) continue;
+
+      if (!hasCached) {
+        try {
+          const rec = await db.getMedia(mediaId);
+          if (!rec || !rec.blob) continue;
+          const url = URL.createObjectURL(rec.blob);
+          this.mediaCache.set(mediaId, url);
+        } catch (_) {
+          continue;
+        }
+      }
+
+      await this._hydrateSingleMediaId(mediaId);
+    }
+  }
+
+  async _hydrateSingleMediaId(mediaId, mediaUrl = null) {
+    if (!this.container || !mediaId) return;
+    const idStr = String(mediaId);
+    const safeId = (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') ? CSS.escape(idStr) : idStr;
+    const resolvedUrl = mediaUrl || this.mediaCache.get(mediaId) || this.mediaCache.get(idStr) || null;
+
     // 1. In-place update for single media cards
-    const pendingCards = this.container.querySelectorAll(`[data-pending-media-id="${data.mediaId}"]`);
+    const pendingCards = this.container.querySelectorAll(`[data-pending-media-id="${safeId}"]`);
     for (const pendingEl of pendingCards) {
       const msgId = pendingEl.dataset.msgId;
       const msg = this.allMessages.find((m) => String(m.id) === String(msgId));
@@ -1412,19 +1507,19 @@ export class VirtualMessageScroller {
       }
     }
 
-    // 2. In-place update for album thumbnail slots
-    const pendingThumbs = this.container.querySelectorAll(`.album-thumb-wrap[data-media-id="${data.mediaId}"]`);
-    for (const thumb of pendingThumbs) {
-      const msgId = thumb.dataset.msgId;
-      const subMsg = this.allMessages.find((m) => String(m.id) === String(msgId));
-      if (subMsg) {
-        const mediaUrl = this.mediaCache.get(data.mediaId);
-        if (mediaUrl) {
+    // 2. In-place update for album thumbnail slots & quoted-reply thumbnails
+    if (resolvedUrl) {
+      const pendingThumbs = this.container.querySelectorAll(`.album-thumb-wrap[data-media-id="${safeId}"]`);
+      for (const thumb of pendingThumbs) {
+        if (thumb.querySelector('img')) continue;
+        const msgId = thumb.dataset.msgId;
+        const subMsg = this.allMessages.find((m) => String(m.id) === String(msgId));
+        if (subMsg) {
           const isVideo = subMsg.mediaType === 'video' || (subMsg.mediaName && /\.(mp4|mov|webm)$/i.test(subMsg.mediaName));
           thumb.innerHTML = '';
           const img = document.createElement('img');
           img.className = 'album-thumb-img wa-media-loaded-fade';
-          img.src = mediaUrl;
+          img.src = resolvedUrl;
           img.alt = subMsg.mediaName || 'Photo';
           img.loading = 'lazy';
           thumb.appendChild(img);
@@ -1441,7 +1536,36 @@ export class VirtualMessageScroller {
           }
         }
       }
+
+      const pendingReplyThumbs = this.container.querySelectorAll(`[data-pending-reply-media-id="${safeId}"]`);
+      for (const pendingReply of pendingReplyThumbs) {
+        const replyType = pendingReply.dataset.replyMediaType;
+        if (replyType === 'video') {
+          const video = document.createElement('video');
+          video.src = resolvedUrl;
+          video.className = 'wa-media-loaded-fade';
+          pendingReply.replaceWith(video);
+        } else {
+          const img = document.createElement('img');
+          img.src = resolvedUrl;
+          img.alt = 'Thumbnail';
+          img.className = 'wa-media-loaded-fade';
+          pendingReply.replaceWith(img);
+        }
+      }
     }
+  }
+
+  async handleMediaReady(data) {
+    if (!data || data.chatId !== this.chatId) return;
+
+    let mediaUrl = this.mediaCache.get(data.mediaId) || null;
+    if (data.mediaRecord && data.mediaRecord.blob) {
+      mediaUrl = URL.createObjectURL(data.mediaRecord.blob);
+      this.mediaCache.set(data.mediaId, mediaUrl);
+    }
+
+    await this._hydrateSingleMediaId(data.mediaId, mediaUrl);
   }
 
   destroy() {
@@ -1469,6 +1593,7 @@ export class VirtualMessageScroller {
       this.visibleStartIndex = Math.max(0, this.allMessages.length - batchCount);
       this.visibleEndIndex = this.allMessages.length;
 
+      this._prioritizeCurrentBatchMedia(this.visibleEndIndex - 1, [this.visibleStartIndex, this.visibleEndIndex], 'up');
       await this.renderBatch(this.visibleStartIndex, this.visibleEndIndex, 'replace');
 
       if (smooth) {
@@ -1559,6 +1684,7 @@ export class VirtualMessageScroller {
       if (foundIdx !== -1) {
         this.visibleStartIndex = Math.max(0, foundIdx - Math.floor(this.CHUNK_SIZE / 2));
         this.visibleEndIndex = Math.min(this.allMessages.length, this.visibleStartIndex + this.CHUNK_SIZE);
+        this._prioritizeCurrentBatchMedia(foundIdx, [this.visibleStartIndex, this.visibleEndIndex], 'center');
         await this.renderBatch(this.visibleStartIndex, this.visibleEndIndex, 'replace');
         el = this.findMessageElement(targetStr);
       }
@@ -1638,6 +1764,7 @@ export class VirtualMessageScroller {
       if (foundIdx !== -1) {
         this.visibleStartIndex = Math.max(0, foundIdx - Math.floor(this.CHUNK_SIZE / 2));
         this.visibleEndIndex = Math.min(this.allMessages.length, this.visibleStartIndex + this.CHUNK_SIZE);
+        this._prioritizeCurrentBatchMedia(foundIdx, [this.visibleStartIndex, this.visibleEndIndex], 'center');
         await this.renderBatch(this.visibleStartIndex, this.visibleEndIndex, 'replace');
         el = this.findMessageElement(targetStr);
       }
@@ -1695,10 +1822,13 @@ export class VirtualMessageScroller {
       if (foundIdx !== -1) {
         this.visibleStartIndex = Math.max(0, foundIdx - 15);
         this.visibleEndIndex = Math.min(this.allMessages.length, this.visibleStartIndex + this.CHUNK_SIZE);
+        this._prioritizeCurrentBatchMedia(foundIdx, [this.visibleStartIndex, this.visibleEndIndex], 'center');
         await this.renderBatch(this.visibleStartIndex, this.visibleEndIndex, 'replace');
 
         el = this.findMessageElement(targetMsg.id);
       }
+    } else if (foundIdx !== -1) {
+      this._prioritizeCurrentBatchMedia(foundIdx, [this.visibleStartIndex, this.visibleEndIndex], 'center');
     }
 
     if (!el) {

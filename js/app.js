@@ -22,6 +22,7 @@ import { ManageStorageView } from './views/manage-storage-view.js';
 import { ChatStorageView } from './views/chat-storage-view.js';
 import { ImportModal } from './components/modal-import.js';
 import { WhatsAppParser } from './parser.js';
+import { finalizeParsedMessages } from './utils/message-mapper.js';
 import { Toast } from './components/toast.js';
 import { applyAppAccent, applyOutgoingBubbleColor } from './config/palette.js';
 import { applyAppIcon } from './config/app-icons.js';
@@ -29,8 +30,8 @@ import { assetUrl } from './config/base-path.js';
 import { backgroundTasks } from './utils/background-tasks.js';
 
 // Application Version Constant
-window.APP_VERSION = '2.3.4';
-window.APP_CACHE_NAME = 'wa-clone-v2.3.4';
+window.APP_VERSION = '2.3.5';
+window.APP_CACHE_NAME = 'wa-clone-v2.3.5';
 
 // Global deferred PWA install prompt holder
 window.deferredInstallPrompt = null;
@@ -267,21 +268,12 @@ class Application {
         meName = parseResult.participants[1] || parseResult.participants[0] || 'You';
       }
 
-      const messages = parseResult.messages.map((m) => {
-        let cleanMediaName = null;
-        let linkedMediaId = null;
-        if (m.mediaName) {
-          cleanMediaName = parser.normalizeFilename(m.mediaName);
-          if (mediaIdMap.has(cleanMediaName)) linkedMediaId = mediaIdMap.get(cleanMediaName);
-        }
-        return {
-          ...m,
-          chatId,
-          isOutgoing: m.sender === meName,
-          mediaId: linkedMediaId,
-          isVoiceNote: m.mediaType === 'audio',
-          duration: m.duration || 0
-        };
+      const { messages, orderedMediaIds } = finalizeParsedMessages(parseResult.messages, {
+        chatId,
+        meName,
+        isSelfChat: false,
+        mediaIdMap,
+        normalizeFilename: (n) => parser.normalizeFilename(n)
       });
 
       const calls = parseResult.calls.map((c) => ({
@@ -323,6 +315,7 @@ class Application {
           extractedMediaFiles,
           mediaIdMap,
           msgTimestampByMediaName: msgTimestampMap,
+          orderedMediaIds,
           calls
         });
       }

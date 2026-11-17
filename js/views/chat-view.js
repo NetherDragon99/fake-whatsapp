@@ -38,6 +38,7 @@ export class ChatView {
     this.isSelectionMode = false;
     this.replyingTo = null;
     this.editingMessage = null;
+    this.linkingReplyForMsg = null;
     this._draftBeforeEdit = null;
     this._currentFabMode = 'mic';
     this._updateInputLayout = null;
@@ -206,6 +207,9 @@ export class ChatView {
           ${Icons.chevronDown('', 22)}
         </button>
 
+        <!-- Link Reply Target Picker Banner (above edit/reply banner) -->
+        <div class="chat-link-reply-banner" id="chat-link-reply-banner" style="display: none;"></div>
+
         <!-- Edit Message Banner (above reply banner / input bar) -->
         <div class="chat-edit-preview-banner" id="chat-edit-banner" style="display: none;"></div>
 
@@ -370,6 +374,10 @@ export class ChatView {
       chat: this.chat,
       outgoingTheme,
       onMediaClick: (mediaItem, msg) => {
+        if (this.linkingReplyForMsg) {
+          this._applyReplyTargetToMessage(msg);
+          return;
+        }
         if (this.isSelectionMode) {
           this.reactionBar?.hide();
           this.toggleMessageSelection(msg.id);
@@ -380,6 +388,11 @@ export class ChatView {
         });
       },
       onMessageClick: (msg, rowEl, evt) => {
+        if (this.linkingReplyForMsg) {
+          evt?.stopPropagation();
+          this._applyReplyTargetToMessage(msg);
+          return;
+        }
         if (this.isSelectionMode) {
           evt?.stopPropagation();
           this.reactionBar?.hide();
@@ -398,7 +411,7 @@ export class ChatView {
         this.toggleMessageSelection(msg.id, rowEl);
       },
       onMessageReply: (msg) => {
-        if (!this.isSelectionMode) this.startReply(msg);
+        if (!this.isSelectionMode && !this.linkingReplyForMsg) this.startReply(msg);
       },
       onQuotedMessageClick: async (targetId) => {
         const found = await this.scroller.scrollToMessage(targetId);
@@ -1284,10 +1297,10 @@ export class ChatView {
       .replace(/"/g, '&quot;');
   }
 
-  async startReply(msg) {
-    if (!msg || msg.isSystem || msg.isDeleted) return;
+  _buildReplyPayload(msg) {
+    if (!msg) return null;
     const sender = msg.isOutgoing ? 'You' : (msg.sender || this.chat?.name || 'Contact');
-    this.replyingTo = {
+    return {
       id: msg.id,
       sender,
       text: msg.text || '',
@@ -1295,6 +1308,22 @@ export class ChatView {
       mediaId: msg.mediaId || null,
       mediaName: msg.mediaName || null
     };
+  }
+
+  _getMessagePreviewText(msg) {
+    if (!msg) return 'Message';
+    if (msg.text) return msg.text;
+    if (msg.mediaName && (msg.mediaType === 'pdf' || msg.mediaType === 'document')) return msg.mediaName;
+    if (msg.mediaType) return `[${msg.mediaType}]`;
+    return 'Message';
+  }
+
+  async startReply(msg) {
+    if (!msg || msg.isSystem || msg.isDeleted) return;
+    if (this.linkingReplyForMsg) {
+      this.cancelLinkReplyTarget();
+    }
+    this.replyingTo = this._buildReplyPayload(msg);
     await this.renderReplyBanner();
     this.container.querySelector('#chat-input-textarea')?.focus();
   }
@@ -1762,6 +1791,7 @@ export class ChatView {
   }
 
   _handleMessageLongPress(msg, rowEl, evt) {
+    if (this.linkingReplyForMsg) return;
     if (this.isSelectionMode) {
       this.toggleMessageSelection(msg.id, rowEl);
     } else {
@@ -1770,9 +1800,121 @@ export class ChatView {
     }
   }
 
+  // --- Link Reply Quote Picker (without forcing Edited badge) ---
+  async startLinkReplyTarget(msg) {
+    this.exitSelectionMode();
+    if (!msg || msg.isSystem || msg.isDeleted) return;
+    if (this.editingMessage) {
+      await this.cancelEdit(true);
+    }
+
+    this.linkingReplyForMsg = msg;
+    if (this.scroller) {
+      this.scroller.pickReplyMode = true;
+      this.scroller.container?.classList.add('is-pick-reply-mode');
+      this.scroller.container?.querySelectorAll('.msg-row.is-link-reply-source').forEach((r) => {
+        r.classList.remove('is-link-reply-source');
+      });
+      const sourceRow = this.scroller.findMessageElement?.(String(msg.id));
+      if (sourceRow) sourceRow.classList.add('is-link-reply-source');
+    }
+
+    if (window.router && typeof window.router.pushOverlay === 'function') {
+      window.router.pushOverlay('chat-link-reply', () => this.cancelLinkReplyTarget());
+    }
+
+    this.renderLinkReplyBanner();
+  }
+
+  renderLinkReplyBanner() {
+    const banner = this.container?.querySelector('#chat-link-reply-banner');
+    if (!banner) return;
+
+    const msg = this.linkingReplyForMsg;
+    if (!msg) {
+      banner.style.display = 'none';
+      banner.innerHTML = '';
+      return;
+    }
+
+    const preview = this._getMessagePreviewText(msg);
+    const hasExistingReply = Boolean(msg.replyTo);
+
+    banner.innerHTML = `
+      <div class="link-reply-banner-content">
+        <div class="link-reply-banner-icon">${Icons.linkIcon('', 18)}</div>
+        <div class="edit-banner-texts">
+          <div class="edit-banner-title">Tap a message to quote as reply</div>
+          <div class="edit-banner-snippet" dir="auto">For: ${this._escHtml(preview)}</div>
+        </div>
+        ${hasExistingReply ? `<button type="button" class="link-reply-unlink-btn" id="btn-unlink-reply">Remove</button>` : ''}
+      </div>
+      <button type="button" class="edit-banner-close-btn" id="btn-cancel-link-reply" aria-label="Cancel linking reply">${Icons.close('', 18)}</button>
+    `;
+    banner.style.display = 'flex';
+    banner.querySelector('#btn-cancel-link-reply')?.addEventListener('click', () => this.cancelLinkReplyTarget());
+    banner.querySelector('#btn-unlink-reply')?.addEventListener('click', () => this._unlinkReplyTarget());
+  }
+
+  cancelLinkReplyTarget() {
+    const wasActive = Boolean(this.linkingReplyForMsg);
+    this.linkingReplyForMsg = null;
+
+    if (this.scroller) {
+      this.scroller.pickReplyMode = false;
+      this.scroller.container?.classList.remove('is-pick-reply-mode');
+      this.scroller.container?.querySelectorAll('.msg-row.is-link-reply-source').forEach((r) => {
+        r.classList.remove('is-link-reply-source');
+      });
+    }
+
+    if (wasActive) {
+      this.renderLinkReplyBanner();
+    }
+
+    if (window.router && typeof window.router.removeOverlay === 'function') {
+      window.router.removeOverlay('chat-link-reply');
+    }
+  }
+
+  async _applyReplyTargetToMessage(targetMsg) {
+    const sourceMsg = this.linkingReplyForMsg;
+    if (!sourceMsg) return;
+    if (!targetMsg || targetMsg.isSystem || targetMsg.isDeleted) {
+      Toast.show('Select a message to quote');
+      return;
+    }
+    if (String(targetMsg.id) === String(sourceMsg.id)) {
+      Toast.show('Cannot quote the same message');
+      return;
+    }
+
+    const replyTo = this._buildReplyPayload(targetMsg);
+    this.cancelLinkReplyTarget();
+
+    await db.updateMessage(sourceMsg.id, { replyTo });
+    sourceMsg.replyTo = replyTo;
+    await this.scroller?.updateMessageInPlace(sourceMsg);
+    Toast.show('Reply linked');
+  }
+
+  async _unlinkReplyTarget() {
+    const sourceMsg = this.linkingReplyForMsg;
+    if (!sourceMsg) return;
+
+    this.cancelLinkReplyTarget();
+    await db.updateMessage(sourceMsg.id, { replyTo: null });
+    sourceMsg.replyTo = null;
+    await this.scroller?.updateMessageInPlace(sourceMsg);
+    Toast.show('Reply removed');
+  }
+
   // --- Message Editing via Bottom Composer (Preserves Draft & Reply) ---
   async startEditMessage(msg) {
     this.exitSelectionMode();
+    if (this.linkingReplyForMsg) {
+      this.cancelLinkReplyTarget();
+    }
     if (!msg || msg.isDeleted) return;
 
     const textarea = this.container.querySelector('#chat-input-textarea');
@@ -1786,9 +1928,16 @@ export class ChatView {
       };
     }
 
+    const preserveActiveReply = Boolean(
+      !msg.replyTo &&
+      this.replyingTo &&
+      String(this.replyingTo.id) !== String(msg.id)
+    );
     this.editingMessage = msg;
     textarea.value = msg.text || '';
-    this.replyingTo = msg.replyTo ? { ...msg.replyTo } : null;
+    if (!preserveActiveReply) {
+      this.replyingTo = msg.replyTo ? { ...msg.replyTo } : null;
+    }
 
     this.renderEditBanner();
     await this.renderReplyBanner();
@@ -1880,7 +2029,7 @@ export class ChatView {
     const updates = {
       text: nextText,
       replyTo: nextReplyTo,
-      isEdited: true
+      isEdited: Boolean(msg.isEdited || textChanged)
     };
 
     await db.updateMessage(msg.id, updates);
@@ -1894,7 +2043,7 @@ export class ChatView {
       await db.updateChat(this.chatId, { lastMessage: previewText, updatedAt: Date.now() });
     }
 
-    Toast.show('Message edited');
+    Toast.show(textChanged ? 'Message edited' : (nextReplyTo ? 'Reply updated' : 'Reply removed'));
     await this.cancelEdit(true);
   }
 
@@ -2030,6 +2179,18 @@ export class ChatView {
           icon: Icons.edit('', 20),
           action: () => {
             this.startEditMessage(msg);
+          }
+        });
+      }
+
+      // 3. Link Reply Quote (attach or change quote on imported/existing messages without forcing Edited)
+      if (!msg.isSystem && !msg.isDeleted) {
+        tools.push({
+          id: 'link-reply',
+          label: msg.replyTo ? 'Change quoted reply' : 'Link reply to...',
+          icon: Icons.linkIcon('', 20),
+          action: () => {
+            this.startLinkReplyTarget(msg);
           }
         });
       }
@@ -2675,6 +2836,7 @@ export class ChatView {
   }
 
   cleanup() {
+    this.cancelLinkReplyTarget();
     this.exitSelectionMode();
     this.editingMessage = null;
     this._draftBeforeEdit = null;

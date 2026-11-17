@@ -8,6 +8,7 @@ import { openImageCropper } from './image-cropper.js';
 import { assetUrl } from '../config/base-path.js';
 import { DrawerResizer } from '../utils/drawer-resizer.js';
 import { backgroundTasks } from '../utils/background-tasks.js';
+import { finalizeParsedMessages } from '../utils/message-mapper.js';
 
 export class ImportModal {
   constructor(options = {}) {
@@ -776,29 +777,13 @@ export class ImportModal {
 
       this.updateProgress(90, 'Writing messages...');
 
-      // Assign perspective and link media
-      const messages = this.rawParseResult.messages.map((m) => {
-        const isOutgoing = isSelfChat || (m.sender === meName);
-        let linkedMediaId = null;
-        let cleanMediaName = null;
-
-        if (m.mediaName) {
-          cleanMediaName = this.parser.normalizeFilename(m.mediaName);
-          if (mediaIdMap.has(cleanMediaName)) {
-            linkedMediaId = mediaIdMap.get(cleanMediaName);
-          }
-        }
-
-        const isVoice = m.mediaType === 'audio' || (cleanMediaName && /\.(opus|ogg|m4a|aac|mp3|wav)$/i.test(cleanMediaName));
-
-        return {
-          ...m,
-          chatId,
-          isOutgoing,
-          mediaId: linkedMediaId,
-          isVoiceNote: isVoice,
-          duration: m.duration || 0
-        };
+      // Assign perspective, link media, resolve replyTo links, and rank media newest -> oldest
+      const { messages, orderedMediaIds } = finalizeParsedMessages(this.rawParseResult.messages, {
+        chatId,
+        meName,
+        isSelfChat,
+        mediaIdMap,
+        normalizeFilename: (n) => this.parser.normalizeFilename(n)
       });
 
       // Prepare Calls records
@@ -846,6 +831,7 @@ export class ImportModal {
           extractedMediaFiles: this.extractedMediaFiles,
           mediaIdMap,
           msgTimestampByMediaName,
+          orderedMediaIds,
           calls
         });
       }

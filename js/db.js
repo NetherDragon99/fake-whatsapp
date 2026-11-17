@@ -191,6 +191,14 @@ class Database {
         } else if (m.sender === currentMeName) {
           m.sender = newMeName;
         }
+        if (m.replyTo && m.replyTo.sender) {
+          const rSender = m.replyTo.sender;
+          if (rSender === currentChatName) {
+            m.replyTo.sender = !chat.isGroup ? 'You' : newMeName;
+          } else if (rSender === 'You' || rSender === currentMeName) {
+            m.replyTo.sender = newChatName;
+          }
+        }
       }
     }
 
@@ -299,6 +307,19 @@ class Database {
         range = IDBKeyRange.bound([chatId, 0], [chatId, Infinity]);
       }
 
+      const sortMessagesStably = (arr) => {
+        arr.sort((a, b) => {
+          const ta = a.timestamp || 0;
+          const tb = b.timestamp || 0;
+          if (ta !== tb) return ta - tb;
+          const sa = a.seq !== undefined && a.seq !== null ? a.seq : Number.MAX_SAFE_INTEGER;
+          const sb = b.seq !== undefined && b.seq !== null ? b.seq : Number.MAX_SAFE_INTEGER;
+          if (sa !== sb) return sa - sb;
+          return String(a.id || '').localeCompare(String(b.id || ''));
+        });
+        return arr;
+      };
+
       const results = [];
       const cursorReq = index.openCursor(range, 'next');
 
@@ -307,12 +328,12 @@ class Database {
         if (cursor) {
           results.push(cursor.value);
           if (limit > 0 && results.length >= limit) {
-            resolve(results);
+            resolve(sortMessagesStably(results));
             return;
           }
           cursor.continue();
         } else {
-          resolve(results);
+          resolve(sortMessagesStably(results));
         }
       };
 

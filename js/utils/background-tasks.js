@@ -14,6 +14,8 @@ class BackgroundTaskManager {
     // Track pending items per chat
     // Map<chatId, Set<cleanName | mediaId>>
     this.pendingMediaByChat = new Map();
+    // Map<chatId, string[]> ordered highest-priority mediaIds
+    this.prioritizedMediaByChat = new Map();
     // Set<chatId>
     this.callsIndexingChats = new Set();
 
@@ -62,20 +64,89 @@ class BackgroundTaskManager {
     this.activeChatId = chatId;
 
     if (!chatId || this.queue.length === 0) return;
+    this._reprioritizeQueue();
+  }
 
-    // Reprioritize: Move items belonging to activeChatId to the front
-    const activeItems = [];
+  /**
+   * Prioritize media items belonging to the currently rendered/visible batch
+   * for `chatId`, then unrendered active-chat media newest-to-oldest, then active-chat calls.
+   */
+  prioritizeChatMedia(chatId, orderedPriorityMediaIds = []) {
+    if (!chatId) return;
+
+    const rankMap = new Map();
+    if (Array.isArray(orderedPriorityMediaIds)) {
+      orderedPriorityMediaIds.forEach((id) => {
+        if (!id) return;
+        const key = String(id);
+        if (!rankMap.has(key)) {
+          rankMap.set(key, rankMap.size);
+        }
+      });
+    }
+
+    this.prioritizedMediaByChat.set(chatId, rankMap);
+    if (this.activeChatId !== chatId) {
+      this.activeChatId = chatId;
+    }
+
+    if (this.queue.length > 0) {
+      this._reprioritizeQueue();
+    }
+  }
+
+  _reprioritizeQueue() {
+    if (!this.activeChatId || this.queue.length === 0) return;
+
+    const targetChatId = this.activeChatId;
+    const rankMap = this.prioritizedMediaByChat.get(targetChatId) || null;
+    const rankedMedia = [];
+    const unrankedMedia = [];
+    const activeCalls = [];
     const otherItems = [];
 
     for (const item of this.queue) {
-      if (item.chatId === chatId) {
-        activeItems.push(item);
-      } else {
+      if (item.chatId !== targetChatId) {
         otherItems.push(item);
+        continue;
       }
+
+      if (item.type === 'calls') {
+        activeCalls.push(item);
+        continue;
+      }
+
+      if (rankMap && rankMap.size > 0) {
+        const rankById = item.mediaId ? rankMap.get(String(item.mediaId)) : undefined;
+        const rankByName = item.cleanName ? rankMap.get(String(item.cleanName)) : undefined;
+        const rank = rankById !== undefined ? rankById : rankByName;
+        if (rank !== undefined) {
+          rankedMedia.push({ item, rank });
+          continue;
+        }
+      }
+
+      unrankedMedia.push(item);
     }
 
-    this.queue = [...activeItems, ...otherItems];
+    if (rankedMedia.length > 1) {
+      rankedMedia.sort((a, b) => a.rank - b.rank);
+    }
+
+    if (unrankedMedia.length > 1) {
+      unrankedMedia.sort((a, b) => {
+        const tsDiff = (b.itemTimestamp || 0) - (a.itemTimestamp || 0);
+        if (tsDiff !== 0) return tsDiff;
+        return (a.orderIndex ?? 0) - (b.orderIndex ?? 0);
+      });
+    }
+
+    this.queue = [
+      ...rankedMedia.map((entry) => entry.item),
+      ...unrankedMedia,
+      ...activeCalls,
+      ...otherItems
+    ];
   }
 
   // --- Enqueue Chat Media and Calls Processing ---
@@ -86,6 +157,7 @@ class BackgroundTaskManager {
     mediaIdMap, // Map<cleanName, mediaId>
     mediaDurationMap = null,
     msgTimestampByMediaName = null,
+    orderedMediaIds = null,
     calls = []
   }) {
     if (!this.pendingMediaByChat.has(chatId)) {
@@ -93,10 +165,23 @@ class BackgroundTaskManager {
     }
     const chatPendingSet = this.pendingMediaByChat.get(chatId);
 
-    const newTasks = [];
+    const defaultOrderMap = new Map();
+    if (Array.isArray(orderedMediaIds)) {
+      orderedMediaIds.forEach((id) => {
+        if (!id) return;
+        const key = String(id);
+        if (!defaultOrderMap.has(key)) {
+          defaultOrderMap.set(key, defaultOrderMap.size);
+        }
+      });
+    }
+
+    const mediaTasks = [];
+    const callTasks = [];
 
     // 1. Enqueue media items
     if (extractedMediaFiles && extractedMediaFiles.size > 0) {
+      let fallbackOrder = 0;
       for (const [cleanName, fileItem] of extractedMediaFiles.entries()) {
         const mediaId = (mediaIdMap && mediaIdMap.get(cleanName))
           || ('media_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6));
@@ -106,8 +191,11 @@ class BackgroundTaskManager {
 
         const itemTimestamp = (msgTimestampByMediaName && msgTimestampByMediaName.get(cleanName)) || Date.now();
         const preDuration = (mediaDurationMap && mediaDurationMap.get(cleanName)) || 0;
+        const orderIndex = defaultOrderMap.has(String(mediaId))
+          ? defaultOrderMap.get(String(mediaId))
+          : (defaultOrderMap.size + fallbackOrder++);
 
-        newTasks.push({
+        mediaTasks.push({
           id: `task_${mediaId}`,
           type: 'media',
           chatId,
@@ -116,9 +204,22 @@ class BackgroundTaskManager {
           cleanName,
           fileItem,
           itemTimestamp,
+          orderIndex,
           preDuration
         });
       }
+
+      // Default background order: newest messages first (or explicit orderedMediaIds)
+      mediaTasks.sort((a, b) => {
+        if (defaultOrderMap.size > 0) {
+          const aHas = defaultOrderMap.has(String(a.mediaId));
+          const bHas = defaultOrderMap.has(String(b.mediaId));
+          if (aHas || bHas) {
+            return a.orderIndex - b.orderIndex;
+          }
+        }
+        return (b.itemTimestamp || 0) - (a.itemTimestamp || 0);
+      });
     }
 
     // 2. Enqueue calls indexing
@@ -126,7 +227,7 @@ class BackgroundTaskManager {
       this.callsIndexingChats.add(chatId);
       this.emit('calls-indexing-start', { chatId, count: calls.length });
 
-      newTasks.push({
+      callTasks.push({
         id: `task_calls_${chatId}_${Date.now()}`,
         type: 'calls',
         chatId,
@@ -135,13 +236,12 @@ class BackgroundTaskManager {
       });
     }
 
+    const newTasks = [...mediaTasks, ...callTasks];
     if (newTasks.length === 0) return;
 
-    // Prioritize if current active chat
-    if (this.activeChatId === chatId) {
-      this.queue.unshift(...newTasks);
-    } else {
-      this.queue.push(...newTasks);
+    this.queue.push(...newTasks);
+    if (this.activeChatId) {
+      this._reprioritizeQueue();
     }
 
     this.totalTasksInRun += newTasks.length;
@@ -164,7 +264,7 @@ class BackgroundTaskManager {
     };
 
     if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-      window.requestIdleCallback(runner, { timeout: 120 });
+      window.requestIdleCallback(runner, { timeout: 60 });
     } else {
       setTimeout(runner, 16);
     }

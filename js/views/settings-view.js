@@ -20,7 +20,7 @@ export class SettingsView {
       let ownerName = 'You';
       let userAvatarBlob = null;
       let storageStats = { formattedSize: '0 B', chatCount: 0, messageCount: 0 };
-      const appVersion = window.APP_VERSION || '2.3.4';
+      const appVersion = window.APP_VERSION || '2.3.5';
       const cacheStatus = window.__waCacheStatus || null;
       const updateState = (window.app && typeof window.app.getUpdateState === 'function')
         ? window.app.getUpdateState()
@@ -368,7 +368,7 @@ export class SettingsView {
     });
 
     // Check for Updates, Background Download Progress & Restart to Update
-    const appVersion = window.APP_VERSION || '2.3.4';
+    const appVersion = window.APP_VERSION || '2.3.5';
     const updateRow = this.container.querySelector('#row-check-updates');
     const updateSubEl = this.container.querySelector('#settings-update-status-sub');
     const updateReadyCard = this.container.querySelector('#settings-update-ready-card');

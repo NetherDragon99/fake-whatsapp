@@ -5,11 +5,11 @@ export class WhatsAppParser {
     this.dateFormat = 'DD/MM'; // Inferred: 'DD/MM' or 'MM/DD'
   }
 
-  // Strip invisible Unicode formatting, directional markers, and normalize spaces
+  // Strip invisible Unicode formatting, BOM, ALM, directional markers, and normalize spaces
   sanitize(text) {
     if (!text) return '';
     return text
-      .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '') // LTR/RTL embedding markers
+      .replace(/[\ufeff\u061c\u200b\u200e\u200f\u202a-\u202e\u2060\u2066-\u2069]/g, '') // BOM, ALM & LTR/RTL embedding markers
       .replace(/[\u202f\u00a0\u1680\u2000-\u200a\u205f\u3000]/g, ' ') // Non-breaking & narrow spaces
       .trim();
   }
@@ -41,14 +41,14 @@ export class WhatsAppParser {
     return parts[parts.length - 1].trim().toLowerCase();
   }
 
-  // Infer whether archive uses DD/MM or MM/DD by inspecting up to 300 date lines
+  // Infer whether archive uses DD/MM or MM/DD by scanning date lines across the archive
   inferDateFormat(rawLines) {
     let ddFound = false;
     let mmFound = false;
 
     const datePattern = /(?:^|\[)(\d{1,4})[\/\.\-](\d{1,2})[\/\.\-](\d{1,4})/;
 
-    for (let i = 0; i < Math.min(rawLines.length, 300); i++) {
+    for (let i = 0; i < rawLines.length; i++) {
       const line = this.normalizeForMatching(this.sanitize(rawLines[i]));
       const match = line.match(datePattern);
       if (match) {
@@ -85,7 +85,8 @@ export class WhatsAppParser {
   }
 
   // Convert parsed date + time strings into standard epoch timestamp
-  parseTimestamp(dateStr, timeStr) {
+  parseTimestamp(dateStr, timeStr, fallbackTimestamp = null) {
+    const fallback = fallbackTimestamp || Date.now();
     try {
       const dateParts = this.normalizeDigits(dateStr).split(/[\/\.\-]/).map((p) => parseInt(p, 10));
       let day, month, year;
@@ -108,6 +109,10 @@ export class WhatsAppParser {
         }
       }
 
+      if (isNaN(year) || isNaN(month) || isNaN(day) || month < 1 || month > 12 || day < 1 || day > 31) {
+        return fallback;
+      }
+
       // Parse time (e.g. 10:45 am, 14:30, 7:15:30 PM, 11:20 ص, 09:15 مساءً)
       let cleanTime = this.normalizeDigits(this.sanitize(timeStr)).toLowerCase();
       let isPM = cleanTime.includes('pm') || cleanTime.includes('p.m.') || cleanTime.includes('مساء') || cleanTime.includes('م');
@@ -117,9 +122,9 @@ export class WhatsAppParser {
       cleanTime = cleanTime.replace(/[^\d:]/g, '');
       const timeParts = cleanTime.split(':').map((p) => parseInt(p, 10));
 
-      let hours = timeParts[0] || 0;
-      const minutes = timeParts[1] || 0;
-      const seconds = timeParts[2] || 0;
+      let hours = isNaN(timeParts[0]) ? 0 : timeParts[0];
+      const minutes = isNaN(timeParts[1]) ? 0 : timeParts[1];
+      const seconds = isNaN(timeParts[2]) ? 0 : timeParts[2];
 
       if (isPM && hours < 12) {
         hours += 12;
@@ -129,9 +134,9 @@ export class WhatsAppParser {
 
       const dateObj = new Date(year, month - 1, day, hours, minutes, seconds);
       const time = dateObj.getTime();
-      return isNaN(time) ? Date.now() : time;
+      return isNaN(time) ? fallback : time;
     } catch (e) {
-      return Date.now();
+      return fallback;
     }
   }
 
@@ -229,6 +234,160 @@ export class WhatsAppParser {
     return { isCall: false };
   }
 
+  _resolveQuotedMessage(quotedSender, quotedSnippet, priorMessages) {
+    const cleanSender = (quotedSender || '').trim().toLowerCase();
+    const cleanSnippet = (quotedSnippet || '').trim().toLowerCase();
+
+    let bestMatch = null;
+    let bestScore = 0;
+
+    for (let i = priorMessages.length - 1; i >= 0; i--) {
+      const m = priorMessages[i];
+      if (!m || m.isSystem) continue;
+
+      const mSender = (m.sender || '').trim().toLowerCase();
+      const senderMatches = !cleanSender || mSender === cleanSender;
+      const mText = (m.text || '').trim().toLowerCase();
+      const mMedia = (m.mediaName || '').trim().toLowerCase();
+
+      let score = 0;
+      if (cleanSnippet) {
+        if (mText && mText === cleanSnippet) {
+          score = senderMatches ? 100 : 80;
+        } else if (mText && (mText.startsWith(cleanSnippet) || (mText.length >= 4 && cleanSnippet.startsWith(mText.slice(0, 40))))) {
+          score = senderMatches ? 85 : 65;
+        } else if (mText && cleanSnippet.length >= 4 && mText.includes(cleanSnippet)) {
+          score = senderMatches ? 75 : 55;
+        } else if (mMedia && (mMedia === cleanSnippet || cleanSnippet.includes(mMedia))) {
+          score = senderMatches ? 80 : 60;
+        } else if (m.mediaType && (
+          (m.mediaType === 'image' && /^(photo|image|صورة|img)/i.test(cleanSnippet)) ||
+          (m.mediaType === 'video' && /^(video|فيديو|vid)/i.test(cleanSnippet)) ||
+          (m.mediaType === 'audio' && /^(voice|audio|ptt|صوت|رسالة صوتية)/i.test(cleanSnippet)) ||
+          (m.mediaType === 'sticker' && /^(sticker|ملصق|ستيكر)/i.test(cleanSnippet)) ||
+          ((m.mediaType === 'pdf' || m.mediaType === 'document') && /^(doc|pdf|file|مستند|ملف)/i.test(cleanSnippet))
+        )) {
+          score = senderMatches ? 60 : 40;
+        }
+      } else if (senderMatches) {
+        score = 30;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = m;
+        if (bestScore === 100) break;
+      }
+    }
+
+    return { bestMatch, bestScore };
+  }
+
+  _extractQuotedReply(msg, priorMessages, participantSet) {
+    if (!msg || !msg.text || msg.isSystem) return;
+    const text = msg.text;
+
+    // 1. Explicit structured tags: <Reply: Sender | Snippet>, [Replying to Sender: "Snippet"], <رد على: ...>
+    const tagMatch =
+      text.match(/<(?:Reply|رد على):\s*([^|>]+?)\s*\|\s*([^>]+)>/i) ||
+      text.match(/\[(?:Reply|Replying to|رد على|الرد على)\s*:?\s*([^\]|:"]+?)\s*(?:\||:)\s*"?([^\]"]+)"?\]/i);
+
+    if (tagMatch) {
+      const qSender = this.sanitize(tagMatch[1]);
+      const qSnippet = this.sanitize(tagMatch[2]);
+      const { bestMatch } = this._resolveQuotedMessage(qSender, qSnippet, priorMessages);
+      msg.text = text.replace(tagMatch[0], '').trim();
+      msg.replyTo = bestMatch
+        ? {
+            id: bestMatch.id,
+            sender: bestMatch.sender || qSender || 'Contact',
+            text: bestMatch.text || qSnippet || '',
+            mediaType: bestMatch.mediaType || null,
+            mediaName: bestMatch.mediaName || null,
+            mediaId: bestMatch.mediaId || null
+          }
+        : {
+            id: 'ext_' + (msg.seq ?? priorMessages.length) + '_' + Math.random().toString(36).substr(2, 5),
+            sender: qSender || 'Contact',
+            text: qSnippet || '',
+            mediaType: null,
+            mediaName: null,
+            mediaId: null
+          };
+      return;
+    }
+
+    const singleTagMatch = text.match(/<(?:Reply|رد على):\s*([^>]+)>/i);
+    if (singleTagMatch) {
+      const qSnippet = this.sanitize(singleTagMatch[1]);
+      const { bestMatch } = this._resolveQuotedMessage('', qSnippet, priorMessages);
+      msg.text = text.replace(singleTagMatch[0], '').trim();
+      msg.replyTo = bestMatch
+        ? {
+            id: bestMatch.id,
+            sender: bestMatch.sender || 'Contact',
+            text: bestMatch.text || qSnippet || '',
+            mediaType: bestMatch.mediaType || null,
+            mediaName: bestMatch.mediaName || null,
+            mediaId: bestMatch.mediaId || null
+          }
+        : {
+            id: 'ext_' + (msg.seq ?? priorMessages.length) + '_' + Math.random().toString(36).substr(2, 5),
+            sender: 'Contact',
+            text: qSnippet || '',
+            mediaType: null,
+            mediaName: null,
+            mediaId: null
+          };
+      return;
+    }
+
+    // 2. Leading Markdown / WhatsApp mod quote lines: "> Sender: snippet" followed by actual reply body
+    const lines = text.split('\n');
+    let quoteEndIdx = 0;
+    while (quoteEndIdx < lines.length && /^\s*(?:>|》)\s*/.test(lines[quoteEndIdx])) {
+      quoteEndIdx++;
+    }
+    if (quoteEndIdx > 0 && quoteEndIdx < lines.length) {
+      const remaining = lines.slice(quoteEndIdx).join('\n').trim();
+      if (remaining) {
+        const quotedLines = lines.slice(0, quoteEndIdx).map((l) => l.replace(/^\s*(?:>|》)\s*/, '').trim());
+        let qSender = '';
+        let qSnippet = quotedLines.join(' ').trim();
+        const colonIdx = quotedLines[0].indexOf(':');
+        if (colonIdx > 0 && colonIdx <= 60) {
+          const candSender = quotedLines[0].slice(0, colonIdx).trim();
+          const restFirst = quotedLines[0].slice(colonIdx + 1).trim();
+          qSender = candSender;
+          qSnippet = [restFirst, ...quotedLines.slice(1)].filter(Boolean).join(' ').trim();
+        }
+        const { bestMatch, bestScore } = this._resolveQuotedMessage(qSender, qSnippet, priorMessages);
+        const knownSender = qSender && participantSet.has(qSender);
+        if (bestMatch && bestScore >= 60) {
+          msg.text = remaining;
+          msg.replyTo = {
+            id: bestMatch.id,
+            sender: bestMatch.sender || qSender || 'Contact',
+            text: bestMatch.text || qSnippet || '',
+            mediaType: bestMatch.mediaType || null,
+            mediaName: bestMatch.mediaName || null,
+            mediaId: bestMatch.mediaId || null
+          };
+        } else if (knownSender && qSnippet) {
+          msg.text = remaining;
+          msg.replyTo = {
+            id: 'ext_' + (msg.seq ?? priorMessages.length) + '_' + Math.random().toString(36).substr(2, 5),
+            sender: qSender,
+            text: qSnippet,
+            mediaType: null,
+            mediaName: null,
+            mediaId: null
+          };
+        }
+      }
+    }
+  }
+
   // Main chat parsing entry point
   parseChatLog(rawContent) {
     if (!rawContent) return { messages: [], participants: [], calls: [] };
@@ -254,9 +413,42 @@ export class WhatsAppParser {
     const calls = [];
 
     let currentMsg = null;
+    let lastValidTimestamp = null;
+    let msgSeq = 0;
+
+    const extractMessageFlags = (rawText, existing = {}) => {
+      let cleanText = rawText || '';
+      let isEdited = Boolean(existing.isEdited);
+      let isForwarded = Boolean(existing.isForwarded);
+      let reaction = existing.reaction || null;
+
+      if (/<This message was edited>|<تم تعديل هذه الرسالة>/i.test(cleanText)) {
+        isEdited = true;
+        cleanText = cleanText.replace(/<This message was edited>|<تم تعديل هذه الرسالة>/gi, '').trim();
+      }
+      if (/<Forwarded>|\[Forwarded\]|<محولة>|\[محولة\]/i.test(cleanText)) {
+        isForwarded = true;
+        cleanText = cleanText.replace(/<Forwarded>|\[Forwarded\]|<محولة>|\[محولة\]/gi, '').trim();
+      }
+      const reactMatch = cleanText.match(/<(?:Reaction|تفاعل):\s*([^>]+)>/i) ||
+                         cleanText.match(/\[(?:Reaction|تفاعل):\s*([^\]]+)\]/i);
+      if (reactMatch) {
+        if (!reaction) reaction = reactMatch[1].trim();
+        cleanText = cleanText.replace(reactMatch[0], '').trim();
+      }
+      return { cleanText, isEdited, isForwarded, reaction };
+    };
 
     const finalizeMessage = (msg) => {
       if (!msg) return;
+      if (msg.text) {
+        const flags = extractMessageFlags(msg.text, msg);
+        msg.text = flags.cleanText;
+        msg.isEdited = flags.isEdited;
+        msg.isForwarded = flags.isForwarded;
+        msg.reaction = flags.reaction;
+      }
+      this._extractQuotedReply(msg, messages, participantSet);
       if (!msg.mediaName && msg.text) {
         const attach = this.detectAttachment(msg.text);
         if (attach.hasAttachment) {
@@ -264,6 +456,9 @@ export class WhatsAppParser {
           msg.mediaType = attach.mediaType;
           msg.text = attach.caption;
         }
+      }
+      if (typeof msg.text === 'string') {
+        msg.text = msg.text.trim();
       }
       messages.push(msg);
     };
@@ -292,41 +487,31 @@ export class WhatsAppParser {
           participantSet.add(sender);
         }
 
-        const timestamp = this.parseTimestamp(dateStr, timeStr);
-        const attachment = this.detectAttachment(content);
+        let timestamp = this.parseTimestamp(dateStr, timeStr, lastValidTimestamp);
+        if (lastValidTimestamp !== null && timestamp < lastValidTimestamp && (lastValidTimestamp - timestamp) <= 3600000) {
+          // Guard against minor DST / NTP clock rollback within an hour inside a strictly ordered chat log
+          timestamp = lastValidTimestamp;
+        }
+        lastValidTimestamp = timestamp;
+
+        const seq = msgSeq++;
+        const msgId = `msg_${String(timestamp).padStart(14, '0')}_${String(seq).padStart(7, '0')}_${Math.random().toString(36).substr(2, 5)}`;
+
+        const firstFlags = extractMessageFlags(content);
+        const attachment = this.detectAttachment(firstFlags.cleanText);
         const callInfo = this.detectCall(content);
 
         const isDeleted = content.includes('This message was deleted') ||
                           content.includes('You deleted this message') ||
                           content.includes('تم حذف هذه الرسالة');
-        const isEdited = content.includes('<This message was edited>') ||
-                         content.includes('<تم تعديل هذه الرسالة>');
         const isOmitted = content.includes('<Media omitted>') ||
                           content.includes('<الوسائط غير مدرجة>');
 
-        let text = attachment.hasAttachment ? attachment.caption : content;
-        if (isEdited) {
-          text = text.replace(/<This message was edited>|<تم تعديل هذه الرسالة>/gi, '').trim();
-        }
-
-        const isForwarded = content.includes('<Forwarded>') ||
-                            content.includes('[Forwarded]') ||
-                            content.includes('<محولة>') ||
-                            content.includes('[محولة]');
-        if (isForwarded) {
-          text = text.replace(/<Forwarded>|\[Forwarded\]|<محولة>|\[محولة\]/gi, '').trim();
-        }
-
-        let reaction = null;
-        const reactMatch = text.match(/<(?:Reaction|تفاعل):\s*([^>]+)>/i) ||
-                           text.match(/\[(?:Reaction|تفاعل):\s*([^\]]+)\]/i);
-        if (reactMatch) {
-          reaction = reactMatch[1].trim();
-          text = text.replace(reactMatch[0], '').trim();
-        }
+        const text = attachment.hasAttachment ? attachment.caption : firstFlags.cleanText;
 
         currentMsg = {
-          id: 'msg_' + timestamp + '_' + Math.random().toString(36).substr(2, 6),
+          id: msgId,
+          seq,
           timestamp,
           sender,
           isOutgoing: false, // will be assigned in perspective step
@@ -334,17 +519,18 @@ export class WhatsAppParser {
           mediaName: attachment.filename || null,
           mediaType: attachment.mediaType || null,
           mediaId: null, // linked during file matching
+          replyTo: null,
           isDeleted,
-          isEdited,
+          isEdited: firstFlags.isEdited,
           isOmitted,
-          isForwarded,
-          reaction,
+          isForwarded: firstFlags.isForwarded,
+          reaction: firstFlags.reaction,
           callInfo: callInfo.isCall ? callInfo : null
         };
 
         if (callInfo.isCall) {
           calls.push({
-            id: 'call_' + timestamp + '_' + Math.random().toString(36).substr(2, 6),
+            id: `call_${String(timestamp).padStart(14, '0')}_${String(seq).padStart(7, '0')}_${Math.random().toString(36).substr(2, 5)}`,
             contactName: sender,
             timestamp,
             callType: callInfo.callType,
@@ -365,11 +551,19 @@ export class WhatsAppParser {
           const timeStr = sysMatch[2];
           const sysTextLen = (sysMatch[3] || '').length;
           const sysText = sysTextLen > 0 ? this.sanitize(line.slice(line.length - sysTextLen)) : '';
-          const timestamp = this.parseTimestamp(dateStr, timeStr);
+          let timestamp = this.parseTimestamp(dateStr, timeStr, lastValidTimestamp);
+          if (lastValidTimestamp !== null && timestamp < lastValidTimestamp && (lastValidTimestamp - timestamp) <= 3600000) {
+            timestamp = lastValidTimestamp;
+          }
+          lastValidTimestamp = timestamp;
+
+          const seq = msgSeq++;
+          const sysId = `sys_${String(timestamp).padStart(14, '0')}_${String(seq).padStart(7, '0')}_${Math.random().toString(36).substr(2, 5)}`;
           const callInfo = this.detectCall(sysText);
 
           currentMsg = {
-            id: 'sys_' + timestamp + '_' + Math.random().toString(36).substr(2, 6),
+            id: sysId,
+            seq,
             timestamp,
             sender: callInfo.isCall ? 'Call' : 'System',
             isSystem: !callInfo.isCall,
@@ -378,6 +572,7 @@ export class WhatsAppParser {
             mediaName: null,
             mediaType: null,
             mediaId: null,
+            replyTo: null,
             isDeleted: false,
             isEdited: false,
             callInfo: callInfo.isCall ? callInfo : null
@@ -385,7 +580,7 @@ export class WhatsAppParser {
 
           if (callInfo.isCall) {
             calls.push({
-              id: 'call_' + timestamp + '_' + Math.random().toString(36).substr(2, 6),
+              id: `call_${String(timestamp).padStart(14, '0')}_${String(seq).padStart(7, '0')}_${Math.random().toString(36).substr(2, 5)}`,
               contactName: 'Call',
               timestamp,
               callType: callInfo.callType,
@@ -396,7 +591,7 @@ export class WhatsAppParser {
           }
         } else if (currentMsg) {
           // Multi-line message continuation
-          currentMsg.text += '\n' + rawLine;
+          currentMsg.text = currentMsg.text ? `${currentMsg.text}\n${rawLine}` : rawLine;
         }
       }
     }
