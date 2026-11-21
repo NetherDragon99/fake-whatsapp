@@ -20,7 +20,8 @@ export class SettingsView {
       let ownerName = 'You';
       let userAvatarBlob = null;
       let storageStats = { formattedSize: '0 B', chatCount: 0, messageCount: 0 };
-      const appVersion = window.APP_VERSION || '2.3.6';
+      let defaultExpandLongMessages = false;
+      const appVersion = window.APP_VERSION || '2.3.7';
       const cacheStatus = window.__waCacheStatus || null;
       const updateState = (window.app && typeof window.app.getUpdateState === 'function')
         ? window.app.getUpdateState()
@@ -35,6 +36,7 @@ export class SettingsView {
         ownerName = await db.getSetting('ownerName', 'You');
         userAvatarBlob = await db.getSetting('userProfileAvatar', null);
         storageStats = await db.getStorageUsage();
+        defaultExpandLongMessages = await db.getSetting('defaultExpandLongMessages', false);
       } catch (err) {
         console.warn('[SettingsView] Error loading settings data:', err);
       }
@@ -104,6 +106,35 @@ export class SettingsView {
               <div class="settings-texts">
                 <div class="setting-title">Appearance</div>
                 <div class="setting-sub">Chat theme, app icon, app theme</div>
+              </div>
+              <div class="settings-chevron">
+                ${Icons.chevronRight('', 18)}
+              </div>
+            </div>
+          </div>
+
+          <div class="thick-section-divider"></div>
+
+          <!-- Chats Behavior & Interactive Guide -->
+          <div class="settings-section">
+            <div class="settings-section-header">Chats &amp; Guide</div>
+            <div class="settings-option-row" id="row-default-expand-long">
+              <span class="settings-icon">${Icons.expandAll('', 20)}</span>
+              <div class="settings-texts">
+                <div class="setting-title">Expand long messages automatically</div>
+                <div class="setting-sub">Default for all chats unless overridden per chat</div>
+              </div>
+              <label class="switch-wrap">
+                <input type="checkbox" id="cb-default-expand-long" ${defaultExpandLongMessages ? 'checked' : ''} />
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+
+            <div class="settings-option-row clickable" id="row-features-guide">
+              <span class="settings-icon">${Icons.bookGuide('', 20)}</span>
+              <div class="settings-texts">
+                <div class="setting-title">Features &amp; Shortcuts Guide</div>
+                <div class="setting-sub">Live examples for formatting symbols, trees &amp; lists</div>
               </div>
               <div class="settings-chevron">
                 ${Icons.chevronRight('', 18)}
@@ -310,6 +341,20 @@ export class SettingsView {
       this.router.navigate('#/settings/appearance');
     });
 
+    // Global Long Messages Auto-Expand Toggle
+    const expandCb = this.container.querySelector('#cb-default-expand-long');
+    if (expandCb) {
+      expandCb.addEventListener('change', async () => {
+        await db.setSetting('defaultExpandLongMessages', expandCb.checked);
+        Toast.show(expandCb.checked ? 'Long messages auto-expand enabled' : 'Long messages collapse by default');
+      });
+    }
+
+    // Features & Shortcuts Guide Navigation
+    this.container.querySelector('#row-features-guide')?.addEventListener('click', () => {
+      this.router.navigate('#/settings/guide');
+    });
+
     // Chat Lock PIN Setup / Reset
     this.container.querySelector('#row-manage-pin').addEventListener('click', async () => {
       const ok = await PinDialog.promptSetup();
@@ -368,7 +413,7 @@ export class SettingsView {
     });
 
     // Check for Updates, Background Download Progress & Restart to Update
-    const appVersion = window.APP_VERSION || '2.3.6';
+    const appVersion = window.APP_VERSION || '2.3.7';
     const updateRow = this.container.querySelector('#row-check-updates');
     const updateSubEl = this.container.querySelector('#settings-update-status-sub');
     const updateReadyCard = this.container.querySelector('#settings-update-ready-card');

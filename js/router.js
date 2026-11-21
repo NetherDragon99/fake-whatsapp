@@ -98,6 +98,10 @@ export class Router {
     if (pathPart === '#/app-icon') {
       return '#/settings/appearance';
     }
+    // '#/settings/guide' returns to '#/settings'
+    if (pathPart === '#/settings/guide') {
+      return '#/settings';
+    }
     // '#/settings/appearance' returns to '#/settings'
     if (pathPart === '#/settings/appearance') {
       return '#/settings';

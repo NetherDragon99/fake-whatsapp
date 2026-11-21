@@ -387,5 +387,111 @@ export const Icons = {
     <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <polyline points="1 4 1 10 7 10"/>
       <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+    </svg>`,
+
+  /** Expand all / unfold vertical icon */
+  expandAll: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 5.83L15.17 9l1.41-1.41L12 3 7.41 7.59 8.83 9 12 5.83zm0 12.34L8.83 15l-1.41 1.41L12 21l4.59-4.59L15.17 15 12 18.17z"/>
+    </svg>`,
+
+  /** Collapse all / fold vertical icon */
+  collapseAll: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M7.41 18.59L8.83 20 12 16.83 15.17 20l1.41-1.41L12 14l-4.59 4.59zm9.18-13.18L15.17 4 12 7.17 8.83 4 7.41 5.41 12 10l4.59-4.59z"/>
+    </svg>`,
+
+  /** Multi-level tree / nested messages branch icon */
+  treeBranch: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="6" cy="5" r="2"/>
+      <circle cx="18" cy="11" r="2"/>
+      <circle cx="18" cy="19" r="2"/>
+      <path d="M6 7v12h10"/>
+      <path d="M6 11h10"/>
+    </svg>`,
+
+  /** Bulleted list icon */
+  listBulleted: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M4 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0-6c-.83 0-1.5.67-1.5 1.5S3.17 7.5 4 7.5 5.5 6.83 5.5 6 4.83 4.5 4 4.5zm0 12c-.83 0-1.5.68-1.5 1.5s.68 1.5 1.5 1.5 1.5-.68 1.5-1.5-.67-1.5-1.5-1.5zM7 19h14v-2H7v2zm0-6h14v-2H7v2zm0-8v2h14V5H7z"/>
+    </svg>`,
+
+  /** Numbered list icon */
+  listNumbered: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M2 17h2v.5H3v1h1v.5H2v1h3v-4H2v1zm1-9h1V4H2v1h1v3zm-1 3h1.8L2 13.1v.9h3v-1H3.2L5 10.9V10H2v1zm5-6v2h14V5H7zm0 14h14v-2H7v2zm0-6h14v-2H7v2z"/>
+    </svg>`,
+
+  /** Interactive checklist icon */
+  checklist: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M22 7h-9v2h9V7zm0 8h-9v2h9v-2zM5.54 11L2 7.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41L5.54 11zm0 8L2 15.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41L5.54 19z"/>
+    </svg>`,
+
+  /** Features & Shortcuts guide book icon */
+  bookGuide: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/>
+    </svg>`,
+
+  /** Rich format / expand composer toggle icon */
+  formatText: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M5 4v3h5.5v12h3V7H19V4z"/>
+    </svg>`,
+
+  /** Undo icon */
+  undo: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/>
+    </svg>`,
+
+  /** Redo icon */
+  redo: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/>
+    </svg>`,
+
+  /** Clear formatting icon */
+  clearFormat: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M3.27 5L2 6.27l6.97 6.97L6.5 19h3l1.57-3.66L16.73 21 18 19.73 3.55 5.27 3.27 5zM6 5v.18L8.82 8h2.4l-.72 1.68 2.1 2.1L14.21 8H20V5H6z"/>
+    </svg>`,
+
+  /** Indent increase icon */
+  indentIncrease: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M3 21h18v-2H3v2zM3 8v8l4-4-4-4zm8 9h10v-2H11v2zM3 3v2h18V3H3zm8 6h10V7H11v2zm0 4h10v-2H11v2z"/>
+    </svg>`,
+
+  /** Indent decrease icon */
+  indentDecrease: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M11 17h10v-2H11v2zm-8-5l4 4V8l-4 4zm0 9h18v-2H3v2zM3 3v2h18V3H3zm8 6h10V7H11v2zm0 4h10v-2H11v2z"/>
+    </svg>`,
+
+  /** Spoiler hidden text eye icon */
+  spoilerEye: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46A11.804 11.804 0 0 0 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/>
+    </svg>`,
+
+  /** Highlight marker icon */
+  highlight: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M6 14l3 3v5h6v-5l3-3V9H6v5zm5-12h2v3h-2V2zM3.5 5.88l1.41-1.41 2.12 2.12L5.62 8 3.5 5.88zm13.46.71l2.12-2.12 1.41 1.41L18.38 8l-1.42-1.41z"/>
+    </svg>`,
+
+  /** Code block icon */
+  codeBlock: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"/>
+    </svg>`,
+
+  /** Quote block icon */
+  quote: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z"/>
     </svg>`
 };

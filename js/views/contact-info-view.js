@@ -193,6 +193,14 @@ export class ContactInfoView {
                 <span class="switch-slider"></span>
               </label>
             </div>
+
+            <div class="option-row clickable" id="row-long-msg-display">
+              <span class="option-icon">${Icons.expandAll('', 20)}</span>
+              <div class="option-texts">
+                <div class="option-title">Long messages</div>
+                <div class="option-subtitle" id="sub-long-msg-display">${this.chat.longMessageDisplay === 'expand' ? 'Always expanded (overrides app)' : (this.chat.longMessageDisplay === 'collapse' ? 'Always collapsed (overrides app)' : 'Follow app setting')}</div>
+              </div>
+            </div>
           </div>
 
           <div class="thick-section-divider"></div>
@@ -545,6 +553,11 @@ export class ContactInfoView {
       Toast.show(favCb.checked ? 'Added to Favourites' : 'Removed from Favourites');
     });
 
+    // Long Messages Display Preference (3-state per-chat override)
+    this.container.querySelector('#row-long-msg-display')?.addEventListener('click', () => {
+      this._openLongMessageOverrideDialog();
+    });
+
     // Clear Chat (Custom confirmation dialog)
     this.container.querySelector('#btn-clear-chat-history').addEventListener('click', async () => {
       const confirmed = await showConfirm({
@@ -707,6 +720,60 @@ export class ContactInfoView {
       cleanup();
       Toast.show('Lists updated');
     };
+
+    document.body.appendChild(overlay);
+  }
+
+  _openLongMessageOverrideDialog() {
+    const current = this.chat?.longMessageDisplay || 'default';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay custom-dialog-overlay active';
+
+    const options = [
+      { value: 'default', label: 'Follow app setting', sub: 'Uses the global option in Settings → Chats' },
+      { value: 'expand', label: 'Always expanded', sub: 'Show full long messages automatically in this chat' },
+      { value: 'collapse', label: 'Always collapsed', sub: 'Require Show more for long messages in this chat' }
+    ];
+
+    overlay.innerHTML = `
+      <div class="custom-dialog-card" role="dialog" aria-modal="true">
+        <h3 class="custom-dialog-title">Long messages in this chat</h3>
+        <div class="custom-dialog-body msg-list-dialog-actions">
+          ${options.map((opt) => `
+            <button type="button" class="msg-list-option-btn ${current === opt.value ? 'is-selected' : ''}" data-long-opt="${opt.value}">
+              <span class="msg-list-opt-texts">
+                <strong>${opt.label}</strong>
+                <small>${opt.sub}</small>
+              </span>
+              ${current === opt.value ? Icons.check('long-opt-check', 18) : ''}
+            </button>
+          `).join('')}
+        </div>
+        <div class="custom-dialog-actions">
+          <button type="button" class="dialog-btn dialog-btn-cancel" id="btn-long-opt-cancel">Cancel</button>
+        </div>
+      </div>
+    `;
+
+    const cleanup = () => overlay.remove();
+    overlay.querySelector('#btn-long-opt-cancel')?.addEventListener('click', cleanup);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+
+    overlay.querySelectorAll('[data-long-opt]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const mode = btn.dataset.longOpt;
+        await db.updateChat(this.chatId, { longMessageDisplay: mode });
+        this.chat.longMessageDisplay = mode;
+        const subEl = this.container?.querySelector('#sub-long-msg-display');
+        if (subEl) {
+          subEl.textContent = mode === 'expand'
+            ? 'Always expanded (overrides app)'
+            : (mode === 'collapse' ? 'Always collapsed (overrides app)' : 'Follow app setting');
+        }
+        cleanup();
+        Toast.show('Chat long-message preference saved');
+      });
+    });
 
     document.body.appendChild(overlay);
   }

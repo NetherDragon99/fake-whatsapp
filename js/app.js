@@ -20,6 +20,7 @@ import { WallpaperSectionView } from './views/wallpaper-section-view.js';
 import { AppIconView } from './views/app-icon-view.js';
 import { ManageStorageView } from './views/manage-storage-view.js';
 import { ChatStorageView } from './views/chat-storage-view.js';
+import { GuideView } from './views/guide-view.js';
 import { ImportModal } from './components/modal-import.js';
 import { WhatsAppParser } from './parser.js';
 import { finalizeParsedMessages } from './utils/message-mapper.js';
@@ -30,8 +31,8 @@ import { assetUrl } from './config/base-path.js';
 import { backgroundTasks } from './utils/background-tasks.js';
 
 // Application Version Constant
-window.APP_VERSION = '2.3.6';
-window.APP_CACHE_NAME = 'wa-clone-v2.3.6';
+window.APP_VERSION = '2.3.7';
+window.APP_CACHE_NAME = 'wa-clone-v2.3.7';
 
 // Global deferred PWA install prompt holder
 window.deferredInstallPrompt = null;
@@ -178,6 +179,7 @@ class Application {
       { pattern: '/settings/appearance/theme', viewClass: AppearanceView, defaultParams: { subRoute: 'theme' } },
       { pattern: '/settings/appearance/app-icon', viewClass: AppIconView },
       { pattern: '/settings/appearance', viewClass: AppearanceView, defaultParams: { subRoute: '' } },
+      { pattern: '/settings/guide', viewClass: GuideView },
       { pattern: '/app-icon', viewClass: AppIconView },
       { pattern: '/chat-theme', viewClass: ChatThemeView },
       { pattern: '/chat-bubble-picker', viewClass: ChatBubblePickerView },

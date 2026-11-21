@@ -1,6 +1,6 @@
-// WhatsApp Android Clone Service Worker v2.3.6
-const APP_VERSION = '2.3.6';
-const CACHE_NAME = 'wa-clone-v2.3.6';
+// WhatsApp Android Clone Service Worker v2.3.7
+const APP_VERSION = '2.3.7';
+const CACHE_NAME = 'wa-clone-v2.3.7';
 
 const APP_SHELL_FILES = [
   './',
@@ -22,7 +22,9 @@ const APP_SHELL_FILES = [
   './js/utils/background-tasks.js',
   './js/utils/date-jump.js',
   './js/utils/drawer-resizer.js',
+  './js/utils/link-preview.js',
   './js/utils/message-mapper.js',
+  './js/utils/rich-text.js',
   './js/config/app-icons.js',
   './js/config/base-path.js',
   './js/config/palette.js',
@@ -36,10 +38,12 @@ const APP_SHELL_FILES = [
   './js/components/media-editor-modal.js',
   './js/components/message-info-sheet.js',
   './js/components/modal-import.js',
+  './js/components/nested-chain-sheet.js',
   './js/components/pin-dialog.js',
   './js/components/pin-duration-picker.js',
   './js/components/pinned-panel.js',
   './js/components/reaction-bar.js',
+  './js/components/rich-composer.js',
   './js/components/share-options-modal.js',
   './js/components/sticker-drawer.js',
   './js/components/toast.js',
@@ -53,6 +57,7 @@ const APP_SHELL_FILES = [
   './js/views/chat-view.js',
   './js/views/contact-info-view.js',
   './js/views/gallery-view.js',
+  './js/views/guide-view.js',
   './js/views/home-view.js',
   './js/views/main-pager-view.js',
   './js/views/manage-storage-view.js',

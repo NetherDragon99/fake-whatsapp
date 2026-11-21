@@ -88,18 +88,19 @@ class AudioManager {
     const waveform = card.querySelector('.voice-waveform');
     const bars = card.querySelectorAll('.wave-bar');
 
-    // Load duration when metadata is ready
+    // Load duration when metadata is ready (guard against Infinity in WebM headers)
     audio.addEventListener('loadedmetadata', () => {
-      if (isFinite(audio.duration) && audio.duration > 0) {
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
         effectiveDuration = Math.round(audio.duration);
         durationSpan.textContent = this.formatTime(effectiveDuration);
       } else if (knownDuration > 0) {
+        effectiveDuration = knownDuration;
         durationSpan.textContent = this.formatTime(knownDuration);
       }
     });
 
     audio.addEventListener('durationchange', () => {
-      if (isFinite(audio.duration) && audio.duration > 0) {
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
         effectiveDuration = Math.round(audio.duration);
         durationSpan.textContent = this.formatTime(effectiveDuration);
       }
@@ -128,7 +129,7 @@ class AudioManager {
     // Time update & waveform filling
     audio.addEventListener('timeupdate', () => {
       const cur = audio.currentTime;
-      const total = (isFinite(audio.duration) && audio.duration > 0) ? audio.duration : (effectiveDuration || 1);
+      const total = (Number.isFinite(audio.duration) && audio.duration > 0) ? audio.duration : (effectiveDuration || knownDuration || 1);
       const progress = Math.min(1, Math.max(0, cur / total));
       const activeBarCount = Math.floor(progress * bars.length);
       bars.forEach((bar, idx) => {

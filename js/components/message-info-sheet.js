@@ -3,6 +3,7 @@
 
 import { DrawerResizer } from '../utils/drawer-resizer.js';
 import { Icons } from '../icons.js';
+import { renderRichMessageHtml } from '../utils/rich-text.js';
 
 export class MessageInfoSheet {
   constructor() {
@@ -67,7 +68,7 @@ export class MessageInfoSheet {
       fullscreenHeader: this.fsHeaderEl,
       overlayId: 'msg-info-sheet',
       mode: 'centered',
-      defaultHeightVh: 40,
+      defaultHeightVh: 60,
       minVh: 20,
       maxVh: 80,
       onClose: () => {
@@ -79,26 +80,49 @@ export class MessageInfoSheet {
   /**
    * @param {Object} msg - the message object
    * @param {boolean} [isPinned=false] - whether this message is currently pinned
+   * @param {Object} [extraMeta={}] - optional nested/list metadata counts
    */
-  show(msg, isPinned = false) {
+  show(msg, isPinned = false, extraMeta = {}) {
     this._ensureBuilt();
 
     const body = this._bodyEl;
     body.innerHTML = '';
+    body.scrollTop = 0;
 
-    // Message content preview bubble
+    // Message content preview bubble (height-capped with internal scroll & expand toggle)
     const previewWrap = document.createElement('div');
     previewWrap.className = 'msg-info-preview-wrap';
 
     const bubble = document.createElement('div');
     bubble.className = `msg-info-bubble ${msg.isOutgoing ? 'outgoing' : 'incoming'}`;
 
+    let needsPreviewToggle = false;
     if (msg.text && !msg.isDeleted) {
+      const previewContent = document.createElement('div');
+      previewContent.className = 'msg-info-preview-content';
+      previewContent.setAttribute('dir', 'auto');
+
       const textEl = document.createElement('div');
       textEl.className = 'msg-info-text';
-      textEl.textContent = msg.text;
+      textEl.innerHTML = renderRichMessageHtml(msg.text, { interactive: false });
       textEl.setAttribute('dir', 'auto');
-      bubble.appendChild(textEl);
+      previewContent.appendChild(textEl);
+      bubble.appendChild(previewContent);
+
+      const lineCount = String(msg.text).split('\n').length;
+      needsPreviewToggle = msg.text.length > 260 || lineCount > 5;
+      if (needsPreviewToggle) {
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.className = 'msg-info-preview-toggle';
+        toggleBtn.textContent = 'Show full preview';
+        toggleBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const expanded = previewContent.classList.toggle('is-expanded');
+          toggleBtn.textContent = expanded ? 'Show less' : 'Show full preview';
+        });
+        bubble.appendChild(toggleBtn);
+      }
     } else if (msg.isDeleted) {
       const delEl = document.createElement('div');
       delEl.className = 'msg-info-deleted-text';
@@ -198,6 +222,28 @@ export class MessageInfoSheet {
       }
     ];
 
+    if (msg.nestedParent?.id) {
+      statusItems.push({
+        label: 'Nested parent',
+        value: msg.nestedParent.snippet || 'Linked',
+        icon: Icons.treeBranch('', 16)
+      });
+    }
+    if (extraMeta.nestedChildCount > 0) {
+      statusItems.push({
+        label: 'Nested children',
+        value: String(extraMeta.nestedChildCount),
+        icon: Icons.treeBranch('', 16)
+      });
+    }
+    if (msg.listMeta?.groupId) {
+      statusItems.push({
+        label: 'Message list',
+        value: msg.listMeta.style === 'ordered' ? `Numbered (#${extraMeta.listIndex || '?'})` : 'Bulleted (•)',
+        icon: msg.listMeta.style === 'ordered' ? Icons.listNumbered('', 16) : Icons.listBulleted('', 16)
+      });
+    }
+
     statusItems.forEach(item => {
       const itemEl = document.createElement('div');
       itemEl.className = 'msg-info-status-row';
@@ -214,7 +260,7 @@ export class MessageInfoSheet {
     body.appendChild(statusCard);
 
     this.overlayEl.style.display = 'block';
-    this.resizer.open(40);
+    this.resizer.open(60);
   }
 
   close() {

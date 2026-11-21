@@ -18,12 +18,21 @@ import { ReactionBar } from '../components/reaction-bar.js';
 import { EmojiPickerSheet } from '../components/emoji-picker-sheet.js';
 import { MessageInfoSheet } from '../components/message-info-sheet.js';
 import { ShareOptionsModal } from '../components/share-options-modal.js';
+import { RichComposer } from '../components/rich-composer.js';
+import { NestedChainSheet } from '../components/nested-chain-sheet.js';
 import {
   findNearestDateMessage,
   formatDateDisplay,
   getLatestMessageDateKey,
   openDatePickerWithDefault
 } from '../utils/date-jump.js';
+import { HIGHLIGHT_COLORS, sanitizeUrl, stripRichMarkup } from '../utils/rich-text.js';
+import {
+  extractFirstUrl,
+  buildLocalLinkPreview,
+  fetchEnhancedLinkPreview,
+  renderLinkPreviewCard
+} from '../utils/link-preview.js';
 import {
   applyOutgoingBubbleColor,
   clearOutgoingBubbleColor,
@@ -45,10 +54,20 @@ export class ChatView {
     this.replyingTo = null;
     this.editingMessage = null;
     this.linkingReplyForMsg = null;
+    this.linkingNestForMsgs = null;
+    this.nestingUnderMsg = null;
+    this.composingListMeta = null;
+    this.pendingLinkPreview = null;
+    this._dismissedLinkUrls = new Set();
+    this._linkPreviewAbort = null;
+    this._linkPreviewDebounce = null;
     this._draftBeforeEdit = null;
     this._currentFabMode = 'mic';
     this._updateInputLayout = null;
     this._resetInputComposerHeight = null;
+    this.richComposer = null;
+    this.nestedTreeSheet = null;
+    this._activePopover = null;
     this.chatPins = [];
     this.pinPriorityMode = { mode: 'last_added', mixedDays: 7, switcherSeconds: 10 };
     this.pinnedBarDismissed = false;
@@ -83,6 +102,10 @@ export class ChatView {
     const outgoingTheme = await db.getSetting('theme', 'slate');
     const defaultBubbleColor = await db.getSetting('defaultBubbleColor', null);
     const effectiveBubbleColor = this.chat.outgoingBubbleColor || defaultBubbleColor;
+    const globalAutoExpand = await db.getSetting('defaultExpandLongMessages', false);
+    const defaultExpandLongMessages = this.chat.longMessageDisplay === 'expand'
+      ? true
+      : (this.chat.longMessageDisplay === 'collapse' ? false : Boolean(globalAutoExpand));
     const targetMsgId = params.msgId || null;
 
     let subtitle = 'tap here for contact info';
@@ -174,6 +197,14 @@ export class ChatView {
             <span class="dropdown-item-icon">${Icons.calendar('', 20)}</span>
             <span>Jump to Date</span>
           </div>
+          <div class="dropdown-item" id="menu-expand-all-msgs">
+            <span class="dropdown-item-icon">${Icons.expandAll('', 20)}</span>
+            <span>Expand all messages</span>
+          </div>
+          <div class="dropdown-item" id="menu-collapse-all-msgs">
+            <span class="dropdown-item-icon">${Icons.collapseAll('', 20)}</span>
+            <span>Collapse all messages</span>
+          </div>
           <div class="dropdown-item" id="menu-chat-wallpaper">
             <span class="dropdown-item-icon">${Icons.palette('', 20)}</span>
             <span>Chat theme</span>
@@ -214,6 +245,15 @@ export class ChatView {
           ${Icons.chevronDown('', 22)}
         </button>
 
+        <!-- Link Nest Parent Picker Banner -->
+        <div class="chat-link-reply-banner chat-nest-link-banner" id="chat-nest-link-banner" style="display: none;"></div>
+
+        <!-- Compose Nested Message Under Parent Banner -->
+        <div class="chat-link-reply-banner chat-nest-compose-banner" id="chat-nest-compose-banner" style="display: none;"></div>
+
+        <!-- Compose Standalone Message List Banner -->
+        <div class="chat-link-reply-banner chat-list-compose-banner" id="chat-list-compose-banner" style="display: none;"></div>
+
         <!-- Link Reply Target Picker Banner (above edit/reply banner) -->
         <div class="chat-link-reply-banner" id="chat-link-reply-banner" style="display: none;"></div>
 
@@ -228,22 +268,56 @@ export class ChatView {
           <div class="input-pill" id="chat-input-pill">
             <div class="chat-input-drag-handle" id="chat-input-drag-handle" style="display: none;" aria-label="Drag to resize message input">
               <div class="chat-input-drag-dash"></div>
+              <button type="button" class="chat-input-expand-fs-btn" id="btn-input-expand-fs" title="Fullscreen & formatting" aria-label="Open formatting & fullscreen">
+                ${Icons.formatText('', 15)}
+              </button>
             </div>
             <div class="chat-input-fs-header" id="chat-input-fs-header" style="display: none;">
               <button type="button" class="app-bar-icon-btn chat-input-fs-back-btn" id="btn-chat-input-fs-back" aria-label="Exit fullscreen">
                 ${Icons.arrowBack('', 22)}
               </button>
               <span class="chat-input-fs-title">Message</span>
+              <div class="chat-input-fs-actions">
+                <button type="button" class="app-bar-icon-btn" id="btn-rc-undo" title="Undo" aria-label="Undo">${Icons.undo('', 20)}</button>
+                <button type="button" class="app-bar-icon-btn" id="btn-rc-redo" title="Redo" aria-label="Redo">${Icons.redo('', 20)}</button>
+                <button type="button" class="app-bar-icon-btn" id="btn-rc-clear" title="Clear formatting" aria-label="Clear formatting">${Icons.clearFormat('', 20)}</button>
+              </div>
             </div>
             <div class="input-pill-main-row">
-              <button type="button" class="input-icon-btn" id="btn-open-stickers" aria-label="Stickers">${Icons.sticker('', 22)}</button>
-              <textarea id="chat-input-textarea" placeholder="Message" rows="1" dir="auto"></textarea>
-              <label class="input-icon-btn" id="btn-gallery-attach" title="Attach file or photo">
-                ${Icons.paperclip('', 22)}
-                <input type="file" id="chat-gallery-input" accept="image/*,video/*" multiple style="display:none;" />
-              </label>
-              <button type="button" class="input-icon-btn" id="btn-camera-snap" aria-label="Camera">${Icons.camera('', 22)}</button>
-              <input type="file" id="chat-camera-input" accept="image/*" capture="environment" style="display:none;" />
+              <div class="composer-link-preview-slot" id="composer-link-preview" style="display: none;"></div>
+              <div class="chat-rich-editor is-empty" id="chat-input-editor" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Message" dir="auto"></div>
+              <div class="composer-actions-row" id="composer-actions-row">
+                <button type="button" class="input-icon-btn composer-edge-btn" id="btn-open-stickers" aria-label="Stickers">${Icons.sticker('', 22)}</button>
+                <div class="chat-format-toolbar-wrap" id="chat-format-toolbar-wrap">
+                  <div class="composer-popover" id="composer-format-popover" style="display: none;"></div>
+                  <div class="chat-format-toolbar" id="chat-format-toolbar" role="toolbar" aria-label="Formatting tools">
+                    <button type="button" class="format-tool-btn" data-fmt="bold" title="Bold (*text*)"><strong>B</strong></button>
+                    <button type="button" class="format-tool-btn" data-fmt="italic" title="Italic (_text_)"><em>I</em></button>
+                    <button type="button" class="format-tool-btn" data-fmt="underline" title="Underline (++text++)"><u>U</u></button>
+                    <button type="button" class="format-tool-btn" data-fmt="strike" title="Strikethrough (~text~)"><del>S</del></button>
+                    <button type="button" class="format-tool-btn" data-fmt="highlight" title="Highlight Color (==text==)">${Icons.highlight('', 17)}</button>
+                    <button type="button" class="format-tool-btn" data-fmt="header" title="Headers (# / ## / ###)"><span class="fmt-txt-icon">H</span></button>
+                    <button type="button" class="format-tool-btn" data-fmt="spoiler" title="Spoiler (||text||)">${Icons.spoilerEye('', 17)}</button>
+                    <button type="button" class="format-tool-btn" data-fmt="check" title="Interactive Checklist ([ ] )">${Icons.checklist('', 17)}</button>
+                    <button type="button" class="format-tool-btn" data-fmt="ul" title="Bulleted List (- )">${Icons.listBulleted('', 17)}</button>
+                    <button type="button" class="format-tool-btn" data-fmt="ol" title="Numbered List (1. )">${Icons.listNumbered('', 17)}</button>
+                    <button type="button" class="format-tool-btn" data-fmt="indent-inc" title="Increase Indent (Tab)">${Icons.indentIncrease('', 17)}</button>
+                    <button type="button" class="format-tool-btn" data-fmt="indent-dec" title="Decrease Indent (Shift+Tab)">${Icons.indentDecrease('', 17)}</button>
+                    <button type="button" class="format-tool-btn" data-fmt="link" title="Link on Word ([word](url))">${Icons.linkIcon('', 17)}</button>
+                    <button type="button" class="format-tool-btn" data-fmt="quote" title="Quote (> )">${Icons.quote('', 17)}</button>
+                    <button type="button" class="format-tool-btn" data-fmt="code" title="Inline Code (\`code\`)">${Icons.codeBlock('', 16)}</button>
+                    <button type="button" class="format-tool-btn" data-fmt="codeblock" title="Code Block (\`\`\` )"><span class="fmt-txt-icon">{ }</span></button>
+                    <button type="button" class="format-tool-btn" data-fmt="sup" title="Superscript (^^x^^)"><span class="fmt-txt-icon">x²</span></button>
+                    <button type="button" class="format-tool-btn" data-fmt="sub" title="Subscript (,,x,,)"><span class="fmt-txt-icon">x₂</span></button>
+                  </div>
+                </div>
+                <label class="input-icon-btn composer-edge-btn" id="btn-gallery-attach" title="Attach file or photo">
+                  ${Icons.paperclip('', 22)}
+                  <input type="file" id="chat-gallery-input" accept="image/*,video/*" multiple style="display:none;" />
+                </label>
+                <button type="button" class="input-icon-btn composer-edge-btn" id="btn-camera-snap" aria-label="Camera">${Icons.camera('', 22)}</button>
+                <input type="file" id="chat-camera-input" accept="image/*" capture="environment" style="display:none;" />
+              </div>
             </div>
           </div>
           <button type="button" class="mic-send-btn" id="btn-mic-send" aria-label="Send or record audio">
@@ -341,10 +415,10 @@ export class ChatView {
       }
     }
 
-    await this.bindEvents(outgoingTheme, targetMsgId, params);
+    await this.bindEvents(outgoingTheme, targetMsgId, params, defaultExpandLongMessages);
   }
 
-  async bindEvents(outgoingTheme, targetMsgId, params = {}) {
+  async bindEvents(outgoingTheme, targetMsgId, params = {}, defaultExpandLongMessages = false) {
     const messagesWrap = this.container.querySelector('#chat-messages-wrap');
 
     // Initialize Floating Reaction Bar & Sheets
@@ -371,13 +445,19 @@ export class ChatView {
 
     this.emojiPickerSheet = new EmojiPickerSheet();
     this.messageInfoSheet = new MessageInfoSheet();
+    this.nestedTreeSheet = new NestedChainSheet();
 
     // Initialize Virtual Message Scroller
     this.scroller = new VirtualMessageScroller(messagesWrap, {
       chatId: this.chatId,
       chat: this.chat,
       outgoingTheme,
+      defaultExpandLongMessages,
       onMediaClick: (mediaItem, msg) => {
+        if (this.linkingNestForMsgs) {
+          this._applyNestParentToMessages(msg);
+          return;
+        }
         if (this.linkingReplyForMsg) {
           this._applyReplyTargetToMessage(msg);
           return;
@@ -392,6 +472,11 @@ export class ChatView {
         });
       },
       onMessageClick: (msg, rowEl, evt) => {
+        if (this.linkingNestForMsgs) {
+          evt?.stopPropagation();
+          this._applyNestParentToMessages(msg);
+          return;
+        }
         if (this.linkingReplyForMsg) {
           evt?.stopPropagation();
           this._applyReplyTargetToMessage(msg);
@@ -415,11 +500,22 @@ export class ChatView {
         this.toggleMessageSelection(msg.id, rowEl);
       },
       onMessageReply: (msg) => {
-        if (!this.isSelectionMode && !this.linkingReplyForMsg) this.startReply(msg);
+        if (!this.isSelectionMode && !this.linkingReplyForMsg && !this.linkingNestForMsgs) this.startReply(msg);
       },
       onQuotedMessageClick: async (targetId) => {
         const found = await this.scroller.scrollToMessage(targetId);
         if (!found) Toast.show('Original message not found');
+      },
+      onCheckboxToggle: async (msg, _idx, nextText) => {
+        await db.updateMessage(msg.id, { text: nextText });
+        msg.text = nextText;
+      },
+      onNestedParentClick: async (parentId) => {
+        const found = await this.scroller.scrollToMessage(parentId);
+        if (!found) Toast.show('Parent message not found');
+      },
+      onNestedTreeOpen: (msg) => {
+        this.openNestedTreeSheet(msg);
       }
     });
 
@@ -559,6 +655,18 @@ export class ChatView {
         this.openDatePicker();
       });
 
+      this.container.querySelector('#menu-expand-all-msgs')?.addEventListener('click', async () => {
+        Motion.closeMenu(dropdownMenu);
+        const count = await this.scroller?.expandAllMessages();
+        Toast.show(count > 0 ? `Expanded ${count} long message${count > 1 ? 's' : ''}` : 'No long messages to expand');
+      });
+
+      this.container.querySelector('#menu-collapse-all-msgs')?.addEventListener('click', async () => {
+        Motion.closeMenu(dropdownMenu);
+        const count = await this.scroller?.collapseAllMessages();
+        Toast.show(count > 0 ? `Collapsed ${count} long message${count > 1 ? 's' : ''}` : 'No long messages to collapse');
+      });
+
       this.container.querySelector('#menu-chat-wallpaper')?.addEventListener('click', () => {
         Motion.closeMenu(dropdownMenu);
         this.router.navigate('#/chat-theme?chatId=' + encodeURIComponent(this.chatId));
@@ -603,15 +711,9 @@ export class ChatView {
             this.emojiPickerSheet = new EmojiPickerSheet();
           }
           this.emojiPickerSheet.open(async (chosenEmoji) => {
-            const textarea2 = this.container.querySelector('#chat-input-textarea');
-            if (textarea2) {
-              const start = textarea2.selectionStart;
-              const end = textarea2.selectionEnd;
-              const val = textarea2.value;
-              textarea2.value = val.slice(0, start) + chosenEmoji + val.slice(end);
-              textarea2.selectionStart = textarea2.selectionEnd = start + chosenEmoji.length;
-              textarea2.dispatchEvent(new Event('input'));
-              textarea2.focus();
+            if (this.richComposer) {
+              this.richComposer.insertText(chosenEmoji);
+              this.richComposer.focus();
             }
           });
         } else {
@@ -653,14 +755,18 @@ export class ChatView {
       });
     }
 
-    // Input text & Send / Mic button behavior + 10-line auto-grow & drag resize
+    // Input text (RichComposer WYSIWYG) & Send / Mic button behavior + fullscreen toolbar + link preview
     const inputBar = this.container.querySelector('#chat-default-input-bar');
     const inputPill = this.container.querySelector('#chat-input-pill');
     const dragHandle = this.container.querySelector('#chat-input-drag-handle');
+    const expandFsBtn = this.container.querySelector('#btn-input-expand-fs');
     const fsHeader = this.container.querySelector('#chat-input-fs-header');
     const fsBackBtn = this.container.querySelector('#btn-chat-input-fs-back');
-    const textarea = this.container.querySelector('#chat-input-textarea');
+    const editorEl = this.container.querySelector('#chat-input-editor');
+    const linkPreviewSlot = this.container.querySelector('#composer-link-preview');
     const sendBtn = this.container.querySelector('#btn-mic-send');
+    const formatToolbar = this.container.querySelector('#chat-format-toolbar');
+    const formatPopover = this.container.querySelector('#composer-format-popover');
 
     // Left icon (sticker ↔ emoji) + right icon (mic ↔ send) swap on typing
     const leftBtn = this.container.querySelector('#btn-open-stickers');
@@ -676,8 +782,10 @@ export class ChatView {
       return Math.max(240, Math.min(window.innerHeight || vvh, vvh || window.innerHeight));
     };
 
+    const getComposerText = () => (this.richComposer ? this.richComposer.getValue() : '');
+
     const measureNaturalMetrics = () => {
-      const style = window.getComputedStyle(textarea);
+      const style = window.getComputedStyle(editorEl);
       let lineHeight = parseFloat(style.lineHeight);
       if (Number.isNaN(lineHeight) || style.lineHeight === 'normal') {
         const fontSize = parseFloat(style.fontSize) || 16;
@@ -688,45 +796,57 @@ export class ChatView {
       const oneLineHeight = Math.ceil(lineHeight + padTop + padBottom);
       const max10LinesHeight = Math.ceil(lineHeight * 10 + padTop + padBottom);
       const viewportCap = Math.max(oneLineHeight * 2, Math.floor(getViewportHeight() * 0.75) - 48);
-      const maxAutoTextareaHeight = Math.min(max10LinesHeight, viewportCap);
+      const maxAutoEditorHeight = Math.min(max10LinesHeight, viewportCap);
 
       // Measure true wrapped content height even while manually resized or in fullscreen
-      const prevHeight = textarea.style.height;
-      const prevMinHeight = textarea.style.minHeight;
-      const prevAlignSelf = textarea.style.alignSelf;
-      textarea.style.alignSelf = 'flex-start';
-      textarea.style.minHeight = '0px';
-      textarea.style.height = '1px';
-      const rawScrollHeight = textarea.scrollHeight;
-      textarea.style.height = prevHeight;
-      textarea.style.minHeight = prevMinHeight;
-      textarea.style.alignSelf = prevAlignSelf;
+      const prevHeight = editorEl.style.height;
+      const prevMinHeight = editorEl.style.minHeight;
+      const prevAlignSelf = editorEl.style.alignSelf;
+      editorEl.style.alignSelf = 'flex-start';
+      editorEl.style.minHeight = '0px';
+      editorEl.style.height = 'auto';
+      const rawScrollHeight = Math.max(oneLineHeight, editorEl.scrollHeight);
+      editorEl.style.height = prevHeight;
+      editorEl.style.minHeight = prevMinHeight;
+      editorEl.style.alignSelf = prevAlignSelf;
 
-      const clampedTextareaHeight = Math.max(
+      const clampedEditorHeight = Math.max(
         oneLineHeight,
-        Math.min(rawScrollHeight, maxAutoTextareaHeight)
+        Math.min(rawScrollHeight, maxAutoEditorHeight)
       );
-      const needsInternalScroll = rawScrollHeight > maxAutoTextareaHeight + 1;
+      const needsInternalScroll = rawScrollHeight > maxAutoEditorHeight + 1;
 
       const handleVisible = dragHandle && dragHandle.style.display !== 'none';
-      const handleHeight = handleVisible ? (dragHandle.offsetHeight || 14) : 0;
+      const handleHeight = handleVisible ? (dragHandle.offsetHeight || 18) : 0;
+      const previewHeight = (linkPreviewSlot && linkPreviewSlot.style.display !== 'none')
+        ? (linkPreviewSlot.offsetHeight || 68)
+        : 0;
       const pillStyle = inputPill ? window.getComputedStyle(inputPill) : null;
       const pillPadV = pillStyle
         ? (parseFloat(pillStyle.paddingTop) || 0) + (parseFloat(pillStyle.paddingBottom) || 0)
         : 8;
       const basePillPadV = isFullscreen ? 8 : Math.max(8, pillPadV);
-      const naturalPillHeight = Math.max(48, Math.ceil(clampedTextareaHeight + handleHeight + basePillPadV));
+      const naturalPillHeight = Math.max(48, Math.ceil(clampedEditorHeight + handleHeight + previewHeight + basePillPadV));
 
       return {
-        clampedTextareaHeight,
+        clampedEditorHeight,
         needsInternalScroll,
         naturalPillHeight
       };
     };
 
+    const closeFormatPopover = () => {
+      if (formatPopover) {
+        formatPopover.style.display = 'none';
+        formatPopover.innerHTML = '';
+      }
+      this._activePopover = null;
+    };
+
     const setFullscreenState = (nextFullscreen, notifyRouter = true) => {
       if (isFullscreen === nextFullscreen) return;
       isFullscreen = nextFullscreen;
+      closeFormatPopover();
       if (inputBar) {
         inputBar.classList.toggle('is-input-fullscreen', isFullscreen);
       }
@@ -743,10 +863,27 @@ export class ChatView {
       }
     };
 
+    const updateToolbarActiveStates = (activeFormats) => {
+      if (!formatToolbar || !activeFormats) return;
+      formatToolbar.querySelectorAll('.format-tool-btn[data-fmt]').forEach((btn) => {
+        const fmt = btn.dataset.fmt;
+        let on = false;
+        if (fmt === 'header') on = ['h1', 'h2', 'h3'].includes(activeFormats.block);
+        else if (fmt in activeFormats) on = Boolean(activeFormats[fmt]);
+        else if (['ul', 'ol', 'check', 'quote', 'codeblock'].includes(fmt)) on = activeFormats.block === fmt;
+        btn.classList.toggle('is-active', on);
+      });
+      const undoBtn = this.container.querySelector('#btn-rc-undo');
+      const redoBtn = this.container.querySelector('#btn-rc-redo');
+      if (undoBtn && this.richComposer) undoBtn.disabled = !this.richComposer.canUndo();
+      if (redoBtn && this.richComposer) redoBtn.disabled = !this.richComposer.canRedo();
+    };
+
     const updateInputLayout = () => {
-      if (!textarea || !document.body.contains(textarea)) return;
-      const hasRawText = textarea.value.length > 0;
-      const hasSendableText = textarea.value.trim().length > 0;
+      if (!editorEl || !document.body.contains(editorEl)) return;
+      const rawVal = getComposerText();
+      const hasRawText = rawVal.length > 0;
+      const hasSendableText = rawVal.trim().length > 0;
 
       // Right button: mic ↔ send ↔ edit (same theme color, animated icon swap)
       const targetMode = this.editingMessage ? 'edit' : (hasSendableText ? 'send' : 'mic');
@@ -779,22 +916,19 @@ export class ChatView {
         leftBtn.setAttribute('aria-label', (hasSendableText || this.editingMessage) ? 'Emoji' : 'Stickers');
       }
 
-      // Hide camera & reveal drag dash as soon as typing begins
-      if (cameraBtn) {
-        cameraBtn.style.display = hasRawText ? 'none' : '';
+      // Smooth CSS state class drives icon morph transitions (no abrupt display:none flicker!)
+      if (inputBar) {
+        inputBar.classList.toggle('has-typed-text', hasRawText || Boolean(this.editingMessage));
       }
       if (dragHandle) {
-        dragHandle.style.display = (hasRawText || isFullscreen || isDraggingInput) ? 'flex' : 'none';
+        dragHandle.style.display = (hasRawText || Boolean(this.editingMessage) || isFullscreen || isDraggingInput) ? 'flex' : 'none';
       }
 
-      if (!hasRawText && !isDraggingInput) {
+      if (!hasRawText && !isDraggingInput && !this.editingMessage) {
         manualPillHeightPx = null;
-        if (isFullscreen) {
-          setFullscreenState(false, true);
-        }
       }
 
-      const { clampedTextareaHeight, needsInternalScroll, naturalPillHeight } = measureNaturalMetrics();
+      const { clampedEditorHeight, needsInternalScroll, naturalPillHeight } = measureNaturalMetrics();
 
       if (isDraggingInput) {
         return;
@@ -805,43 +939,42 @@ export class ChatView {
           inputPill.classList.remove('is-manual-size');
           inputPill.style.height = '';
         }
-        textarea.style.height = '';
-        textarea.style.overflowY = 'auto';
+        editorEl.style.height = '';
+        editorEl.style.overflowY = 'auto';
         return;
       }
 
       if (manualPillHeightPx !== null) {
         if (naturalPillHeight >= manualPillHeightPx) {
-          // Typed text reached manual height -> seamlessly return to auto-grow (up to 10 lines)
           manualPillHeightPx = null;
         } else {
           if (inputPill) {
             inputPill.classList.add('is-manual-size');
             inputPill.style.height = `${manualPillHeightPx}px`;
           }
-          textarea.style.height = '';
-          textarea.style.overflowY = 'auto';
+          editorEl.style.height = '';
+          editorEl.style.overflowY = 'auto';
           return;
         }
       }
 
-      // Auto-grow up to 10 lines, then internal scroll
+      // Auto-grow up to 10 lines cleanly for unlimited message lengths, then internal scroll
       if (inputPill) {
         inputPill.classList.remove('is-manual-size');
         inputPill.style.height = '';
       }
       if (!hasRawText) {
-        textarea.style.height = '';
-        textarea.style.overflowY = 'hidden';
+        editorEl.style.height = '';
+        editorEl.style.overflowY = 'hidden';
       } else {
-        textarea.style.height = `${clampedTextareaHeight}px`;
-        textarea.style.overflowY = needsInternalScroll ? 'auto' : 'hidden';
+        editorEl.style.height = `${clampedEditorHeight}px`;
+        editorEl.style.overflowY = needsInternalScroll ? 'auto' : 'hidden';
       }
     };
 
     const startInputDrag = (e, fromFsHeader = false) => {
       if (e.button !== undefined && e.button !== 0 && e.pointerType === 'mouse') return;
-      if (fromFsHeader && e.target.closest('button')) return;
+      if (e.target.closest('button')) return;
       if (!inputPill) return;
 
       const startY = e.clientY;
@@ -856,8 +989,8 @@ export class ChatView {
         inputBar?.classList.add('is-input-dragging');
         inputPill.classList.add('is-manual-size');
         inputPill.style.height = `${Math.round(startPillHeight)}px`;
-        textarea.style.height = '';
-        textarea.style.overflowY = 'auto';
+        editorEl.style.height = '';
+        editorEl.style.overflowY = 'auto';
       }
 
       const cleanupListeners = () => {
@@ -876,8 +1009,8 @@ export class ChatView {
           inputBar?.classList.add('is-input-dragging');
           inputPill.classList.add('is-manual-size');
           inputPill.style.height = `${Math.round(startPillHeight)}px`;
-          textarea.style.height = '';
-          textarea.style.overflowY = 'auto';
+          editorEl.style.height = '';
+          editorEl.style.overflowY = 'auto';
         }
         moveEvent.preventDefault();
 
@@ -922,6 +1055,15 @@ export class ChatView {
     if (dragHandle) {
       dragHandle.addEventListener('pointerdown', (e) => startInputDrag(e, false));
     }
+    if (expandFsBtn) {
+      expandFsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        manualPillHeightPx = null;
+        setFullscreenState(!isFullscreen, true);
+        updateInputLayout();
+        this.richComposer?.focus();
+      });
+    }
     if (fsHeader) {
       fsHeader.addEventListener('pointerdown', (e) => startInputDrag(e, true));
     }
@@ -934,12 +1076,124 @@ export class ChatView {
       });
     }
 
+    // Undo / Redo / Clear Formatting controls in Fullscreen Header
+    this.container.querySelector('#btn-rc-undo')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.richComposer?.undo();
+    });
+    this.container.querySelector('#btn-rc-redo')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.richComposer?.redo();
+    });
+    this.container.querySelector('#btn-rc-clear')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.richComposer?.clearFormatting();
+    });
+
+    // Formatting Toolbar Actions & Popovers (Highlight Colors, Headers H1-H3, Word Hyperlink)
+    if (formatToolbar) {
+      formatToolbar.querySelectorAll('.format-tool-btn[data-fmt]').forEach((btn) => {
+        btn.addEventListener('mousedown', (e) => e.preventDefault());
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!this.richComposer) return;
+          const fmt = btn.dataset.fmt;
+
+          if (fmt === 'highlight') {
+            if (this._activePopover === 'highlight') {
+              closeFormatPopover();
+              return;
+            }
+            this._activePopover = 'highlight';
+            const swatches = Object.entries(HIGHLIGHT_COLORS).map(([code, def]) => `
+              <button type="button" class="hl-swatch-btn wa-hl-${def.name}" data-hl-code="${code}" title="${def.label} Highlight">
+                <span class="hl-swatch-dot" style="background:${def.hex};"></span>
+                <span>${def.label}</span>
+              </button>
+            `).join('');
+            formatPopover.innerHTML = `
+              <div class="composer-popover-row">
+                ${swatches}
+                <button type="button" class="hl-swatch-btn hl-clear-btn" data-hl-code="none">Remove</button>
+              </div>
+            `;
+            formatPopover.style.display = 'block';
+            formatPopover.querySelectorAll('[data-hl-code]').forEach((swBtn) => {
+              swBtn.addEventListener('mousedown', (ev) => ev.preventDefault());
+              swBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                this.richComposer.toggleInline('highlight', swBtn.dataset.hlCode);
+                closeFormatPopover();
+              });
+            });
+            return;
+          }
+
+          if (fmt === 'header') {
+            if (this._activePopover === 'header') {
+              closeFormatPopover();
+              return;
+            }
+            this._activePopover = 'header';
+            const curBlock = this.richComposer.getActiveFormats().block;
+            formatPopover.innerHTML = `
+              <div class="composer-popover-row">
+                ${['p', 'h1', 'h2', 'h3'].map((b) => `
+                  <button type="button" class="header-pick-btn ${curBlock === b ? 'is-active' : ''}" data-h-block="${b}">
+                    ${b === 'p' ? 'Normal' : b.toUpperCase()}
+                  </button>
+                `).join('')}
+              </div>
+            `;
+            formatPopover.style.display = 'block';
+            formatPopover.querySelectorAll('[data-h-block]').forEach((hBtn) => {
+              hBtn.addEventListener('mousedown', (ev) => ev.preventDefault());
+              hBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                const targetBlock = hBtn.dataset.hBlock;
+                this.richComposer.toggleBlock(targetBlock);
+                closeFormatPopover();
+              });
+            });
+            return;
+          }
+
+          closeFormatPopover();
+
+          if (fmt === 'link') {
+            await this._openWordLinkDialog();
+          } else if (fmt === 'indent-inc') {
+            this.richComposer.indent(1);
+          } else if (fmt === 'indent-dec') {
+            this.richComposer.indent(-1);
+          } else if (['ul', 'ol', 'check', 'quote', 'codeblock'].includes(fmt)) {
+            this.richComposer.toggleBlock(fmt);
+          } else {
+            this.richComposer.toggleInline(fmt);
+          }
+        });
+      });
+    }
+
+    // Mount live WYSIWYG RichComposer on #chat-input-editor
+    this.richComposer = new RichComposer(editorEl, {
+      onChange: (markup) => {
+        updateInputLayout();
+        this._handleComposerLinkDetection(markup);
+      },
+      onSelectionChange: (activeFormats) => {
+        updateToolbarActiveStates(activeFormats);
+      }
+    });
+
     this._updateInputLayout = updateInputLayout;
     this._resetInputComposerHeight = () => {
       manualPillHeightPx = null;
       setFullscreenState(false, true);
       updateInputLayout();
     };
+    this._closeFormatPopover = closeFormatPopover;
 
     this._onInputResize = () => {
       updateInputLayout();
@@ -952,7 +1206,7 @@ export class ChatView {
     window.addEventListener('resize', this._onInputResize);
     window.visualViewport?.addEventListener('resize', this._onInputResize);
 
-    textarea.addEventListener('focus', () => {
+    editorEl.addEventListener('focus', () => {
       if (this._wasNearBottom && messagesWrap) {
         setTimeout(() => {
           if (this._wasNearBottom && messagesWrap) {
@@ -962,17 +1216,17 @@ export class ChatView {
       }
     });
 
-    textarea.addEventListener('input', updateInputLayout);
-
     sendBtn.addEventListener('click', async () => {
+      const currentMarkup = getComposerText();
       if (this.editingMessage) {
-        await this.submitMessageEdit(textarea.value);
+        await this.submitMessageEdit(currentMarkup);
         return;
       }
-      const text = textarea.value.trim();
-      if (text) {
-        this.sendNewMessage(text);
-        textarea.value = '';
+      const trimmed = currentMarkup.trim();
+      if (trimmed) {
+        await this.sendNewMessage(trimmed);
+        this.richComposer?.clear();
+        this._resetPendingLinkPreview();
         manualPillHeightPx = null;
         setFullscreenState(false, true);
         updateInputLayout();
@@ -985,7 +1239,6 @@ export class ChatView {
 
   setupVoiceRecording() {
     const sendBtn = this.container.querySelector('#btn-mic-send');
-    const textarea = this.container.querySelector('#chat-input-textarea');
     const normalBar = this.container.querySelector('#chat-default-input-bar');
     const holdingBar = this.container.querySelector('#chat-voice-holding-bar');
     const holdingTimer = this.container.querySelector('#voice-holding-timer');
@@ -1033,8 +1286,9 @@ export class ChatView {
     });
 
     const onPointerDown = async (e) => {
-      // If editing or textarea has text, sendBtn acts as regular text send/save button
-      if (this.editingMessage || sendBtn.classList.contains('is-send') || textarea.value.trim().length > 0) return;
+      // If editing or composer has text, sendBtn acts as regular text send/save button
+      const currentComposerText = this.richComposer ? this.richComposer.getValue().trim() : '';
+      if (this.editingMessage || sendBtn.classList.contains('is-send') || currentComposerText.length > 0) return;
       if (e.button !== 0 && e.pointerType === 'mouse') return;
 
       e.preventDefault();
@@ -1128,7 +1382,7 @@ export class ChatView {
       } catch (err) { }
 
       if (this.voiceRecorder.isRecording) {
-        const recordingDuration = (Date.now() - this.voiceRecorder.startTime) / 1000;
+        const recordingDuration = this.voiceRecorder.getElapsedMs() / 1000;
         if (recordingDuration >= 0.8) {
           await this.voiceRecorder.stop(true);
         } else {
@@ -1167,13 +1421,13 @@ export class ChatView {
       if (this.voiceRecorder.isPaused) {
         // Resume recording
         this.stopPreviewAudio();
-        this.voiceRecorder.resume();
+        await this.voiceRecorder.resume();
         if (previewRow) previewRow.style.display = 'none';
         if (waveformRow) waveformRow.style.display = 'flex';
         pauseResumeBtn.innerHTML = '<span class="pause-bars">||</span> <span class="pause-label">Pause</span>';
       } else {
-        // Pause recording & show playback preview
-        this.voiceRecorder.pause();
+        // Pause recording & show seamless stitched playback preview
+        await this.voiceRecorder.pause();
         pauseResumeBtn.innerHTML = '<span class="pause-bars">▶</span> <span class="pause-label">Resume</span>';
         if (waveformRow) waveformRow.style.display = 'none';
         if (previewRow) previewRow.style.display = 'flex';
@@ -1197,7 +1451,7 @@ export class ChatView {
     try {
       const url = URL.createObjectURL(blob);
       this.previewAudio = new Audio(url);
-      const totalSeconds = this.voiceRecorder.elapsedSeconds || 1;
+      const totalSeconds = Math.max(1, this.voiceRecorder.getElapsedSeconds() || 1);
 
       const playBtn = this.container.querySelector('#btn-voice-preview-play');
       const playIconSvg = this.container.querySelector('#icon-preview-play-svg');
@@ -1309,7 +1563,7 @@ export class ChatView {
 
   _getMessagePreviewText(msg) {
     if (!msg) return 'Message';
-    if (msg.text) return msg.text;
+    if (msg.text) return stripRichMarkup(msg.text) || msg.text;
     if (msg.mediaName && (msg.mediaType === 'pdf' || msg.mediaType === 'document')) return msg.mediaName;
     if (msg.mediaType) return `[${msg.mediaType}]`;
     return 'Message';
@@ -1322,7 +1576,7 @@ export class ChatView {
     }
     this.replyingTo = this._buildReplyPayload(msg);
     await this.renderReplyBanner();
-    this.container.querySelector('#chat-input-textarea')?.focus();
+    this.richComposer?.focus();
   }
 
   async renderReplyBanner() {
@@ -1380,10 +1634,208 @@ export class ChatView {
     this.renderReplyBanner();
   }
 
-  applyReplyTo(msg) {
+  // ---------- Embedded Link Preview + Popover Dialogs ----------
+  _resetPendingLinkPreview() {
+    clearTimeout(this._linkPreviewDebounce);
+    if (this._linkPreviewAbort) {
+      this._linkPreviewAbort.abort();
+      this._linkPreviewAbort = null;
+    }
+    this.pendingLinkPreview = null;
+    this._dismissedLinkUrls.clear();
+    this._renderComposerLinkPreview();
+  }
+
+  _handleComposerLinkDetection(markup) {
+    clearTimeout(this._linkPreviewDebounce);
+    const url = extractFirstUrl(markup);
+    if (!url) {
+      if (this._linkPreviewAbort) {
+        this._linkPreviewAbort.abort();
+        this._linkPreviewAbort = null;
+      }
+      if (this.pendingLinkPreview) {
+        this.pendingLinkPreview = null;
+        this._renderComposerLinkPreview();
+        this._updateInputLayout?.();
+      }
+      return;
+    }
+
+    if (this._dismissedLinkUrls.has(url)) return;
+
+    // Preserve user-edited preview if it already matches the same URL
+    if (this.pendingLinkPreview && this.pendingLinkPreview.url === url && this.pendingLinkPreview.isManual) {
+      return;
+    }
+
+    if (!this.pendingLinkPreview || this.pendingLinkPreview.url !== url) {
+      this.pendingLinkPreview = buildLocalLinkPreview(url);
+      this._renderComposerLinkPreview();
+      this._updateInputLayout?.();
+    }
+
+    this._linkPreviewDebounce = setTimeout(async () => {
+      if (this._dismissedLinkUrls.has(url)) return;
+      if (this.pendingLinkPreview && this.pendingLinkPreview.url === url && this.pendingLinkPreview.isManual) return;
+
+      if (this._linkPreviewAbort) this._linkPreviewAbort.abort();
+      const ctrl = new AbortController();
+      this._linkPreviewAbort = ctrl;
+
+      const enriched = await fetchEnhancedLinkPreview(url, { signal: ctrl.signal });
+      if (ctrl.signal.aborted || !enriched) return;
+      if (this._dismissedLinkUrls.has(url)) return;
+      if (extractFirstUrl(this.richComposer?.getValue() || '') !== url) return;
+      if (this.pendingLinkPreview && this.pendingLinkPreview.url === url && this.pendingLinkPreview.isManual) return;
+
+      this.pendingLinkPreview = enriched;
+      this._renderComposerLinkPreview();
+      this._updateInputLayout?.();
+    }, 350);
+  }
+
+  _renderComposerLinkPreview() {
+    const slot = this.container?.querySelector('#composer-link-preview');
+    if (!slot) return;
+    slot.innerHTML = '';
+
+    if (!this.pendingLinkPreview || !this.pendingLinkPreview.url) {
+      slot.style.display = 'none';
+      return;
+    }
+
+    const card = renderLinkPreviewCard(this.pendingLinkPreview, {
+      mode: 'composer',
+      onEdit: (preview) => this._openEditLinkPreviewDialog(preview),
+      onDismiss: (preview) => {
+        if (preview?.url) this._dismissedLinkUrls.add(preview.url);
+        this.pendingLinkPreview = null;
+        this._renderComposerLinkPreview();
+        this._updateInputLayout?.();
+      }
+    });
+
+    if (card) {
+      slot.appendChild(card);
+      slot.style.display = 'block';
+    } else {
+      slot.style.display = 'none';
+    }
+  }
+
+  async _openEditLinkPreviewDialog(preview) {
+    if (!preview) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay custom-dialog-overlay active';
+    overlay.innerHTML = `
+      <div class="custom-dialog-card" role="dialog" aria-modal="true">
+        <h3 class="custom-dialog-title">Edit Link Preview</h3>
+        <div class="custom-dialog-body composer-modal-fields">
+          <label class="composer-modal-field">
+            <span>Title</span>
+            <input type="text" class="custom-dialog-input composer-dialog-input" id="lp-edit-title" value="${this._escHtml(preview.title || '')}" placeholder="Title" dir="auto" />
+          </label>
+          <label class="composer-modal-field">
+            <span>Description</span>
+            <textarea class="custom-dialog-input composer-dialog-input" id="lp-edit-desc" rows="3" placeholder="Description" dir="auto">${this._escHtml(preview.description || '')}</textarea>
+          </label>
+        </div>
+        <div class="custom-dialog-actions">
+          <button type="button" class="dialog-btn dialog-btn-cancel" id="lp-edit-cancel">Cancel</button>
+          <button type="button" class="dialog-btn dialog-btn-confirm" id="lp-edit-save">Save</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add('active'));
+    const titleInput = overlay.querySelector('#lp-edit-title');
+    titleInput?.focus();
+
+    const closeModal = () => overlay.remove();
+    overlay.querySelector('#lp-edit-cancel')?.addEventListener('click', closeModal);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+    overlay.querySelector('#lp-edit-save')?.addEventListener('click', () => {
+      const nextTitle = (overlay.querySelector('#lp-edit-title')?.value || '').trim();
+      const nextDesc = (overlay.querySelector('#lp-edit-desc')?.value || '').trim();
+      this.pendingLinkPreview = {
+        ...preview,
+        title: nextTitle || preview.domain || 'Link',
+        description: nextDesc,
+        isManual: true
+      };
+      this._renderComposerLinkPreview();
+      this._updateInputLayout?.();
+      closeModal();
+    });
+  }
+
+  async _openWordLinkDialog() {
+    const selectedLabel = this.richComposer?.getSelectedText() || '';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay custom-dialog-overlay active';
+    overlay.innerHTML = `
+      <div class="custom-dialog-card" role="dialog" aria-modal="true">
+        <h3 class="custom-dialog-title">Insert Word Link</h3>
+        <div class="custom-dialog-body composer-modal-fields">
+          <label class="composer-modal-field">
+            <span>Word / Text</span>
+            <input type="text" class="custom-dialog-input composer-dialog-input" id="wl-label-input" value="${this._escHtml(selectedLabel)}" placeholder="Text to display" dir="auto" />
+          </label>
+          <label class="composer-modal-field">
+            <span>URL (https://...)</span>
+            <input type="url" class="custom-dialog-input composer-dialog-input" id="wl-url-input" placeholder="https://example.com" dir="ltr" />
+          </label>
+        </div>
+        <div class="custom-dialog-actions">
+          <button type="button" class="dialog-btn dialog-btn-cancel" id="wl-cancel-btn">Cancel</button>
+          <button type="button" class="dialog-btn dialog-btn-confirm" id="wl-insert-btn">Insert</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add('active'));
+
+    const labelEl = overlay.querySelector('#wl-label-input');
+    const urlEl = overlay.querySelector('#wl-url-input');
+    (selectedLabel ? urlEl : labelEl)?.focus();
+
+    const closeModal = () => {
+      overlay.remove();
+      this.richComposer?.focus();
+    };
+
+    overlay.querySelector('#wl-cancel-btn')?.addEventListener('click', closeModal);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+    overlay.querySelector('#wl-insert-btn')?.addEventListener('click', () => {
+      let rawUrl = (urlEl?.value || '').trim();
+      if (rawUrl && !/^https?:\/\//i.test(rawUrl) && !/^mailto:/i.test(rawUrl)) {
+        rawUrl = `https://${rawUrl}`;
+      }
+      if (!sanitizeUrl(rawUrl)) {
+        Toast.show('Please enter a valid http/https link');
+        return;
+      }
+      const label = (labelEl?.value || '').trim() || rawUrl;
+      this.richComposer?.insertWordLink(label, rawUrl);
+      closeModal();
+    });
+  }
+
+  applyReplyTo(msg, consumeContext = true) {
     if (this.replyingTo) {
       msg.replyTo = { ...this.replyingTo };
-      this.clearReply();
+      if (consumeContext) this.clearReply();
+    }
+    if (this.nestingUnderMsg && this.nestingUnderMsg.id && String(this.nestingUnderMsg.id) !== String(msg.id)) {
+      msg.nestedParent = this._buildNestedParentPayload(this.nestingUnderMsg);
+      if (consumeContext) this.clearNestedCompose();
+    }
+    if (this.composingListMeta && this.composingListMeta.groupId) {
+      msg.listMeta = {
+        groupId: this.composingListMeta.groupId,
+        style: this.composingListMeta.style === 'unordered' ? 'unordered' : 'ordered'
+      };
     }
   }
 
@@ -1398,20 +1850,33 @@ export class ChatView {
       text: text,
       mediaId: null,
       mediaName: null,
-      mediaType: null
+      mediaType: null,
+      linkPreview: this.pendingLinkPreview ? { ...this.pendingLinkPreview } : null
     };
 
-    this.applyReplyTo(newMsg);
+    const nestedParentId = this.nestingUnderMsg?.id || null;
+    this.applyReplyTo(newMsg, true);
     await db.saveMessage(newMsg);
+
+    const previewPlain = stripRichMarkup(text) || text;
     await db.updateChat(this.chatId, {
-      lastMessage: text,
+      lastMessage: previewPlain,
       updatedAt: Date.now()
     });
 
     this.scroller.allMessages.push(newMsg);
+    this.scroller.rebuildMessageIndexes();
     this.scroller.visibleEndIndex = this.scroller.allMessages.length;
     const msgEl = await this.scroller.createMessageElement(newMsg);
     this.container.querySelector('#chat-messages-wrap').appendChild(msgEl);
+
+    if (nestedParentId) {
+      await this.scroller.refreshMessagesById([nestedParentId]);
+    }
+    if (this.composingListMeta) {
+      this.renderListComposeBanner();
+    }
+
     this.scroller.scrollToBottom(true);
   }
 
@@ -1464,6 +1929,7 @@ export class ChatView {
     });
 
     this.scroller.allMessages.push(...newMsgs);
+    this.scroller.rebuildMessageIndexes();
 
     if (newMsgs.length > 1) {
       const albumRow = await this.scroller.createAlbumElement(newMsgs);
@@ -1473,6 +1939,12 @@ export class ChatView {
       this.container.querySelector('#chat-messages-wrap').appendChild(msgEl);
     }
 
+    if (newMsgs[0]?.nestedParent?.id) {
+      await this.scroller.refreshMessagesById([newMsgs[0].nestedParent.id]);
+    }
+    if (this.composingListMeta) {
+      this.renderListComposeBanner();
+    }
     this.scroller.scrollToBottom(true);
   }
 
@@ -1518,9 +1990,16 @@ export class ChatView {
     });
 
     this.scroller.allMessages.push(newMsg);
+    this.scroller.rebuildMessageIndexes();
     this.scroller.visibleEndIndex = this.scroller.allMessages.length;
     const msgEl = await this.scroller.createMessageElement(newMsg);
     this.container.querySelector('#chat-messages-wrap').appendChild(msgEl);
+    if (newMsg.nestedParent?.id) {
+      await this.scroller.refreshMessagesById([newMsg.nestedParent.id]);
+    }
+    if (this.composingListMeta) {
+      this.renderListComposeBanner();
+    }
     this.scroller.scrollToBottom(true);
   }
 
@@ -1586,9 +2065,16 @@ export class ChatView {
     });
 
     this.scroller.allMessages.push(newMsg);
+    this.scroller.rebuildMessageIndexes();
     this.scroller.visibleEndIndex = this.scroller.allMessages.length;
     const msgEl = await this.scroller.createMessageElement(newMsg);
     this.container.querySelector('#chat-messages-wrap').appendChild(msgEl);
+    if (newMsg.nestedParent?.id) {
+      await this.scroller.refreshMessagesById([newMsg.nestedParent.id]);
+    }
+    if (this.composingListMeta) {
+      this.renderListComposeBanner();
+    }
     this.scroller.scrollToBottom(true);
   }
 
@@ -1794,13 +2280,394 @@ export class ChatView {
   }
 
   _handleMessageLongPress(msg, rowEl, evt) {
-    if (this.linkingReplyForMsg) return;
+    if (this.linkingReplyForMsg || this.linkingNestForMsgs) return;
     if (this.isSelectionMode) {
       this.toggleMessageSelection(msg.id, rowEl);
     } else {
       this.enterSelectionMode(msg.id, rowEl);
       this.reactionBar?.show(msg.id, rowEl, msg.reaction);
     }
+  }
+
+  // ---------- System A: Multi-Level Tree Nested Messages (Independent of Lists) ----------
+  _buildNestedParentPayload(parentMsg) {
+    if (!parentMsg) return null;
+    const sender = parentMsg.isOutgoing ? 'You' : (parentMsg.sender || this.chat?.name || 'Contact');
+    return {
+      id: parentMsg.id,
+      sender,
+      snippet: this._getMessagePreviewText(parentMsg).slice(0, 90)
+    };
+  }
+
+  async startNestParentPicker(sourceMsgs = []) {
+    this.exitSelectionMode();
+    const validSources = (Array.isArray(sourceMsgs) ? sourceMsgs : [sourceMsgs])
+      .filter((m) => m && !m.isSystem && !m.isDeleted);
+    if (validSources.length === 0) return;
+
+    if (this.linkingReplyForMsg) this.cancelLinkReplyTarget();
+    if (this.editingMessage) await this.cancelEdit(true);
+
+    this.linkingNestForMsgs = validSources;
+    if (this.scroller) {
+      this.scroller.pickNestParentMode = true;
+      this.scroller.container?.classList.add('is-pick-reply-mode');
+      validSources.forEach((m) => {
+        const el = this.scroller.findMessageElement?.(String(m.id));
+        if (el) el.classList.add('is-link-reply-source');
+      });
+    }
+
+    if (window.router && typeof window.router.pushOverlay === 'function') {
+      window.router.pushOverlay('chat-nest-link', () => this.cancelNestParentPicker());
+    }
+    this.renderNestPickerBanner();
+  }
+
+  renderNestPickerBanner() {
+    const banner = this.container?.querySelector('#chat-nest-link-banner');
+    if (!banner) return;
+    if (!this.linkingNestForMsgs || this.linkingNestForMsgs.length === 0) {
+      banner.style.display = 'none';
+      banner.innerHTML = '';
+      return;
+    }
+
+    const firstPreview = this._getMessagePreviewText(this.linkingNestForMsgs[0]);
+    const label = this.linkingNestForMsgs.length > 1
+      ? `${this.linkingNestForMsgs.length} selected messages`
+      : firstPreview;
+    const hasAnyExistingParent = this.linkingNestForMsgs.some((m) => m.nestedParent?.id);
+
+    banner.innerHTML = `
+      <div class="link-reply-banner-content">
+        <div class="link-reply-banner-icon">${Icons.treeBranch('', 18)}</div>
+        <div class="edit-banner-texts">
+          <div class="edit-banner-title">Tap parent message to nest under</div>
+          <div class="edit-banner-snippet" dir="auto">Nesting: ${this._escHtml(label)}</div>
+        </div>
+        ${hasAnyExistingParent ? `<button type="button" class="link-reply-unlink-btn" id="btn-unnest-selected">Unnest</button>` : ''}
+      </div>
+      <button type="button" class="edit-banner-close-btn" id="btn-cancel-nest-pick" aria-label="Cancel nesting">${Icons.close('', 18)}</button>
+    `;
+    banner.style.display = 'flex';
+    banner.querySelector('#btn-cancel-nest-pick')?.addEventListener('click', () => this.cancelNestParentPicker());
+    banner.querySelector('#btn-unnest-selected')?.addEventListener('click', async () => {
+      const targets = [...(this.linkingNestForMsgs || [])];
+      this.cancelNestParentPicker();
+      await this.unnestMessages(targets);
+    });
+  }
+
+  cancelNestParentPicker() {
+    const wasActive = Boolean(this.linkingNestForMsgs);
+    this.linkingNestForMsgs = null;
+    if (this.scroller) {
+      this.scroller.pickNestParentMode = false;
+      this.scroller.container?.classList.remove('is-pick-reply-mode');
+      this.scroller.container?.querySelectorAll('.msg-row.is-link-reply-source').forEach((r) => {
+        r.classList.remove('is-link-reply-source');
+      });
+    }
+    if (wasActive) this.renderNestPickerBanner();
+    window.router?.removeOverlay?.('chat-nest-link');
+  }
+
+  async _applyNestParentToMessages(targetParentMsg) {
+    const sources = this.linkingNestForMsgs;
+    if (!sources || sources.length === 0) return;
+
+    if (!targetParentMsg || targetParentMsg.isSystem || targetParentMsg.isDeleted) {
+      Toast.show('Select a valid message as parent');
+      return;
+    }
+
+    const sourceIds = sources.map((m) => m.id);
+    if (this.scroller?.wouldCreateNestedCycle(sourceIds, targetParentMsg.id)) {
+      Toast.show('Cannot nest a message under itself or its descendant');
+      return;
+    }
+
+    const payload = this._buildNestedParentPayload(targetParentMsg);
+    const affectedIds = new Set([String(targetParentMsg.id)]);
+    for (const m of sources) {
+      if (m.nestedParent?.id) affectedIds.add(String(m.nestedParent.id));
+      affectedIds.add(String(m.id));
+    }
+
+    this.cancelNestParentPicker();
+
+    for (const m of sources) {
+      await db.updateMessage(m.id, { nestedParent: payload });
+      m.nestedParent = { ...payload };
+    }
+
+    await this.scroller?.refreshMessagesById(Array.from(affectedIds));
+    Toast.show(sources.length > 1 ? `${sources.length} messages nested` : 'Message nested under parent');
+  }
+
+  async unnestMessages(msgs = []) {
+    const affectedIds = new Set();
+    let unnested = 0;
+    for (const m of msgs) {
+      if (!m || !m.nestedParent) continue;
+      if (m.nestedParent.id) affectedIds.add(String(m.nestedParent.id));
+      affectedIds.add(String(m.id));
+      await db.updateMessage(m.id, { nestedParent: null });
+      m.nestedParent = null;
+      unnested++;
+    }
+    if (unnested > 0) {
+      await this.scroller?.refreshMessagesById(Array.from(affectedIds));
+      Toast.show(unnested > 1 ? `Unnested ${unnested} messages` : 'Message unnested');
+    }
+  }
+
+  startNestedCompose(parentMsg) {
+    this.exitSelectionMode();
+    if (!parentMsg || parentMsg.isSystem || parentMsg.isDeleted) return;
+    if (this.linkingNestForMsgs) this.cancelNestParentPicker();
+    this.nestingUnderMsg = parentMsg;
+    this.renderNestedComposeBanner();
+    this.richComposer?.focus();
+  }
+
+  renderNestedComposeBanner() {
+    const banner = this.container?.querySelector('#chat-nest-compose-banner');
+    if (!banner) return;
+    if (!this.nestingUnderMsg) {
+      banner.style.display = 'none';
+      banner.innerHTML = '';
+      return;
+    }
+    const sender = this.nestingUnderMsg.isOutgoing ? 'You' : (this.nestingUnderMsg.sender || this.chat?.name || 'Contact');
+    const preview = this._getMessagePreviewText(this.nestingUnderMsg);
+    banner.innerHTML = `
+      <div class="link-reply-banner-content">
+        <div class="link-reply-banner-icon">${Icons.treeBranch('', 18)}</div>
+        <div class="edit-banner-texts">
+          <div class="edit-banner-title">Adding nested message under ${this._escHtml(sender)}</div>
+          <div class="edit-banner-snippet" dir="auto">${this._escHtml(preview)}</div>
+        </div>
+      </div>
+      <button type="button" class="edit-banner-close-btn" id="btn-cancel-nest-compose" aria-label="Cancel nested message">${Icons.close('', 18)}</button>
+    `;
+    banner.style.display = 'flex';
+    banner.querySelector('#btn-cancel-nest-compose')?.addEventListener('click', () => this.clearNestedCompose());
+  }
+
+  clearNestedCompose() {
+    this.nestingUnderMsg = null;
+    this.renderNestedComposeBanner();
+  }
+
+  openNestedTreeSheet(msg) {
+    if (!msg || !this.scroller) return;
+    if (!this.nestedTreeSheet) {
+      this.nestedTreeSheet = new NestedChainSheet();
+    }
+    this.nestedTreeSheet.open({
+      rootMsg: msg,
+      focusMsg: msg,
+      allMessages: this.scroller.allMessages,
+      nestedChildrenByParentId: this.scroller.nestedChildrenByParentId,
+      listPositionByMsgId: this.scroller.listPositionByMsgId,
+      onJumpToMessage: async (targetId) => {
+        await this.scroller.scrollToMessage(targetId);
+      },
+      onAddNestedChild: (parentNode) => {
+        this.startNestedCompose(parentNode);
+      },
+      onUnlinkNested: async (childMsg) => {
+        await this.unnestMessages([childMsg]);
+      }
+    });
+  }
+
+  // ---------- System B: Standalone Numbered / Bulleted Message Lists (Independent of Nesting) ----------
+  async openMessageListDialog(selectedMsgs = []) {
+    const valid = (selectedMsgs || []).filter((m) => m && !m.isSystem && !m.isDeleted);
+    if (valid.length === 0) return;
+
+    const single = valid.length === 1 ? valid[0] : null;
+    const hasExisting = valid.some((m) => m.listMeta?.groupId);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay custom-dialog-overlay active';
+    overlay.innerHTML = `
+      <div class="custom-dialog-card" role="dialog" aria-modal="true">
+        <h3 class="custom-dialog-title">Message List Style</h3>
+        <div class="custom-dialog-body msg-list-dialog-actions">
+          <button type="button" class="msg-list-option-btn" data-list-action="ordered">
+            <span class="msg-list-opt-icon">${Icons.listNumbered('', 20)}</span>
+            <span class="msg-list-opt-texts">
+              <strong>Numbered List (1, 2, 3...)</strong>
+              <small>Simple auto-updating numbers independent of nesting</small>
+            </span>
+          </button>
+          <button type="button" class="msg-list-option-btn" data-list-action="unordered">
+            <span class="msg-list-opt-icon">${Icons.listBulleted('', 20)}</span>
+            <span class="msg-list-opt-texts">
+              <strong>Bulleted List (•)</strong>
+              <small>Clean bullet points without numbers</small>
+            </span>
+          </button>
+          ${single ? `
+            <button type="button" class="msg-list-option-btn" data-list-action="continue">
+              <span class="msg-list-opt-icon">${Icons.checklist('', 20)}</span>
+              <span class="msg-list-opt-texts">
+                <strong>Continue list</strong>
+                <small>Send new messages directly into this list</small>
+              </span>
+            </button>
+          ` : ''}
+          ${hasExisting ? `
+            <button type="button" class="msg-list-option-btn danger" data-list-action="remove">
+              <span class="msg-list-opt-icon">${Icons.close('', 20)}</span>
+              <span class="msg-list-opt-texts">
+                <strong>Remove from list</strong>
+                <small>Remaining items renumber automatically</small>
+              </span>
+            </button>
+          ` : ''}
+        </div>
+        <div class="custom-dialog-actions">
+          <button type="button" class="dialog-btn dialog-btn-cancel" id="btn-msg-list-cancel">Cancel</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add('active'));
+
+    const close = () => overlay.remove();
+    overlay.querySelector('#btn-msg-list-cancel')?.addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    overlay.querySelectorAll('[data-list-action]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const action = btn.dataset.listAction;
+        close();
+        this.exitSelectionMode();
+        if (action === 'ordered' || action === 'unordered') {
+          await this.applyListToMessages(valid, action);
+        } else if (action === 'remove') {
+          await this.removeListFromMessages(valid);
+        } else if (action === 'continue' && single) {
+          await this.startContinueList(single);
+        }
+      });
+    });
+  }
+
+  _collectGroupAffectedIds(groupIds) {
+    const affected = new Set();
+    const gSet = new Set(groupIds.filter(Boolean).map(String));
+    for (const m of (this.scroller?.allMessages || [])) {
+      if (m.listMeta?.groupId && gSet.has(String(m.listMeta.groupId))) {
+        affected.add(String(m.id));
+      }
+    }
+    return affected;
+  }
+
+  async applyListToMessages(msgs, style = 'ordered', explicitGroupId = null) {
+    if (!msgs || msgs.length === 0) return;
+
+    // If all selected items already share a single groupId, keep that groupId when switching style
+    const oldGroups = Array.from(new Set(msgs.map((m) => m.listMeta?.groupId).filter(Boolean)));
+    const groupId = explicitGroupId || (oldGroups.length === 1 && msgs.every((m) => m.listMeta?.groupId === oldGroups[0])
+      ? oldGroups[0]
+      : `list_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
+
+    const affected = this._collectGroupAffectedIds([...oldGroups, groupId]);
+
+    for (const m of msgs) {
+      const nextMeta = { groupId, style: style === 'unordered' ? 'unordered' : 'ordered' };
+      await db.updateMessage(m.id, { listMeta: nextMeta });
+      m.listMeta = nextMeta;
+      affected.add(String(m.id));
+    }
+
+    await this.scroller?.refreshMessagesById(Array.from(affected));
+    Toast.show(style === 'ordered' ? 'Numbered list applied' : 'Bulleted list applied');
+  }
+
+  async removeListFromMessages(msgs) {
+    const oldGroups = Array.from(new Set(msgs.map((m) => m.listMeta?.groupId).filter(Boolean)));
+    const affected = this._collectGroupAffectedIds(oldGroups);
+    let removed = 0;
+
+    for (const m of msgs) {
+      if (!m.listMeta) continue;
+      affected.add(String(m.id));
+      await db.updateMessage(m.id, { listMeta: null });
+      m.listMeta = null;
+      removed++;
+    }
+
+    if (removed > 0) {
+      await this.scroller?.refreshMessagesById(Array.from(affected));
+      Toast.show('Removed from list');
+    }
+  }
+
+  async startContinueList(anchorMsg) {
+    if (!anchorMsg) return;
+    let groupId = anchorMsg.listMeta?.groupId || null;
+    const style = anchorMsg.listMeta?.style || 'ordered';
+    if (!groupId) {
+      groupId = `list_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await this.applyListToMessages([anchorMsg], style, groupId);
+    }
+    this.composingListMeta = { groupId, style };
+    this.renderListComposeBanner();
+    this.richComposer?.focus();
+  }
+
+  renderListComposeBanner() {
+    const banner = this.container?.querySelector('#chat-list-compose-banner');
+    if (!banner) return;
+    if (!this.composingListMeta) {
+      banner.style.display = 'none';
+      banner.innerHTML = '';
+      return;
+    }
+
+    const { groupId, style } = this.composingListMeta;
+    const curCount = (this.scroller?.allMessages || [])
+      .filter((m) => !m.isDeleted && m.listMeta?.groupId === groupId).length;
+    const label = style === 'ordered'
+      ? `Continuing numbered list (next: #${curCount + 1})`
+      : `Continuing bulleted list (${curCount} items)`;
+
+    banner.innerHTML = `
+      <div class="link-reply-banner-content">
+        <div class="link-reply-banner-icon">${style === 'ordered' ? Icons.listNumbered('', 18) : Icons.listBulleted('', 18)}</div>
+        <div class="edit-banner-texts">
+          <div class="edit-banner-title">${this._escHtml(label)}</div>
+          <div class="edit-banner-snippet">Tap toggle to switch style or × to finish</div>
+        </div>
+        <button type="button" class="link-reply-unlink-btn" id="btn-toggle-list-compose-style">${style === 'ordered' ? 'Switch to •' : 'Switch to 1,2,3'}</button>
+      </div>
+      <button type="button" class="edit-banner-close-btn" id="btn-cancel-list-compose" aria-label="Stop continuing list">${Icons.close('', 18)}</button>
+    `;
+    banner.style.display = 'flex';
+    banner.querySelector('#btn-cancel-list-compose')?.addEventListener('click', () => {
+      this.composingListMeta = null;
+      this.renderListComposeBanner();
+    });
+    banner.querySelector('#btn-toggle-list-compose-style')?.addEventListener('click', async () => {
+      if (!this.composingListMeta) return;
+      const nextStyle = this.composingListMeta.style === 'ordered' ? 'unordered' : 'ordered';
+      this.composingListMeta.style = nextStyle;
+      const existingItems = (this.scroller?.allMessages || [])
+        .filter((m) => !m.isDeleted && m.listMeta?.groupId === this.composingListMeta.groupId);
+      if (existingItems.length > 0) {
+        await this.applyListToMessages(existingItems, nextStyle, this.composingListMeta.groupId);
+      }
+      this.renderListComposeBanner();
+    });
   }
 
   // --- Link Reply Quote Picker (without forcing Edited badge) ---
@@ -1918,16 +2785,18 @@ export class ChatView {
     if (this.linkingReplyForMsg) {
       this.cancelLinkReplyTarget();
     }
+    if (this.linkingNestForMsgs) {
+      this.cancelNestParentPicker();
+    }
     if (!msg || msg.isDeleted) return;
-
-    const textarea = this.container.querySelector('#chat-input-textarea');
-    if (!textarea) return;
+    if (!this.richComposer) return;
 
     // Save existing draft & active reply only when entering edit mode from normal composer
     if (!this.editingMessage) {
       this._draftBeforeEdit = {
-        text: textarea.value || '',
-        replyingTo: this.replyingTo ? { ...this.replyingTo } : null
+        text: this.richComposer.getValue() || '',
+        replyingTo: this.replyingTo ? { ...this.replyingTo } : null,
+        linkPreview: this.pendingLinkPreview ? { ...this.pendingLinkPreview } : null
       };
     }
 
@@ -1937,7 +2806,9 @@ export class ChatView {
       String(this.replyingTo.id) !== String(msg.id)
     );
     this.editingMessage = msg;
-    textarea.value = msg.text || '';
+    this.pendingLinkPreview = msg.linkPreview ? { ...msg.linkPreview } : null;
+    this.richComposer.setValue(msg.text || '');
+    this._renderComposerLinkPreview();
     if (!preserveActiveReply) {
       this.replyingTo = msg.replyTo ? { ...msg.replyTo } : null;
     }
@@ -1949,8 +2820,7 @@ export class ChatView {
       this._updateInputLayout();
     }
 
-    textarea.focus();
-    textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+    this.richComposer.focus();
   }
 
   renderEditBanner() {
@@ -1965,7 +2835,7 @@ export class ChatView {
     }
 
     const originalPreview = msg.text
-      ? msg.text
+      ? (stripRichMarkup(msg.text) || msg.text)
       : (msg.mediaType ? `[${msg.mediaType}]` : 'Message');
 
     banner.innerHTML = `
@@ -1987,17 +2857,19 @@ export class ChatView {
     this.editingMessage = null;
     this.renderEditBanner();
 
-    const textarea = this.container.querySelector('#chat-input-textarea');
     const saved = this._draftBeforeEdit;
     this._draftBeforeEdit = null;
 
     if (restoreDraft && saved) {
-      if (textarea) textarea.value = saved.text || '';
+      this.pendingLinkPreview = saved.linkPreview ? { ...saved.linkPreview } : null;
+      this.richComposer?.setValue(saved.text || '');
       this.replyingTo = saved.replyingTo ? { ...saved.replyingTo } : null;
     } else {
-      if (textarea) textarea.value = '';
+      this.pendingLinkPreview = null;
+      this.richComposer?.clear();
       this.replyingTo = null;
     }
+    this._renderComposerLinkPreview();
 
     await this.renderReplyBanner();
     if (this._resetInputComposerHeight) {
@@ -2021,10 +2893,15 @@ export class ChatView {
     const nextReplyTo = this.replyingTo ? { ...this.replyingTo } : null;
     const prevReplyJson = JSON.stringify(msg.replyTo || null);
     const nextReplyJson = JSON.stringify(nextReplyTo);
+    const nextLinkPreview = this.pendingLinkPreview ? { ...this.pendingLinkPreview } : null;
+    const prevPreviewJson = JSON.stringify(msg.linkPreview || null);
+    const nextPreviewJson = JSON.stringify(nextLinkPreview);
+
     const textChanged = nextText !== (msg.text || '');
     const replyChanged = prevReplyJson !== nextReplyJson;
+    const previewChanged = prevPreviewJson !== nextPreviewJson;
 
-    if (!textChanged && !replyChanged) {
+    if (!textChanged && !replyChanged && !previewChanged) {
       await this.cancelEdit(true);
       return;
     }
@@ -2032,6 +2909,7 @@ export class ChatView {
     const updates = {
       text: nextText,
       replyTo: nextReplyTo,
+      linkPreview: nextLinkPreview,
       isEdited: Boolean(msg.isEdited || textChanged)
     };
 
@@ -2042,11 +2920,11 @@ export class ChatView {
 
     const allMsgs = this.scroller?.allMessages || [];
     if (allMsgs.length > 0 && String(allMsgs[allMsgs.length - 1].id) === String(msg.id)) {
-      const previewText = nextText || (msg.mediaType ? `[${msg.mediaType}]` : '');
+      const previewText = stripRichMarkup(nextText) || (msg.mediaType ? `[${msg.mediaType}]` : '');
       await db.updateChat(this.chatId, { lastMessage: previewText, updatedAt: Date.now() });
     }
 
-    Toast.show(textChanged ? 'Message edited' : (nextReplyTo ? 'Reply updated' : 'Reply removed'));
+    Toast.show(textChanged ? 'Message edited' : (replyChanged ? (nextReplyTo ? 'Reply updated' : 'Reply removed') : 'Preview updated'));
     await this.cancelEdit(true);
   }
 
@@ -2205,9 +3083,64 @@ export class ChatView {
         icon: Icons.infoCircle('', 20),
         action: () => {
           this.exitSelectionMode();
-          this.messageInfoSheet?.show(msg, isPinned);
+          const nestedChildCount = (this.scroller?.nestedChildrenByParentId.get(String(msg.id)) || []).length;
+          const listInfo = this.scroller?.listPositionByMsgId.get(String(msg.id));
+          this.messageInfoSheet?.show(msg, isPinned, {
+            nestedChildCount,
+            listIndex: listInfo?.index || null
+          });
         }
       });
+
+      // 4. Multi-level Tree Nesting (System A) & Standalone Lists (System B)
+      if (!msg.isSystem && !msg.isDeleted) {
+        tools.push({
+          id: 'nest-under',
+          label: msg.nestedParent?.id ? 'Change nested parent...' : 'Nest under...',
+          icon: Icons.treeBranch('', 20),
+          action: () => this.startNestParentPicker([msg])
+        });
+        tools.push({
+          id: 'add-nested',
+          label: 'Add nested message',
+          icon: Icons.chatPlus('', 20),
+          action: () => this.startNestedCompose(msg)
+        });
+        if (msg.nestedParent?.id) {
+          tools.push({
+            id: 'unnest',
+            label: 'Unnest message',
+            icon: Icons.close('', 20),
+            action: async () => {
+              this.exitSelectionMode();
+              await this.unnestMessages([msg]);
+            }
+          });
+        }
+        tools.push({
+          id: 'msg-list',
+          label: 'Numbered / Bulleted list...',
+          icon: Icons.listNumbered('', 20),
+          action: () => this.openMessageListDialog([msg])
+        });
+      }
+
+      if (this.scroller?.isMessageCollapsible(msg)) {
+        const expState = this.scroller.messageExpandState.get(String(msg.id));
+        const isCurrentlyExpanded = expState
+          ? expState.mode === 'full'
+          : Boolean(this.scroller.defaultExpandLongMessages);
+        tools.push({
+          id: isCurrentlyExpanded ? 'collapse-msg' : 'expand-msg',
+          label: isCurrentlyExpanded ? 'Collapse message' : 'Expand message',
+          icon: isCurrentlyExpanded ? Icons.collapseAll('', 20) : Icons.expandAll('', 20),
+          action: async () => {
+            this.exitSelectionMode();
+            if (isCurrentlyExpanded) await this.scroller.collapseMessages([msg.id]);
+            else await this.scroller.expandMessages([msg.id]);
+          }
+        });
+      }
 
       // 4. Delete
       tools.push({
@@ -2332,6 +3265,56 @@ export class ChatView {
         icon: allPinned ? Icons.pinOff('', 20) : Icons.pin('', 20),
         action: () => this.pinSelectedMessages()
       });
+    }
+
+    if (count > 1) {
+      const selectableMsgs = selectedMsgs.filter((m) => !m.isSystem && !m.isDeleted);
+      if (selectableMsgs.length > 0) {
+        tools.push({
+          id: 'nest-under',
+          label: 'Nest under...',
+          icon: Icons.treeBranch('', 20),
+          action: () => this.startNestParentPicker(selectableMsgs)
+        });
+        if (selectableMsgs.some((m) => m.nestedParent?.id)) {
+          tools.push({
+            id: 'unnest',
+            label: 'Unnest selected',
+            icon: Icons.close('', 20),
+            action: async () => {
+              this.exitSelectionMode();
+              await this.unnestMessages(selectableMsgs);
+            }
+          });
+        }
+        tools.push({
+          id: 'msg-list',
+          label: 'Numbered / Bulleted list...',
+          icon: Icons.listNumbered('', 20),
+          action: () => this.openMessageListDialog(selectableMsgs)
+        });
+      }
+      const collapsibleIds = selectedMsgs.filter((m) => this.scroller?.isMessageCollapsible(m)).map((m) => m.id);
+      if (collapsibleIds.length > 0) {
+        tools.push({
+          id: 'expand-msgs',
+          label: 'Expand selected',
+          icon: Icons.expandAll('', 20),
+          action: async () => {
+            this.exitSelectionMode();
+            await this.scroller?.expandMessages(collapsibleIds);
+          }
+        });
+        tools.push({
+          id: 'collapse-msgs',
+          label: 'Collapse selected',
+          icon: Icons.collapseAll('', 20),
+          action: async () => {
+            this.exitSelectionMode();
+            await this.scroller?.collapseMessages(collapsibleIds);
+          }
+        });
+      }
     }
 
     // Responsive tool measurement and layout
@@ -2839,12 +3822,29 @@ export class ChatView {
   }
 
   cleanup() {
+    clearTimeout(this._linkPreviewDebounce);
+    if (this._linkPreviewAbort) {
+      this._linkPreviewAbort.abort();
+      this._linkPreviewAbort = null;
+    }
+    this.cancelNestParentPicker();
     this.cancelLinkReplyTarget();
     this.exitSelectionMode();
     this.editingMessage = null;
+    this.nestingUnderMsg = null;
+    this.composingListMeta = null;
+    this.pendingLinkPreview = null;
     this._draftBeforeEdit = null;
     this._updateInputLayout = null;
     this._resetInputComposerHeight = null;
+    if (this.richComposer) {
+      this.richComposer.destroy();
+      this.richComposer = null;
+    }
+    if (this.nestedTreeSheet) {
+      this.nestedTreeSheet.destroy();
+      this.nestedTreeSheet = null;
+    }
     if (this._onResize) {
       window.removeEventListener('resize', this._onResize);
       this._onResize = null;

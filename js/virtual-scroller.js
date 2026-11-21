@@ -5,6 +5,13 @@ import { audioManager } from './audio-player.js';
 import { mediaLightbox } from './components/lightbox.js';
 import { Toast } from './components/toast.js';
 import { backgroundTasks } from './utils/background-tasks.js';
+import {
+  renderRichMessageHtml,
+  stripRichMarkup,
+  sliceMessageForDisplay,
+  toggleCheckboxInMarkup
+} from './utils/rich-text.js';
+import { renderLinkPreviewCard } from './utils/link-preview.js';
 
 export class VirtualMessageScroller {
   constructor(container, options = {}) {
@@ -16,6 +23,10 @@ export class VirtualMessageScroller {
     this.onMessageClick = options.onMessageClick || null;
     this.onMessageReply = options.onMessageReply || null;
     this.onQuotedMessageClick = options.onQuotedMessageClick || null;
+    this.onCheckboxToggle = options.onCheckboxToggle || null;
+    this.onNestedParentClick = options.onNestedParentClick || null;
+    this.onNestedTreeOpen = options.onNestedTreeOpen || null;
+    this.defaultExpandLongMessages = Boolean(options.defaultExpandLongMessages);
     this.outgoingTheme = options.outgoingTheme || 'slate';
 
     // Long-press → multi-select redesign
@@ -23,6 +34,13 @@ export class VirtualMessageScroller {
     this.onMessageTapInSelection = null; // (msg, row) => void
     this.selectionMode = false;
     this.pickReplyMode = false;
+    this.pickNestParentMode = false;
+
+    this.messageExpandState = new Map();
+    this.nestedChildrenByParentId = new Map();
+    this.nestedDepthByMsgId = new Map();
+    this.listPositionByMsgId = new Map();
+    this._indexByMsgId = new Map();
 
     // Background task media listener
     this._onMediaReadyBound = this.handleMediaReady.bind(this);
@@ -127,33 +145,210 @@ export class VirtualMessageScroller {
   }
 
   formatMessageText(text) {
-    if (!text) return '';
-    let escaped = text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+    return renderRichMessageHtml(text, { interactive: false });
+  }
 
-    // Code blocks: ```code```
-    escaped = escaped.replace(/```([\s\S]+?)```/g, '<pre class="chat-code-block"><code>$1</code></pre>');
+  rebuildMessageIndexes() {
+    this.nestedChildrenByParentId.clear();
+    this.nestedDepthByMsgId.clear();
+    this.listPositionByMsgId.clear();
+    this._indexByMsgId.clear();
 
-    // Inline code: `code`
-    escaped = escaped.replace(/`([^`\n]+?)`/g, '<code class="chat-inline-code">$1</code>');
+    const msgById = new Map();
+    for (let i = 0; i < this.allMessages.length; i++) {
+      const m = this.allMessages[i];
+      if (!m) continue;
+      const idStr = String(m.id);
+      msgById.set(idStr, m);
+      this._indexByMsgId.set(idStr, i);
 
-    // Bold: *text*
-    escaped = escaped.replace(/(^|[\s\(\[\{.,!?:;])\*([^*\n]+?)\*($|[\s\)\]}.,!?:;])/g, '$1<strong>$2</strong>$3');
+      if (m.nestedParent && m.nestedParent.id) {
+        const pidStr = String(m.nestedParent.id);
+        if (!this.nestedChildrenByParentId.has(pidStr)) {
+          this.nestedChildrenByParentId.set(pidStr, []);
+        }
+        this.nestedChildrenByParentId.get(pidStr).push(m);
+      }
+    }
 
-    // Italic: _text_
-    escaped = escaped.replace(/(^|[\s\(\[\{.,!?:;])_([^_\n]+?)_($|[\s\)\]}.,!?:;])/g, '$1<em>$2</em>$3');
+    // Compute multi-level depth safely (prevents infinite loops if corrupted data exists)
+    for (const m of this.allMessages) {
+      if (!m) continue;
+      let depth = 0;
+      let cur = m;
+      const visited = new Set([String(m.id)]);
+      while (cur && cur.nestedParent && cur.nestedParent.id) {
+        const pidStr = String(cur.nestedParent.id);
+        if (visited.has(pidStr)) break;
+        visited.add(pidStr);
+        depth++;
+        cur = msgById.get(pidStr) || null;
+        if (!cur) break;
+      }
+      this.nestedDepthByMsgId.set(String(m.id), depth);
+    }
 
-    // Strikethrough: ~text~
-    escaped = escaped.replace(/(^|[\s\(\[\{.,!?:;])~([^~\n]+?)~($|[\s\)\]}.,!?:;])/g, '$1<del>$2</del>$3');
+    // Build independent list numbering/bullets (completely decoupled from nested tree depth)
+    const groups = new Map();
+    for (const m of this.allMessages) {
+      if (m && !m.isDeleted && m.listMeta && m.listMeta.groupId) {
+        const gid = String(m.listMeta.groupId);
+        if (!groups.has(gid)) groups.set(gid, []);
+        groups.get(gid).push(m);
+      }
+    }
 
-    // URLs: https?://...
-    escaped = escaped.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="chat-link">$1</a>');
+    for (const [gid, items] of groups.entries()) {
+      const total = items.length;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        this.listPositionByMsgId.set(String(item.id), {
+          groupId: gid,
+          style: item.listMeta.style === 'unordered' ? 'unordered' : 'ordered',
+          index: i + 1,
+          total
+        });
+      }
+    }
+  }
 
-    return escaped;
+  wouldCreateNestedCycle(childIdOrIds, candidateParentId) {
+    if (!candidateParentId) return false;
+    const targetIds = new Set(
+      (Array.isArray(childIdOrIds) ? childIdOrIds : [childIdOrIds]).map(String)
+    );
+    const msgById = new Map(this.allMessages.map((m) => [String(m.id), m]));
+
+    let curId = String(candidateParentId);
+    const visited = new Set();
+    while (curId) {
+      if (targetIds.has(curId)) return true;
+      if (visited.has(curId)) break;
+      visited.add(curId);
+      const curMsg = msgById.get(curId);
+      if (!curMsg || !curMsg.nestedParent || !curMsg.nestedParent.id) break;
+      curId = String(curMsg.nestedParent.id);
+    }
+    return false;
+  }
+
+  _countSubtreeDescendants(rootId) {
+    const visited = new Set([String(rootId)]);
+    const queue = [String(rootId)];
+    let count = 0;
+    while (queue.length > 0) {
+      const id = queue.shift();
+      const children = this.nestedChildrenByParentId.get(id) || [];
+      for (const ch of children) {
+        const chId = String(ch.id);
+        if (visited.has(chId)) continue;
+        visited.add(chId);
+        count++;
+        queue.push(chId);
+      }
+    }
+    return count;
+  }
+
+  _getTreeRootId(msgId) {
+    const msgById = new Map(this.allMessages.map((m) => [String(m.id), m]));
+    let cur = msgById.get(String(msgId));
+    const visited = new Set([String(msgId)]);
+    while (cur && cur.nestedParent && cur.nestedParent.id) {
+      const pid = String(cur.nestedParent.id);
+      if (visited.has(pid)) break;
+      visited.add(pid);
+      const pMsg = msgById.get(pid);
+      if (!pMsg) return pid;
+      cur = pMsg;
+    }
+    return cur ? String(cur.id) : String(msgId);
+  }
+
+  isMessageCollapsible(msg) {
+    if (!msg || msg.isDeleted || !msg.text) return false;
+    return sliceMessageForDisplay(msg.text, 0, false).isCollapsible;
+  }
+
+  async expandAllMessages() {
+    let changed = 0;
+    for (const m of this.allMessages) {
+      if (!this.isMessageCollapsible(m)) continue;
+      this.messageExpandState.set(String(m.id), { mode: 'full', steps: 0 });
+      changed++;
+    }
+    await this._refreshMountedTextStates();
+    return changed;
+  }
+
+  async collapseAllMessages() {
+    let changed = 0;
+    for (const m of this.allMessages) {
+      if (!this.isMessageCollapsible(m)) continue;
+      this.messageExpandState.set(String(m.id), { mode: 'collapsed', steps: 0 });
+      changed++;
+    }
+    await this._refreshMountedTextStates();
+    return changed;
+  }
+
+  async expandMessages(ids = []) {
+    const idList = Array.from(ids || []).map(String);
+    for (const id of idList) {
+      const msg = this.allMessages.find((m) => String(m.id) === id);
+      if (msg && this.isMessageCollapsible(msg)) {
+        this.messageExpandState.set(id, { mode: 'full', steps: 0 });
+      }
+    }
+    await this._refreshMountedTextStates(new Set(idList));
+  }
+
+  async collapseMessages(ids = []) {
+    const idList = Array.from(ids || []).map(String);
+    for (const id of idList) {
+      const msg = this.allMessages.find((m) => String(m.id) === id);
+      if (msg && this.isMessageCollapsible(msg)) {
+        this.messageExpandState.set(id, { mode: 'collapsed', steps: 0 });
+      }
+    }
+    await this._refreshMountedTextStates(new Set(idList));
+  }
+
+  async _refreshMountedTextStates(filterSet = null) {
+    if (!this.container) return;
+    const rows = Array.from(this.container.querySelectorAll('.msg-row[data-msg-id]'));
+    for (const row of rows) {
+      const id = String(row.dataset.msgId);
+      if (filterSet && !filterSet.has(id)) continue;
+      const msg = this.allMessages.find((m) => String(m.id) === id);
+      if (!msg || !msg.text || msg.isDeleted) continue;
+      const textDiv = row.querySelector('.msg-text');
+      if (textDiv) {
+        this._renderMessageTextBlock(msg, textDiv);
+      }
+    }
+  }
+
+  async refreshMessagesById(ids = []) {
+    this.rebuildMessageIndexes();
+    for (const id of ids) {
+      const msg = this.allMessages.find((m) => String(m.id) === String(id));
+      if (msg) {
+        await this.updateMessageInPlace(msg);
+      }
+    }
+    if (this.container) {
+      const mountedRows = Array.from(this.container.querySelectorAll('.msg-row[data-msg-id]'));
+      for (const row of mountedRows) {
+        if (row.classList.contains('album-msg-row')) continue;
+        const msgId = row.dataset.msgId;
+        const msg = msgId ? this.allMessages.find((m) => String(m.id) === String(msgId)) : null;
+        const bubble = row.querySelector('.msg-bubble');
+        if (msg && bubble) {
+          this._applyStructuralDecorations(row, bubble, msg);
+        }
+      }
+    }
   }
 
   isSticker(msg) {
@@ -382,6 +577,7 @@ export class VirtualMessageScroller {
   async loadInitial(targetMessageId = null) {
     this.container.innerHTML = '';
     this.allMessages = await db.getMessages(this.chatId);
+    this.rebuildMessageIndexes();
 
     if (this.allMessages.length === 0) {
       this.container.innerHTML = `
@@ -811,7 +1007,7 @@ export class VirtualMessageScroller {
     };
 
     gridContainer.addEventListener('click', () => {
-      if (this.selectionMode || this.pickReplyMode) return;
+      if (this.selectionMode || this.pickReplyMode || this.pickNestParentMode) return;
       openStacked();
     });
 
@@ -950,7 +1146,7 @@ export class VirtualMessageScroller {
       }
 
       captionBlock.innerHTML = `
-        <div class="album-caption-text">${this.escapeHtml(captionMsg.text.trim())}</div>
+        <div class="album-caption-text msg-text-body" dir="auto">${renderRichMessageHtml(captionMsg.text.trim(), { interactive: false })}</div>
         <div class="album-caption-meta">
           ${albumStarHtml}
           ${albumPinHtml}
@@ -970,6 +1166,7 @@ export class VirtualMessageScroller {
       metaRow.innerHTML = `${albumStarHtml}${albumPinHtml}<span class="album-meta-time">${this.formatTime(lastMsg.timestamp)}</span>${checksHtml}`;
       bubble.appendChild(metaRow);
     }
+    this._applyStructuralDecorations(row, bubble, firstMsg);
     row.appendChild(bubble);
 
     // Attach swipe-to-reply and long-press handler
@@ -1070,6 +1267,15 @@ export class VirtualMessageScroller {
       if (mediaBox) bubble.appendChild(mediaBox);
     }
 
+    // Embedded link preview card
+    if (msg.linkPreview && msg.linkPreview.url && !msg.isDeleted) {
+      const lpCard = renderLinkPreviewCard(msg.linkPreview, {
+        mode: 'bubble',
+        canNavigate: () => !(this.selectionMode || this.pickReplyMode || this.pickNestParentMode)
+      });
+      if (lpCard) bubble.appendChild(lpCard);
+    }
+
     // Message text
     if (msg.text && (!msg.mediaName || msg.text.trim() !== '')) {
       const textDiv = document.createElement('div');
@@ -1079,7 +1285,7 @@ export class VirtualMessageScroller {
         textDiv.className += ' is-deleted';
         textDiv.innerHTML = `${Icons.lock('', 13)} <i>This message was deleted</i>`;
       } else {
-        textDiv.innerHTML = this.formatMessageText(msg.text);
+        this._renderMessageTextBlock(msg, textDiv);
       }
       bubble.appendChild(textDiv);
     }
@@ -1097,6 +1303,9 @@ export class VirtualMessageScroller {
     const editedHtml = msg.isEdited ? '<span class="edited-tag">Edited</span>' : '';
     metaSpan.innerHTML = `${editedHtml}${starHtml}${pinHtml}<span class="msg-time">${this.formatTime(msg.timestamp)}</span>${checksHtml}`;
     bubble.appendChild(metaSpan);
+
+    // Apply independent list markers + multi-level nested tree badges & connectors
+    this._applyStructuralDecorations(row, bubble, msg);
 
     // Reaction badge
     if (msg.reaction) {
@@ -1200,7 +1409,7 @@ export class VirtualMessageScroller {
     `;
 
     box.addEventListener('click', (e) => {
-      if (this.selectionMode || this.pickReplyMode) return;
+      if (this.selectionMode || this.pickReplyMode || this.pickNestParentMode) return;
       e.stopPropagation();
       e.preventDefault();
       if (this.onQuotedMessageClick) {
@@ -1209,6 +1418,216 @@ export class VirtualMessageScroller {
     });
 
     return box;
+  }
+
+  _applyStructuralDecorations(row, bubble, msg) {
+    if (!row || !bubble || !msg) return;
+    const idStr = String(msg.id);
+
+    // Clear prior dynamic structural elements when updating in place
+    row.classList.remove('is-nested-msg', 'has-tree-connector');
+    delete row.dataset.nestDepth;
+    row.style.removeProperty('--nest-visual-depth');
+    bubble.querySelector('.msg-list-badge')?.remove();
+    bubble.querySelector('.nested-ref-header')?.remove();
+    bubble.querySelector('.nested-children-pill')?.remove();
+
+    // System B (Independent Message Lists — always simple 1, 2, 3 or •)
+    const listInfo = this.listPositionByMsgId.get(idStr);
+    if (listInfo) {
+      const badge = document.createElement('div');
+      badge.className = `msg-list-badge ${listInfo.style === 'ordered' ? 'is-ordered' : 'is-unordered'}`;
+      badge.textContent = listInfo.style === 'ordered' ? `${listInfo.index}.` : '•';
+      badge.title = listInfo.style === 'ordered'
+        ? `List item ${listInfo.index} of ${listInfo.total}`
+        : `Bulleted list item (${listInfo.total} items)`;
+      bubble.prepend(badge);
+    }
+
+    // System A (Multi-Level Tree Nesting — A -> B -> C...)
+    const depth = this.nestedDepthByMsgId.get(idStr) || 0;
+    if (depth > 0 && msg.nestedParent && msg.nestedParent.id) {
+      const myIdx = this._indexByMsgId.get(idStr);
+      const prevMsg = (myIdx !== undefined && myIdx > 0) ? this.allMessages[myIdx - 1] : null;
+      const isDirectAfterParent = prevMsg && String(prevMsg.id) === String(msg.nestedParent.id);
+      const isSiblingOrBranchAfter = prevMsg && this._getTreeRootId(prevMsg.id) === this._getTreeRootId(idStr);
+
+      row.classList.add('is-nested-msg');
+      row.dataset.nestDepth = String(depth);
+
+      const visualDepth = (isDirectAfterParent || isSiblingOrBranchAfter) ? Math.min(4, depth) : 1;
+      row.style.setProperty('--nest-visual-depth', String(visualDepth));
+      if (isDirectAfterParent || isSiblingOrBranchAfter) {
+        row.classList.add('has-tree-connector');
+      }
+
+      const refHeader = document.createElement('div');
+      refHeader.className = 'nested-ref-header';
+      const parentObj = this.allMessages.find((m) => String(m.id) === String(msg.nestedParent.id));
+      const parentSender = parentObj
+        ? (parentObj.isOutgoing ? 'You' : (parentObj.sender || 'Contact'))
+        : (msg.nestedParent.sender || 'Contact');
+      const rawSnippet = parentObj
+        ? (stripRichMarkup(parentObj.text || '') || parentObj.mediaName || (parentObj.mediaType ? `[${parentObj.mediaType}]` : 'Message'))
+        : (msg.nestedParent.snippet || 'Message');
+      const depthBadgeHtml = depth > 4 ? `<span class="nest-depth-badge">L${depth}</span>` : '';
+
+      refHeader.innerHTML =
+        `<span class="nested-ref-arrow" aria-hidden="true">↳</span>` +
+        `${depthBadgeHtml}` +
+        `<span class="nested-ref-text" dir="auto"><strong>${this.escapeHtml(parentSender)}</strong>: ${this.escapeHtml(rawSnippet.slice(0, 65))}</span>`;
+
+      refHeader.addEventListener('click', (e) => {
+        if (this.selectionMode || this.pickReplyMode || this.pickNestParentMode) return;
+        e.stopPropagation();
+        e.preventDefault();
+        if (this.onNestedParentClick) {
+          this.onNestedParentClick(msg.nestedParent.id);
+        }
+      });
+
+      const listBadge = bubble.querySelector('.msg-list-badge');
+      const anchor = listBadge ? listBadge.nextSibling : bubble.firstChild;
+      bubble.insertBefore(refHeader, anchor);
+    }
+
+    // Parent tree summary pill (shown if any child messages are nested under this message)
+    const directChildren = this.nestedChildrenByParentId.get(idStr) || [];
+    if (directChildren.length > 0) {
+      const descCount = this._countSubtreeDescendants(idStr);
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = 'nested-children-pill';
+      const labelText = descCount > directChildren.length
+        ? `${directChildren.length} nested (${descCount} in tree)`
+        : `${directChildren.length} nested ${directChildren.length === 1 ? 'message' : 'messages'}`;
+      pill.innerHTML = `${Icons.treeBranch('nested-pill-icon', 13)} <span>${this.escapeHtml(labelText)}</span>`;
+      pill.addEventListener('click', (e) => {
+        if (this.selectionMode || this.pickReplyMode || this.pickNestParentMode) return;
+        e.stopPropagation();
+        e.preventDefault();
+        if (this.onNestedTreeOpen) {
+          this.onNestedTreeOpen(msg);
+        }
+      });
+
+      const metaSpan = bubble.querySelector('.msg-meta, .album-meta-row, .album-caption-block');
+      if (metaSpan) bubble.insertBefore(pill, metaSpan);
+      else bubble.appendChild(pill);
+    }
+  }
+
+  _renderMessageTextBlock(msg, textDiv) {
+    if (!msg || !textDiv) return;
+    const idStr = String(msg.id);
+    textDiv.innerHTML = '';
+
+    const defaultMode = this.defaultExpandLongMessages ? 'full' : 'collapsed';
+    const state = this.messageExpandState.get(idStr) || { mode: defaultMode, steps: 0 };
+    const slice = sliceMessageForDisplay(msg.text || '', state.steps, state.mode === 'full');
+
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'msg-text-body';
+    bodyEl.setAttribute('dir', 'auto');
+    bodyEl.innerHTML = renderRichMessageHtml(slice.displayText, { interactive: true });
+    textDiv.appendChild(bodyEl);
+
+    // Interactive checkboxes
+    bodyEl.querySelectorAll('.wa-check-input').forEach((inputEl) => {
+      inputEl.addEventListener('click', (e) => {
+        if (this.selectionMode || this.pickReplyMode || this.pickNestParentMode) {
+          e.preventDefault();
+          return;
+        }
+        e.stopPropagation();
+      });
+      inputEl.addEventListener('change', async (e) => {
+        if (this.selectionMode || this.pickReplyMode || this.pickNestParentMode) {
+          e.target.checked = !e.target.checked;
+          return;
+        }
+        e.stopPropagation();
+        const idx = Number(e.target.dataset.checkIdx);
+        const nextText = toggleCheckboxInMarkup(msg.text, idx);
+        if (nextText !== msg.text) {
+          msg.text = nextText;
+          const labelText = e.target.closest('.wa-check-label')?.querySelector('.wa-check-text');
+          if (labelText) labelText.classList.toggle('is-checked', e.target.checked);
+          if (typeof this.onCheckboxToggle === 'function') {
+            await this.onCheckboxToggle(msg, idx, nextText);
+          }
+        }
+      });
+    });
+
+    // Interactive spoiler reveal
+    bodyEl.querySelectorAll('.wa-spoiler').forEach((spoilerEl) => {
+      spoilerEl.addEventListener('click', (e) => {
+        if (this.selectionMode || this.pickReplyMode || this.pickNestParentMode) return;
+        e.stopPropagation();
+        const revealed = spoilerEl.classList.toggle('is-revealed');
+        spoilerEl.dataset.revealed = revealed ? 'true' : 'false';
+      });
+    });
+
+    // Stop anchor navigation when picking or selecting messages
+    bodyEl.querySelectorAll('a.chat-link').forEach((aEl) => {
+      aEl.addEventListener('click', (e) => {
+        if (this.selectionMode || this.pickReplyMode || this.pickNestParentMode) {
+          e.preventDefault();
+          return;
+        }
+        e.stopPropagation();
+      });
+    });
+
+    // Progressive long-message controls (Show more / Show full message / Show less)
+    if (slice.isCollapsible) {
+      const controls = document.createElement('div');
+      controls.className = 'msg-expand-controls';
+
+      if (slice.isTruncated) {
+        const moreBtn = document.createElement('button');
+        moreBtn.type = 'button';
+        moreBtn.className = 'msg-expand-btn primary';
+        moreBtn.textContent = 'Show more';
+        moreBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const cur = this.messageExpandState.get(idStr) || { mode: defaultMode, steps: 0 };
+          this.messageExpandState.set(idStr, { mode: 'partial', steps: (cur.steps || 0) + 1 });
+          this._renderMessageTextBlock(msg, textDiv);
+        });
+        controls.appendChild(moreBtn);
+      }
+
+      if (slice.needsMultipleMore) {
+        const fullBtn = document.createElement('button');
+        fullBtn.type = 'button';
+        fullBtn.className = 'msg-expand-btn';
+        fullBtn.textContent = 'Show full message';
+        fullBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.messageExpandState.set(idStr, { mode: 'full', steps: 0 });
+          this._renderMessageTextBlock(msg, textDiv);
+        });
+        controls.appendChild(fullBtn);
+      }
+
+      if (slice.canCollapse) {
+        const lessBtn = document.createElement('button');
+        lessBtn.type = 'button';
+        lessBtn.className = 'msg-expand-btn';
+        lessBtn.textContent = 'Show less';
+        lessBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.messageExpandState.set(idStr, { mode: 'collapsed', steps: 0 });
+          this._renderMessageTextBlock(msg, textDiv);
+        });
+        controls.appendChild(lessBtn);
+      }
+
+      textDiv.appendChild(controls);
+    }
   }
 
   async renderMediaCard(msg) {
@@ -1917,6 +2336,7 @@ export class VirtualMessageScroller {
     if (inMem && inMem !== updatedMsg) {
       Object.assign(inMem, updatedMsg);
     }
+    this.rebuildMessageIndexes();
 
     const row = this.findMessageElement(updatedMsg.id);
     if (!row) return;
@@ -1960,7 +2380,22 @@ export class VirtualMessageScroller {
       oldQuote.remove();
     }
 
-    // 2. Message text / media caption
+    // 2. Embedded link preview card (add, update, or remove)
+    const oldLp = bubble.querySelector('.wa-link-preview-card');
+    if (updatedMsg.linkPreview && updatedMsg.linkPreview.url && !updatedMsg.isDeleted) {
+      const freshLp = renderLinkPreviewCard(updatedMsg.linkPreview, {
+        mode: 'bubble',
+        canNavigate: () => !(this.selectionMode || this.pickReplyMode || this.pickNestParentMode)
+      });
+      if (freshLp) {
+        if (oldLp) oldLp.replaceWith(freshLp);
+        else bubble.insertBefore(freshLp, bubble.querySelector('.msg-text') || bubble.querySelector('.msg-meta') || null);
+      }
+    } else if (oldLp) {
+      oldLp.remove();
+    }
+
+    // 3. Message text / media caption
     const metaSpan = bubble.querySelector('.msg-meta');
     let textDiv = bubble.querySelector('.msg-text');
     if (updatedMsg.text && updatedMsg.text.trim() !== '') {
@@ -1972,18 +2407,19 @@ export class VirtualMessageScroller {
       }
       textDiv.className = 'msg-text';
       textDiv.setAttribute('dir', 'auto');
-      textDiv.innerHTML = this.formatMessageText(updatedMsg.text);
+      this._renderMessageTextBlock(updatedMsg, textDiv);
     } else if (textDiv) {
       textDiv.remove();
     }
 
-    // 3. Edited badge
+    // 4. Edited badge + structural decorations (nested trees & independent message lists)
     if (metaSpan && updatedMsg.isEdited && !metaSpan.querySelector('.edited-tag')) {
       const tag = document.createElement('span');
       tag.className = 'edited-tag';
       tag.textContent = 'Edited';
       metaSpan.prepend(tag);
     }
+    this._applyStructuralDecorations(row, bubble, updatedMsg);
 
     if (wasNearBottom) {
       this.container.scrollTop = this.container.scrollHeight;
@@ -2013,6 +2449,7 @@ export class VirtualMessageScroller {
     }
 
     this.allMessages = kept;
+    this.rebuildMessageIndexes();
     this.visibleStartIndex = Math.max(0, this.visibleStartIndex - removedBeforeStart);
     this.visibleEndIndex = Math.max(this.visibleStartIndex, this.visibleEndIndex - removedBeforeStart - removedInWindow);
 
@@ -2052,6 +2489,19 @@ export class VirtualMessageScroller {
       const next = pill.nextElementSibling;
       if (!next || next.classList.contains('date-pill-row')) {
         pill.remove();
+      }
+    }
+
+    // Refresh any surviving list siblings / parents whose list badge or child count changed
+    const remainingMountedIds = Array.from(this.container.querySelectorAll('.msg-row[data-msg-id]'))
+      .map((el) => el.dataset.msgId)
+      .filter(Boolean);
+    for (const id of remainingMountedIds) {
+      const m = this.allMessages.find((x) => String(x.id) === String(id));
+      const row = this.findMessageElement(id);
+      const bubble = row?.querySelector('.msg-bubble');
+      if (m && row && bubble && !row.classList.contains('album-msg-row')) {
+        this._applyStructuralDecorations(row, bubble, m);
       }
     }
   }

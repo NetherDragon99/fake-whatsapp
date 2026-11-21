@@ -2,6 +2,7 @@
 import { Icons } from '../icons.js';
 import { db } from '../db.js';
 import { Toast } from '../components/toast.js';
+import { renderRichMessageHtml } from '../utils/rich-text.js';
 import { Motion } from '../ui-motion.js';
 
 export class StarredMessagesView {
@@ -557,21 +558,7 @@ export class StarredMessagesView {
   }
 
   formatMessageText(text) {
-    if (!text) return '';
-    let escaped = this.escapeHtml(text);
-
-    // Code blocks
-    escaped = escaped.replace(/```([\s\S]+?)```/g, '<pre class="chat-code-block"><code>$1</code></pre>');
-    // Inline code
-    escaped = escaped.replace(/`([^`\n]+?)`/g, '<code class="chat-inline-code">$1</code>');
-    // Bold
-    escaped = escaped.replace(/(^|[\s\(\[\{.,!?:;])\*([^*\n]+?)\*($|[\s\)\]}.,!?:;])/g, '$1<strong>$2</strong>$3');
-    // Italic
-    escaped = escaped.replace(/(^|[\s\(\[\{.,!?:;])_([^*\n]+?)_($|[\s\)\]}.,!?:;])/g, '$1<em>$2</em>$3');
-    // Strikethrough
-    escaped = escaped.replace(/(^|[\s\(\[\{.,!?:;])~([^*\n]+?)~($|[\s\)\]}.,!?:;])/g, '$1<del>$2</del>$3');
-
-    return escaped;
+    return renderRichMessageHtml(text, { interactive: false });
   }
 
   escapeHtml(str) {

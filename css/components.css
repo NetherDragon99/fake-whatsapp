@@ -6209,13 +6209,14 @@ input:checked+.switch-slider::before {
 
 /* Message Info Sheet Body */
 .msg-info-body {
-  flex: 1;
+  flex: 1 1 auto;
   overflow-y: auto;
   padding: 12px 16px 32px;
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-height: 0;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -6223,16 +6224,42 @@ input:checked+.switch-slider::before {
   display: flex;
   justify-content: center;
   padding: 8px 0;
+  flex-shrink: 0;
 }
 
 .msg-info-bubble {
   max-width: 85%;
+  min-width: 0;
   border-radius: 10px;
   padding: 10px 14px;
   font-size: 14.5px;
   line-height: 1.4;
   position: relative;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.msg-info-preview-content {
+  max-height: 180px;
+  overflow-y: auto;
+  word-break: break-word;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 4px;
+}
+
+.msg-info-preview-content.is-expanded {
+  max-height: none;
+  overflow-y: visible;
+}
+
+.msg-info-preview-toggle {
+  margin-top: 8px;
+  padding: 3px 0;
+  border: none;
+  background: transparent;
+  color: var(--app-accent, #25d366);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .msg-info-bubble.outgoing {
@@ -6263,6 +6290,7 @@ input:checked+.switch-slider::before {
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
 }
 
 .msg-info-row {
@@ -7095,5 +7123,496 @@ input:checked+.switch-slider::before {
 
 [data-theme="light"] .settings-restart-update-btn {
   color: #ffffff;
+}
+
+/* ==========================================================================
+   Modal Input & List Style Picker Helpers
+   ========================================================================== */
+
+.composer-modal-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.composer-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--wa-text-secondary, #8696a0);
+}
+
+.composer-dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--wa-input-bg, #202c33);
+  color: var(--wa-text-primary, #e9edef);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+}
+
+[data-theme="light"] .composer-dialog-input {
+  background: #f0f2f5;
+  color: #111b21;
+  border-color: rgba(17, 27, 33, 0.14);
+}
+
+.msg-list-dialog-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.msg-list-option-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--wa-text-primary, #e9edef);
+  cursor: pointer;
+}
+
+.msg-list-option-btn.is-selected {
+  border-color: var(--app-accent, #25d366);
+  background: rgba(37, 211, 102, 0.12);
+}
+
+.msg-list-option-btn.danger {
+  color: #f15c6d;
+}
+
+.msg-list-opt-icon {
+  color: var(--app-accent, #25d366);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.msg-list-option-btn.danger .msg-list-opt-icon {
+  color: #f15c6d;
+}
+
+.msg-list-opt-texts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.msg-list-opt-texts strong {
+  font-size: 14px;
+}
+
+.msg-list-opt-texts small {
+  font-size: 12px;
+  color: var(--wa-text-secondary, #8696a0);
+}
+
+[data-theme="light"] .msg-list-option-btn {
+  background: #f8f9fa;
+  border-color: #e9edef;
+  color: #111b21;
+}
+
+/* ==========================================================================
+   Multi-Level Nested Message Tree Sheet
+   ========================================================================== */
+
+.nested-tree-overlay {
+  z-index: 1001 !important;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.nested-tree-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.nested-tree-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1002 !important;
+  background-color: var(--wa-surface-elevated, #202c33) !important;
+  color: var(--wa-text-primary, #e9edef) !important;
+  border-radius: 18px 18px 0 0;
+  display: none;
+  flex-direction: column;
+  max-height: var(--app-height, 100dvh);
+  overflow: hidden;
+}
+
+.nested-tree-sheet.is-fullscreen {
+  top: 0;
+  border-radius: 0;
+}
+
+.nested-tree-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--wa-text-primary, #e9edef);
+}
+
+.nested-tree-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px 28px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.nested-tree-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nested-tree-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: calc(var(--tree-depth, 0) * 18px);
+}
+
+.nested-tree-branch-guide {
+  color: var(--app-accent, #25d366);
+  font-family: monospace;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.nested-tree-card {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+}
+
+.nested-tree-node.is-focused .nested-tree-card {
+  border-color: var(--app-accent, #25d366);
+  background: rgba(37, 211, 102, 0.12);
+}
+
+.nested-tree-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.nested-tree-sender-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.nested-tree-list-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(83, 189, 235, 0.2);
+  color: #53bdeb;
+}
+
+.nested-tree-sender {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-accent, #25d366);
+}
+
+.nested-tree-root-tag,
+.nested-tree-depth-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--wa-text-secondary, #8696a0);
+}
+
+.nested-tree-time {
+  font-size: 11px;
+  color: var(--wa-text-secondary, #8696a0);
+  flex-shrink: 0;
+}
+
+.nested-tree-snippet {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nested-tree-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.nested-tree-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--wa-text-primary, #e9edef);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.nested-tree-btn.unlink-child {
+  color: #f15c6d;
+}
+
+[data-theme="light"] .nested-tree-sheet {
+  background-color: #ffffff !important;
+  color: #111b21 !important;
+}
+
+[data-theme="light"] .nested-tree-title {
+  color: #111b21;
+}
+
+[data-theme="light"] .nested-tree-card {
+  background: #f0f2f5;
+  border-color: #e9edef;
+}
+
+[data-theme="light"] .nested-tree-btn {
+  background: #f0f2f5;
+  border-color: #dce0e4;
+  color: #111b21;
+}
+
+/* ==========================================================================
+   Settings Features & Shortcuts Guide Page (#/settings/guide)
+   ========================================================================== */
+
+.guide-screen {
+  display: flex;
+  flex-direction: column;
+  height: var(--app-height, 100dvh);
+  background: var(--wa-bg-primary, #111b21);
+  color: var(--wa-text-primary, #e9edef);
+}
+
+.guide-search-wrap {
+  padding: 8px 14px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.guide-search-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--wa-surface-elevated, #202c33);
+  border-radius: 22px;
+  padding: 8px 14px;
+}
+
+.guide-search-pill input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--wa-text-primary, #e9edef);
+  font-size: 14.5px;
+  outline: none;
+}
+
+.guide-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 14px 40px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.guide-section {
+  margin-bottom: 24px;
+}
+
+.guide-section-header {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--app-accent, #25d366);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 6px;
+}
+
+.guide-section-desc {
+  font-size: 13px;
+  color: var(--wa-text-secondary, #8696a0);
+  margin: 0 0 12px;
+  line-height: 1.45;
+}
+
+.guide-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.guide-card {
+  background: var(--wa-surface-elevated, #202c33);
+  border-radius: 14px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.guide-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.guide-card-category {
+  font-size: 11px;
+  color: var(--wa-text-secondary, #8696a0);
+  text-transform: uppercase;
+}
+
+.guide-card-title {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.guide-toolbar-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(37, 211, 102, 0.14);
+  color: var(--app-accent, #25d366);
+  flex-shrink: 0;
+}
+
+.guide-shortcut-row {
+  margin-bottom: 8px;
+}
+
+.guide-shortcut-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.24);
+  color: #53bdeb;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.guide-card-desc {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--wa-text-secondary, #8696a0);
+  line-height: 1.45;
+}
+
+.guide-live-preview-bubble {
+  background: #005c4b;
+  color: #e9edef;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.guide-feature-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.guide-feature-icon {
+  color: var(--app-accent, #25d366);
+  display: flex;
+  align-items: center;
+}
+
+.guide-feature-bullets {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--wa-text-secondary, #8696a0);
+  line-height: 1.45;
+}
+
+.guide-feature-bullets strong {
+  color: var(--wa-text-primary, #e9edef);
+}
+
+.guide-empty-state {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--wa-text-secondary, #8696a0);
+}
+
+[data-theme="light"] .guide-screen {
+  background: #ffffff;
+  color: #111b21;
+}
+
+[data-theme="light"] .guide-search-pill {
+  background: #f0f2f5;
+}
+
+[data-theme="light"] .guide-search-pill input {
+  color: #111b21;
+}
+
+[data-theme="light"] .guide-card {
+  background: #f8f9fa;
+  border-color: #e9edef;
+}
+
+[data-theme="light"] .guide-live-preview-bubble {
+  background: #d9fdd3;
+  color: #111b21;
+}
+
+[data-theme="light"] .guide-shortcut-chip {
+  background: #ffffff;
+  border-color: #dce0e4;
+  color: #0284c7;
+}
+
+[data-theme="light"] .guide-feature-bullets strong {
+  color: #111b21;
 }
 
