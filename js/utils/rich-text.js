@@ -165,11 +165,11 @@ export const FORMATTING_SHORTCUTS = [
     id: 'fold',
     category: 'Structure & Lists',
     title: 'Collapsible Block (صندوق قابل للطي والفرد)',
-    shortcut: '[fold:Title] Content [/fold]',
+    shortcut: '>>> + Space  /  [fold:Title] + Enter',
     toolbarLabel: 'Fold / Details',
     iconName: 'collapseAll',
-    toolbarTip: 'Toolbar: Tap Fold button or type [fold:Title]...[/fold]',
-    description: 'Creates a tappable accordion box with title header that can be expanded and collapsed inside the message.',
+    toolbarTip: 'Toolbar: Tap Fold button, or type >>> + Space / [fold:Title] + Enter for a live collapsible block',
+    description: 'Creates a tappable accordion box with title header that can be expanded and collapsed directly while composing and inside the chat.',
     exampleMarkup: '[fold:اضغط لعرض التفاصيل المخفية]\nهذا النص قابل للطي والفرد ويحتوي على:\n- بنود مفصلة\n- روابط ومعلومات إضافية\n[/fold]'
   },
   {
@@ -325,7 +325,8 @@ export function renderRichMessageHtml(text, options = {}) {
   const lines = normalized.split('\n');
 
   const segments = [];
-  let checkIdx = 0;
+  const state = options._state || { checkIdx: 0 };
+  const nestedOptions = options._state ? options : { ...options, _state: state };
 
   const pushTextLine = (htmlLine) => {
     const prev = segments[segments.length - 1];
@@ -348,14 +349,14 @@ export function renderRichMessageHtml(text, options = {}) {
       if (firstLineContent) {
         if (firstLineContent.includes('[/fold]')) {
           const innerOneLine = firstLineContent.replace('[/fold]', '').trim();
-          const innerHtml = renderRichMessageHtml(innerOneLine, options);
+          const innerHtml = renderRichMessageHtml(innerOneLine, nestedOptions);
           segments.push({
             type: 'block',
             html:
               `<details class="wa-fold-block">` +
                 `<summary class="wa-fold-summary">` +
                   `<span class="wa-fold-arrow" aria-hidden="true">▶</span>` +
-                  `<span class="wa-fold-title" dir="auto">${escapeHtml(title)}</span>` +
+                  `<span class="wa-fold-title" dir="auto">${renderInlineFormatting(escapeHtml(title))}</span>` +
                 `</summary>` +
                 `<div class="wa-fold-content" dir="auto">${innerHtml}</div>` +
               `</details>`
@@ -376,14 +377,14 @@ export function renderRichMessageHtml(text, options = {}) {
       } else {
         i = lines.length - 1;
       }
-      const innerHtml = renderRichMessageHtml(foldLines.join('\n'), options);
+      const innerHtml = renderRichMessageHtml(foldLines.join('\n'), nestedOptions);
       segments.push({
         type: 'block',
         html:
           `<details class="wa-fold-block">` +
             `<summary class="wa-fold-summary">` +
               `<span class="wa-fold-arrow" aria-hidden="true">▶</span>` +
-              `<span class="wa-fold-title" dir="auto">${escapeHtml(title)}</span>` +
+              `<span class="wa-fold-title" dir="auto">${renderInlineFormatting(escapeHtml(title))}</span>` +
             `</summary>` +
             `<div class="wa-fold-content" dir="auto">${innerHtml}</div>` +
           `</details>`
@@ -416,7 +417,7 @@ export function renderRichMessageHtml(text, options = {}) {
     if (checkMatch) {
       const indent = Math.min(3, Math.floor(checkMatch[1].replace(/\t/g, '  ').length / 2));
       const checked = checkMatch[2].toLowerCase() === 'x';
-      const idx = checkIdx++;
+      const idx = state.checkIdx++;
       const innerHtml = renderInlineFormatting(escapeHtml(checkMatch[3]));
       segments.push({
         type: 'block',
@@ -656,6 +657,11 @@ export function sliceMessageForDisplay(text, revealedSteps = 0, forceFull = fals
   const fenceMatches = displaySlice.match(/^\s*```/gm);
   if (fenceMatches && fenceMatches.length % 2 === 1) {
     displaySlice += '\n```';
+  }
+  const foldOpens = (displaySlice.match(/^\s*\[fold:[^\]\n]+\]/gm) || []).length;
+  const foldCloses = (displaySlice.match(/\[\/fold\]/g) || []).length;
+  if (foldOpens > foldCloses) {
+    displaySlice += '\n[/fold]'.repeat(foldOpens - foldCloses);
   }
 
   const remaining = normalized.slice(safeCut).trimStart();

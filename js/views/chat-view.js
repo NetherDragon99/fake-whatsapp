@@ -106,6 +106,10 @@ export class ChatView {
     const defaultExpandLongMessages = this.chat.longMessageDisplay === 'expand'
       ? true
       : (this.chat.longMessageDisplay === 'collapse' ? false : Boolean(globalAutoExpand));
+    const globalNoteMode = await db.getSetting('defaultNoteMode', false);
+    const isNoteMode = this.chat.noteMode === 'on'
+      ? true
+      : (this.chat.noteMode === 'off' ? false : Boolean(globalNoteMode));
     const targetMsgId = params.msgId || null;
 
     let subtitle = 'tap here for contact info';
@@ -133,7 +137,7 @@ export class ChatView {
     }
 
     rootEl.innerHTML = `
-      <div class="screen-view chat-screen ${wpBgStyle ? 'has-custom-wallpaper' : ''}" style="${wpBgStyle}">
+      <div class="screen-view chat-screen ${wpBgStyle ? 'has-custom-wallpaper' : ''} ${isNoteMode ? 'is-note-mode' : ''}" style="${wpBgStyle}">
         <!-- Wallpaper Dimming Layer -->
         <div class="chat-dimming-layer" style="background-color: rgba(0, 0, 0, ${dimmingVal / 100});"></div>
 
@@ -416,10 +420,10 @@ export class ChatView {
       }
     }
 
-    await this.bindEvents(outgoingTheme, targetMsgId, params, defaultExpandLongMessages);
+    await this.bindEvents(outgoingTheme, targetMsgId, params, defaultExpandLongMessages, isNoteMode);
   }
 
-  async bindEvents(outgoingTheme, targetMsgId, params = {}, defaultExpandLongMessages = false) {
+  async bindEvents(outgoingTheme, targetMsgId, params = {}, defaultExpandLongMessages = false, isNoteMode = false) {
     const messagesWrap = this.container.querySelector('#chat-messages-wrap');
 
     // Initialize Floating Reaction Bar & Sheets
@@ -454,6 +458,7 @@ export class ChatView {
       chat: this.chat,
       outgoingTheme,
       defaultExpandLongMessages,
+      isNoteMode,
       onMediaClick: (mediaItem, msg) => {
         if (this.linkingNestForMsgs) {
           this._applyNestParentToMessages(msg);
@@ -3156,7 +3161,8 @@ export class ChatView {
       const isPinned = this.chatPins.some((p) => String(p.messageId) === String(msg.id));
       const canEdit = Boolean(!msg.isDeleted && (msg.text || msg.mediaId));
 
-      // Single select tools arrangement:
+      // Single select tools arrangement — core WhatsApp essentials first,
+      // advanced tools after in the same bar (overflowing automatically to ⋮ when width is tight):
       // 1. Reply
       tools.push({
         id: 'reply',
@@ -3168,7 +3174,59 @@ export class ChatView {
         }
       });
 
-      // 2. Edit (any non-deleted text or media caption message)
+      // 2. Star
+      tools.push({
+        id: 'star',
+        label: msg.isStarred ? 'Unstar' : 'Star',
+        icon: msg.isStarred ? Icons.unstar('', 20) : Icons.star('', 20),
+        action: () => {
+          this.starSelectedMessages();
+        }
+      });
+
+      // 3. Delete
+      tools.push({
+        id: 'delete',
+        label: 'Delete',
+        icon: Icons.trash('', 20),
+        danger: true,
+        action: () => {
+          this.deleteSelectedMessages();
+        }
+      });
+
+      // 4. Copy (for text) OR Share (for media and files)
+      if (msg.text && !msg.isDeleted) {
+        tools.push({
+          id: 'copy',
+          label: 'Copy',
+          icon: Icons.copy('', 20),
+          action: () => {
+            this.copySelectedMessages();
+          }
+        });
+      } else if (msg.mediaId || msg.mediaType) {
+        tools.push({
+          id: 'share',
+          label: 'Share',
+          icon: Icons.share('', 20),
+          action: () => {
+            this._shareMessage(msg);
+          }
+        });
+      }
+
+      // 5. Forward
+      tools.push({
+        id: 'forward',
+        label: 'Forward',
+        icon: Icons.forwardBold('', 20),
+        action: () => {
+          this.forwardSelectedMessages();
+        }
+      });
+
+      // 6. Edit (any non-deleted text or media caption message)
       if (canEdit) {
         tools.push({
           id: 'edit',
@@ -3180,19 +3238,17 @@ export class ChatView {
         });
       }
 
-      // 3. Link Reply Quote (attach or change quote on imported/existing messages without forcing Edited)
-      if (!msg.isSystem && !msg.isDeleted) {
-        tools.push({
-          id: 'link-reply',
-          label: msg.replyTo ? 'Change quoted reply' : 'Link reply to...',
-          icon: Icons.linkIcon('', 20),
-          action: () => {
-            this.startLinkReplyTarget(msg);
-          }
-        });
-      }
+      // 7. Pin
+      tools.push({
+        id: 'pin',
+        label: isPinned ? 'Unpin' : 'Pin',
+        icon: isPinned ? Icons.pinOff('', 20) : Icons.pin('', 20),
+        action: () => {
+          this.pinSelectedMessages();
+        }
+      });
 
-      // 3. Info
+      // 8. Info
       tools.push({
         id: 'info',
         label: 'Info',
@@ -3208,7 +3264,7 @@ export class ChatView {
         }
       });
 
-      // 4. Multi-level Tree Nesting (System A) & Standalone Lists (System B)
+      // 9+. Multi-level Tree Nesting, Standalone Lists, Link Reply & Expand/Collapse
       if (!msg.isSystem && !msg.isDeleted) {
         tools.push({
           id: 'nest-under',
@@ -3239,6 +3295,14 @@ export class ChatView {
           icon: Icons.listNumbered('', 20),
           action: () => this.openMessageListDialog([msg])
         });
+        tools.push({
+          id: 'link-reply',
+          label: msg.replyTo ? 'Change quoted reply' : 'Link reply to...',
+          icon: Icons.linkIcon('', 20),
+          action: () => {
+            this.startLinkReplyTarget(msg);
+          }
+        });
       }
 
       if (this.scroller?.isMessageCollapsible(msg)) {
@@ -3257,68 +3321,6 @@ export class ChatView {
           }
         });
       }
-
-      // 4. Delete
-      tools.push({
-        id: 'delete',
-        label: 'Delete',
-        icon: Icons.trash('', 20),
-        danger: true,
-        action: () => {
-          this.deleteSelectedMessages();
-        }
-      });
-
-      // 5. Forward
-      tools.push({
-        id: 'forward',
-        label: 'Forward',
-        icon: Icons.forwardBold('', 20),
-        action: () => {
-          this.forwardSelectedMessages();
-        }
-      });
-
-      // 6. Star
-      tools.push({
-        id: 'star',
-        label: msg.isStarred ? 'Unstar' : 'Star',
-        icon: msg.isStarred ? Icons.unstar('', 20) : Icons.star('', 20),
-        action: () => {
-          this.starSelectedMessages();
-        }
-      });
-
-      // 7. Copy (for text) OR Share (for media and files)
-      if (msg.text && !msg.isDeleted) {
-        tools.push({
-          id: 'copy',
-          label: 'Copy',
-          icon: Icons.copy('', 20),
-          action: () => {
-            this.copySelectedMessages();
-          }
-        });
-      } else if (msg.mediaId || msg.mediaType) {
-        tools.push({
-          id: 'share',
-          label: 'Share',
-          icon: Icons.share('', 20),
-          action: () => {
-            this._shareMessage(msg);
-          }
-        });
-      }
-
-      // 8. Pin
-      tools.push({
-        id: 'pin',
-        label: isPinned ? 'Unpin' : 'Pin',
-        icon: isPinned ? Icons.pinOff('', 20) : Icons.pin('', 20),
-        action: () => {
-          this.pinSelectedMessages();
-        }
-      });
 
     } else if (isAllText) {
       // Multiple select text-only: star all, delete, copy, forward, pin

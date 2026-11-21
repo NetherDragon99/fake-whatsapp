@@ -27,6 +27,7 @@ export class VirtualMessageScroller {
     this.onNestedParentClick = options.onNestedParentClick || null;
     this.onNestedTreeOpen = options.onNestedTreeOpen || null;
     this.defaultExpandLongMessages = Boolean(options.defaultExpandLongMessages);
+    this.isNoteMode = Boolean(options.isNoteMode);
     this.outgoingTheme = options.outgoingTheme || 'slate';
 
     // Long-press → multi-select redesign
@@ -39,6 +40,7 @@ export class VirtualMessageScroller {
     this.messageExpandState = new Map();
     this.nestedChildrenByParentId = new Map();
     this.nestedDepthByMsgId = new Map();
+    this.nestLayoutByMsgId = new Map();
     this.listPositionByMsgId = new Map();
     this._indexByMsgId = new Map();
 
@@ -148,9 +150,51 @@ export class VirtualMessageScroller {
     return renderRichMessageHtml(text, { interactive: false });
   }
 
+  _getEffectiveNestSide(msg) {
+    if (this.isNoteMode) return 'left';
+    return msg?.isOutgoing ? 'right' : 'left';
+  }
+
+  _isSameCalendarDay(tsA, tsB) {
+    return new Date(tsA || 0).toDateString() === new Date(tsB || 0).toDateString();
+  }
+
+  _areRowsAttachable(mPrev, mCur) {
+    return Boolean(
+      mPrev &&
+      mCur &&
+      !mPrev.isSystem &&
+      !mCur.isSystem &&
+      this._getEffectiveNestSide(mPrev) === this._getEffectiveNestSide(mCur) &&
+      this._isSameCalendarDay(mPrev.timestamp, mCur.timestamp)
+    );
+  }
+
+  _getAncestorIdChain(msg, msgById) {
+    const chain = [];
+    const visited = new Set([String(msg?.id)]);
+    let cur = msg;
+    while (cur && cur.nestedParent && cur.nestedParent.id) {
+      const pid = String(cur.nestedParent.id);
+      if (visited.has(pid)) break;
+      visited.add(pid);
+      chain.unshift(pid);
+      cur = msgById.get(pid) || null;
+      if (!cur) break;
+    }
+    return chain;
+  }
+
+  _isDescendantOf(msg, ancestorIdStr, msgById) {
+    if (!msg || !ancestorIdStr) return false;
+    const chain = this._getAncestorIdChain(msg, msgById);
+    return chain.includes(String(ancestorIdStr));
+  }
+
   rebuildMessageIndexes() {
     this.nestedChildrenByParentId.clear();
     this.nestedDepthByMsgId.clear();
+    this.nestLayoutByMsgId.clear();
     this.listPositionByMsgId.clear();
     this._indexByMsgId.clear();
 
@@ -186,6 +230,109 @@ export class VirtualMessageScroller {
         if (!cur) break;
       }
       this.nestedDepthByMsgId.set(String(m.id), depth);
+    }
+
+    // Compute side-aware contiguous tree rails (supporting multi-level pass-through sibling trunks)
+    const visualDepthById = new Map();
+    for (let i = 0; i < this.allMessages.length; i++) {
+      const m = this.allMessages[i];
+      if (!m) continue;
+      const idStr = String(m.id);
+      const depth = this.nestedDepthByMsgId.get(idStr) || 0;
+      if (depth === 0 || !m.nestedParent || !m.nestedParent.id) {
+        visualDepthById.set(idStr, 0);
+        continue;
+      }
+
+      const side = this._getEffectiveNestSide(m);
+      const pidStr = String(m.nestedParent.id);
+      let connectsUp = false;
+      let visualDepth = 1;
+
+      for (let k = i - 1; k >= 0; k--) {
+        if (!this._areRowsAttachable(this.allMessages[k], this.allMessages[k + 1])) break;
+        const prev = this.allMessages[k];
+        const prevId = String(prev.id);
+        if (prevId === pidStr) {
+          connectsUp = true;
+          const parentVisDepth = visualDepthById.get(pidStr) || 0;
+          visualDepth = Math.min(5, parentVisDepth + 1);
+          break;
+        }
+        if (prev.nestedParent && String(prev.nestedParent.id) === pidStr) {
+          connectsUp = true;
+          visualDepth = visualDepthById.get(prevId) || 1;
+          break;
+        }
+        if (this._isDescendantOf(prev, pidStr, msgById)) {
+          continue;
+        }
+        break;
+      }
+
+      visualDepthById.set(idStr, visualDepth);
+
+      let connectsDown = false;
+      for (let k = i + 1; k < this.allMessages.length; k++) {
+        if (!this._areRowsAttachable(this.allMessages[k - 1], this.allMessages[k])) break;
+        const nxt = this.allMessages[k];
+        if (nxt.nestedParent && String(nxt.nestedParent.id) === pidStr) {
+          connectsDown = true;
+          break;
+        }
+        if (this._isDescendantOf(nxt, pidStr, msgById)) {
+          continue;
+        }
+        break;
+      }
+
+      const passThroughCols = [];
+      const ancestorChain = this._getAncestorIdChain(m, msgById);
+      // Exclude direct parent (last element in chain), inspect higher ancestors whose vertical trunk must pass alongside
+      for (let aIdx = 0; aIdx < ancestorChain.length - 1; aIdx++) {
+        const ancId = ancestorChain[aIdx];
+        const childOnPathId = ancestorChain[aIdx + 1] || idStr;
+        const ancCol = visualDepthById.get(childOnPathId) || 0;
+        if (ancCol < 1 || ancCol >= visualDepth) continue;
+
+        let hasUp = false;
+        for (let k = i - 1; k >= 0; k--) {
+          if (!this._areRowsAttachable(this.allMessages[k], this.allMessages[k + 1])) break;
+          const prev = this.allMessages[k];
+          const prevId = String(prev.id);
+          if (prevId === ancId || (prev.nestedParent && String(prev.nestedParent.id) === ancId)) {
+            hasUp = true;
+            break;
+          }
+          if (this._isDescendantOf(prev, ancId, msgById)) continue;
+          break;
+        }
+        if (!hasUp) continue;
+
+        let hasDown = false;
+        for (let k = i + 1; k < this.allMessages.length; k++) {
+          if (!this._areRowsAttachable(this.allMessages[k - 1], this.allMessages[k])) break;
+          const nxt = this.allMessages[k];
+          if (nxt.nestedParent && String(nxt.nestedParent.id) === ancId) {
+            hasDown = true;
+            break;
+          }
+          if (this._isDescendantOf(nxt, ancId, msgById)) continue;
+          break;
+        }
+        if (hasDown && !passThroughCols.includes(ancCol)) {
+          passThroughCols.push(ancCol);
+        }
+      }
+
+      this.nestLayoutByMsgId.set(idStr, {
+        depth,
+        visualDepth,
+        side,
+        connectsUp,
+        connectsDown,
+        passThroughCols
+      });
     }
 
     // Build independent list numbering/bullets (completely decoupled from nested tree depth)
@@ -340,7 +487,6 @@ export class VirtualMessageScroller {
     if (this.container) {
       const mountedRows = Array.from(this.container.querySelectorAll('.msg-row[data-msg-id]'));
       for (const row of mountedRows) {
-        if (row.classList.contains('album-msg-row')) continue;
         const msgId = row.dataset.msgId;
         const msg = msgId ? this.allMessages.find((m) => String(m.id) === String(msgId)) : null;
         const bubble = row.querySelector('.msg-bubble');
@@ -1425,9 +1571,17 @@ export class VirtualMessageScroller {
     const idStr = String(msg.id);
 
     // Clear prior dynamic structural elements when updating in place
-    row.classList.remove('is-nested-msg', 'has-tree-connector', 'has-following-sibling', 'is-sibling-connector');
+    row.classList.remove(
+      'is-nested-msg',
+      'has-tree-connector',
+      'has-following-sibling',
+      'is-sibling-connector',
+      'nest-side-left',
+      'nest-side-right'
+    );
     delete row.dataset.nestDepth;
     row.style.removeProperty('--nest-visual-depth');
+    row.querySelector('.nest-tree-rails')?.remove();
     bubble.querySelector('.msg-list-badge')?.remove();
     bubble.querySelector('.nested-ref-header')?.remove();
     bubble.querySelector('.nested-children-pill')?.remove();
@@ -1444,36 +1598,53 @@ export class VirtualMessageScroller {
       bubble.prepend(badge);
     }
 
-    // System A (Multi-Level Tree Nesting — A -> B -> C...)
-    const depth = this.nestedDepthByMsgId.get(idStr) || 0;
+    // System A (Multi-Level Side-Aware Tree Nesting — A -> B -> C...)
+    const layout = this.nestLayoutByMsgId.get(idStr);
+    const depth = layout ? layout.depth : (this.nestedDepthByMsgId.get(idStr) || 0);
     if (depth > 0 && msg.nestedParent && msg.nestedParent.id) {
-      const myIdx = this._indexByMsgId.get(idStr);
-      const prevMsg = (myIdx !== undefined && myIdx > 0) ? this.allMessages[myIdx - 1] : null;
-      const nextMsg = (myIdx !== undefined && myIdx < this.allMessages.length - 1) ? this.allMessages[myIdx + 1] : null;
+      const effectiveLayout = layout || {
+        depth,
+        visualDepth: 1,
+        side: this._getEffectiveNestSide(msg),
+        connectsUp: false,
+        connectsDown: false,
+        passThroughCols: []
+      };
 
-      const pidStr = String(msg.nestedParent.id);
-      const prevPidStr = prevMsg?.nestedParent?.id ? String(prevMsg.nestedParent.id) : null;
-      const nextPidStr = nextMsg?.nestedParent?.id ? String(nextMsg.nestedParent.id) : null;
-
-      const isDirectAfterParent = prevMsg && String(prevMsg.id) === pidStr;
-      const isSiblingAfterSibling = prevMsg && prevPidStr === pidStr;
-      const isSiblingOrBranchAfter = prevMsg && (this._getTreeRootId(prevMsg.id) === this._getTreeRootId(idStr) || isSiblingAfterSibling);
-
-      row.classList.add('is-nested-msg');
+      row.classList.add(
+        'is-nested-msg',
+        effectiveLayout.side === 'right' ? 'nest-side-right' : 'nest-side-left'
+      );
       row.dataset.nestDepth = String(depth);
+      row.style.setProperty('--nest-visual-depth', String(effectiveLayout.visualDepth));
 
-      const visualDepth = (isDirectAfterParent || isSiblingOrBranchAfter) ? Math.min(4, depth) : 1;
-      row.style.setProperty('--nest-visual-depth', String(visualDepth));
+      row.classList.toggle('has-tree-connector', Boolean(effectiveLayout.connectsUp));
+      row.classList.toggle('has-following-sibling', Boolean(effectiveLayout.connectsDown));
 
-      const hasFollowingSibling = nextMsg && (nextPidStr === pidStr || this._getTreeRootId(nextMsg.id) === this._getTreeRootId(idStr));
-      row.classList.toggle('has-following-sibling', Boolean(hasFollowingSibling));
+      const railsEl = document.createElement('div');
+      railsEl.className = 'nest-tree-rails';
+      railsEl.setAttribute('aria-hidden', 'true');
 
-      if (isDirectAfterParent || isSiblingOrBranchAfter) {
-        row.classList.add('has-tree-connector');
-        if (isSiblingAfterSibling) {
-          row.classList.add('is-sibling-connector');
-        }
+      for (const col of effectiveLayout.passThroughCols) {
+        const trunkEl = document.createElement('span');
+        trunkEl.className = 'nest-rail-trunk';
+        trunkEl.style.setProperty('--rail-col', String(col));
+        railsEl.appendChild(trunkEl);
       }
+
+      const elbowEl = document.createElement('span');
+      elbowEl.className = `nest-rail-elbow ${effectiveLayout.connectsUp ? 'is-connected-up' : 'is-standalone'}`;
+      elbowEl.style.setProperty('--rail-col', String(effectiveLayout.visualDepth));
+      railsEl.appendChild(elbowEl);
+
+      if (effectiveLayout.connectsDown) {
+        const contEl = document.createElement('span');
+        contEl.className = 'nest-rail-continue';
+        contEl.style.setProperty('--rail-col', String(effectiveLayout.visualDepth));
+        railsEl.appendChild(contEl);
+      }
+
+      row.prepend(railsEl);
 
       const refHeader = document.createElement('div');
       refHeader.className = 'nested-ref-header';
@@ -1484,7 +1655,7 @@ export class VirtualMessageScroller {
       const rawSnippet = parentObj
         ? (stripRichMarkup(parentObj.text || '') || parentObj.mediaName || (parentObj.mediaType ? `[${parentObj.mediaType}]` : 'Message'))
         : (msg.nestedParent.snippet || 'Message');
-      const depthBadgeHtml = depth > 4 ? `<span class="nest-depth-badge">L${depth}</span>` : '';
+      const depthBadgeHtml = depth > 5 ? `<span class="nest-depth-badge">L${depth}</span>` : '';
 
       refHeader.innerHTML =
         `<span class="nested-ref-arrow" aria-hidden="true">↳</span>` +

@@ -17,6 +17,7 @@ export class RichComposer {
     this._isComposing = false;
     this._suppressInput = false;
     this._savedRange = null;
+    this._lastBulletType = 'bullet';
     this._undoStack = [''];
     this._undoIdx = 0;
     this._maxHistory = 60;
@@ -38,15 +39,38 @@ export class RichComposer {
     this._onKeyDown = (e) => this._handleKeyDown(e);
     this._onPaste = (e) => this._handlePaste(e);
     this._onClick = (e) => {
-      const toggle = e.target.closest('.rc-check-toggle');
+      const toggle = e.target.closest?.('.rc-check-toggle');
       if (toggle && this.el.contains(toggle)) {
         e.preventDefault();
+        e.stopPropagation();
         const block = toggle.closest('.rc-block[data-block="check"]');
         if (block) {
           const isChecked = block.dataset.checked === 'true';
           block.dataset.checked = isChecked ? 'false' : 'true';
           this._pushHistory();
           this.onChange(this.getValue());
+        }
+        return;
+      }
+      const foldToggle = e.target.closest?.('.rc-fold-toggle');
+      if (foldToggle && this.el.contains(foldToggle)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const foldEl = foldToggle.closest('.rc-block[data-block="fold"]');
+        if (foldEl) {
+          const nextOpen = foldEl.dataset.open !== 'false' ? 'false' : 'true';
+          foldEl.dataset.open = nextOpen;
+          foldToggle.textContent = nextOpen === 'true' ? '▼' : '▶';
+        }
+        return;
+      }
+      const foldRemove = e.target.closest?.('.rc-fold-remove');
+      if (foldRemove && this.el.contains(foldRemove)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const foldEl = foldRemove.closest('.rc-block[data-block="fold"]');
+        if (foldEl) {
+          this._unwrapFoldBlock(foldEl);
         }
         return;
       }
@@ -120,48 +144,56 @@ export class RichComposer {
     }
   }
 
-  _ensureAtLeastOneBlock() {
-    if (!this.el) return;
-    if (!this.el.firstChild) {
+  _normalizeBlockContainer(containerEl) {
+    if (!containerEl) return;
+    if (!containerEl.firstChild) {
       const p = document.createElement('div');
       p.className = 'rc-block rc-p';
       p.dataset.block = 'p';
       p.appendChild(document.createElement('br'));
-      this.el.appendChild(p);
-    } else {
-      // Wrap loose top-level text/inline nodes into `.rc-p` block
-      const children = Array.from(this.el.childNodes);
-      for (const node of children) {
-        if (node.nodeType === 3 || (node.nodeType === 1 && !node.classList?.contains('rc-block'))) {
-          if (node.nodeType === 1 && node.tagName === 'DIV' && !node.dataset.block) {
-            node.className = 'rc-block rc-p';
-            node.dataset.block = 'p';
-          } else {
-            const p = document.createElement('div');
-            p.className = 'rc-block rc-p';
-            p.dataset.block = 'p';
-            node.parentNode.insertBefore(p, node);
-            p.appendChild(node);
-          }
+      containerEl.appendChild(p);
+      return;
+    }
+    const children = Array.from(containerEl.childNodes);
+    for (const node of children) {
+      if (node.nodeType === 3 || (node.nodeType === 1 && !node.classList?.contains('rc-block'))) {
+        if (node.nodeType === 1 && node.tagName === 'DIV' && !node.dataset?.block) {
+          node.className = 'rc-block rc-p';
+          node.dataset.block = 'p';
+        } else {
+          const p = document.createElement('div');
+          p.className = 'rc-block rc-p';
+          p.dataset.block = 'p';
+          node.parentNode.insertBefore(p, node);
+          p.appendChild(node);
         }
       }
     }
+  }
+
+  _ensureAtLeastOneBlock() {
+    if (!this.el) return;
+    this._normalizeBlockContainer(this.el);
+    this.el.querySelectorAll?.('.rc-fold-body').forEach((bodyEl) => {
+      this._normalizeBlockContainer(bodyEl);
+    });
     this._syncEmptyState();
     this._syncOrderedNumbers();
   }
 
   _syncEmptyState() {
     const val = this.getValue();
-    this.el.classList.toggle('is-empty', val.length === 0);
+    const hasFold = Boolean(this.el.querySelector?.('.rc-fold'));
+    this.el.classList.toggle('is-empty', val.length === 0 && !hasFold);
   }
 
-  _syncOrderedNumbers() {
+  _syncOrderedNumbersInContainer(containerEl) {
+    if (!containerEl) return;
     const counters = new Map();
-    const blocks = Array.from(this.el.querySelectorAll(':scope > .rc-block'));
+    const blocks = Array.from(containerEl.querySelectorAll(':scope > .rc-block'));
     for (const blk of blocks) {
       if (blk.dataset.block === 'ol') {
         const indent = Number(blk.dataset.indent || 0);
-        // Reset deeper counters
         for (const k of Array.from(counters.keys())) {
           if (k > indent) counters.delete(k);
         }
@@ -176,6 +208,14 @@ export class RichComposer {
     }
   }
 
+  _syncOrderedNumbers() {
+    if (!this.el) return;
+    this._syncOrderedNumbersInContainer(this.el);
+    this.el.querySelectorAll?.('.rc-fold-body').forEach((bodyEl) => {
+      this._syncOrderedNumbersInContainer(bodyEl);
+    });
+  }
+
   _getBlockElement(node) {
     let cur = node;
     while (cur && cur !== this.el) {
@@ -187,10 +227,35 @@ export class RichComposer {
     return null;
   }
 
+  _getEnclosingFold(node) {
+    let cur = node;
+    while (cur && cur !== this.el) {
+      if (cur.nodeType === 1 && cur.classList?.contains('rc-fold')) {
+        return cur;
+      }
+      cur = cur.parentNode;
+    }
+    return null;
+  }
+
+  _getFoldTitleEl(node) {
+    let cur = node;
+    while (cur && cur !== this.el) {
+      if (cur.nodeType === 1 && cur.classList?.contains('rc-fold-title')) {
+        return cur;
+      }
+      cur = cur.parentNode;
+    }
+    return null;
+  }
+
   _getBlockBodyEl(blockEl) {
     if (!blockEl) return null;
     if (blockEl.dataset.block === 'check' || blockEl.dataset.block === 'ol' || blockEl.dataset.block === 'ul') {
       return blockEl.querySelector(':scope > .rc-item-body') || blockEl;
+    }
+    if (blockEl.dataset.block === 'fold') {
+      return blockEl.querySelector(':scope > .rc-fold-body') || blockEl;
     }
     return blockEl;
   }
@@ -206,6 +271,51 @@ export class RichComposer {
       }
       if (!pre.firstChild) pre.appendChild(document.createElement('br'));
       return pre;
+    }
+
+    if (type === 'fold') {
+      const div = document.createElement('div');
+      div.className = 'rc-block rc-fold';
+      div.dataset.block = 'fold';
+      const isOpen = options.open !== false;
+      div.dataset.open = isOpen ? 'true' : 'false';
+
+      const header = document.createElement('div');
+      header.className = 'rc-fold-header';
+
+      const toggle = document.createElement('span');
+      toggle.className = 'rc-fold-toggle';
+      toggle.setAttribute('contenteditable', 'false');
+      toggle.setAttribute('role', 'button');
+      toggle.title = 'Toggle fold preview';
+      toggle.textContent = isOpen ? '▼' : '▶';
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'rc-fold-title';
+      titleEl.dataset.placeholder = 'عنوان القسم القابل للطي...';
+      titleEl.setAttribute('dir', 'auto');
+      this._populateInlineNodes(titleEl, options.title || '');
+
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'rc-fold-remove';
+      removeBtn.setAttribute('contenteditable', 'false');
+      removeBtn.title = 'Remove fold block';
+      removeBtn.setAttribute('aria-label', 'Remove fold block');
+      removeBtn.textContent = '×';
+
+      header.appendChild(toggle);
+      header.appendChild(titleEl);
+      header.appendChild(removeBtn);
+
+      const bodyEl = document.createElement('div');
+      bodyEl.className = 'rc-fold-body';
+      bodyEl.setAttribute('dir', 'auto');
+      this._renderMarkupToContainer(bodyEl, options.bodyMarkup || '');
+
+      div.appendChild(header);
+      div.appendChild(bodyEl);
+      return div;
     }
 
     const div = document.createElement('div');
@@ -284,9 +394,9 @@ export class RichComposer {
   }
 
   // --- Canonical Serialization (DOM -> Markup) ---
-  getValue() {
-    if (!this.el) return '';
-    const blocks = Array.from(this.el.childNodes);
+  _serializeBlockContainer(containerEl) {
+    if (!containerEl) return '';
+    const blocks = Array.from(containerEl.childNodes);
     const outLines = [];
     const olCounters = new Map();
 
@@ -303,6 +413,23 @@ export class RichComposer {
         olCounters.clear();
         const rawCode = (node.innerText || node.textContent || '').replace(/\u200B/g, '').replace(/\u00A0/g, ' ').replace(/\n+$/, '');
         outLines.push(`\`\`\`\n${rawCode}\n\`\`\``);
+        continue;
+      }
+
+      if (blockType === 'fold') {
+        olCounters.clear();
+        const titleEl = node.querySelector(':scope > .rc-fold-header > .rc-fold-title');
+        const bodyEl = node.querySelector(':scope > .rc-fold-body');
+        const rawTitle = this._serializeChildren(titleEl)
+          .replace(/\u200B/g, '')
+          .replace(/\u00A0/g, ' ')
+          .replace(/[\r\n]+/g, ' ')
+          .replace(/\]/g, '')
+          .trim();
+        const bodyStr = this._serializeBlockContainer(bodyEl);
+        if (!rawTitle && !bodyStr) continue;
+        const finalTitle = rawTitle || 'اضغط لعرض التفاصيل';
+        outLines.push(bodyStr ? `[fold:${finalTitle}]\n${bodyStr}\n[/fold]` : `[fold:${finalTitle}][/fold]`);
         continue;
       }
 
@@ -345,6 +472,11 @@ export class RichComposer {
 
     const joined = outLines.join('\n').replace(/\u200B/g, '').replace(/\u00A0/g, ' ');
     return joined.replace(/\n+$/, '');
+  }
+
+  getValue() {
+    if (!this.el) return '';
+    return this._serializeBlockContainer(this.el);
   }
 
   _serializeChildren(parent) {
@@ -393,88 +525,124 @@ export class RichComposer {
   }
 
   // --- Canonical Hydrator (Markup -> Live WYSIWYG DOM) ---
+  _renderMarkupToContainer(containerEl, markup = '') {
+    if (!containerEl) return;
+    containerEl.innerHTML = '';
+    const raw = String(markup || '').replace(/\r\n?/g, '\n');
+    if (!raw) {
+      this._normalizeBlockContainer(containerEl);
+      return;
+    }
+
+    const lines = raw.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      const foldMatch = line.match(/^(\s*)\[fold:([^\]\n]+)\](.*)$/);
+      if (foldMatch && containerEl === this.el) {
+        const title = foldMatch[2].trim();
+        const firstRest = foldMatch[3].trim();
+        const foldLines = [];
+        if (firstRest) {
+          if (firstRest.includes('[/fold]')) {
+            const oneLineBody = firstRest.replace('[/fold]', '').trim();
+            const blk = this._makeBlockEl('fold', { title, bodyMarkup: oneLineBody, open: true });
+            containerEl.appendChild(blk);
+            continue;
+          }
+          foldLines.push(firstRest);
+        }
+        let j = i + 1;
+        while (j < lines.length && !lines[j].includes('[/fold]')) {
+          foldLines.push(lines[j]);
+          j++;
+        }
+        if (j < lines.length) {
+          const lastRest = lines[j].replace('[/fold]', '').trim();
+          if (lastRest) foldLines.push(lastRest);
+          i = j;
+        } else {
+          i = lines.length - 1;
+        }
+        const blk = this._makeBlockEl('fold', { title, bodyMarkup: foldLines.join('\n'), open: true });
+        containerEl.appendChild(blk);
+        continue;
+      }
+
+      if (/^\s*```/.test(line)) {
+        const codeLines = [];
+        let j = i + 1;
+        while (j < lines.length && !/^\s*```\s*$/.test(lines[j])) {
+          codeLines.push(lines[j]);
+          j++;
+        }
+        i = j < lines.length ? j : lines.length - 1;
+        const blk = this._makeBlockEl('codeblock', { text: codeLines.join('\n') });
+        containerEl.appendChild(blk);
+        continue;
+      }
+
+      const checkMatch = line.match(/^(\s*)\[([ xX])\]\s+(.*)$/);
+      if (checkMatch) {
+        const indent = Math.min(3, Math.floor(checkMatch[1].replace(/\t/g, '  ').length / 2));
+        const blk = this._makeBlockEl('check', {
+          indent,
+          checked: checkMatch[2].toLowerCase() === 'x'
+        });
+        this._populateInlineNodes(this._getBlockBodyEl(blk), checkMatch[3]);
+        containerEl.appendChild(blk);
+        continue;
+      }
+
+      const headerMatch = line.match(/^(#{1,3})\s+(.+)$/);
+      if (headerMatch) {
+        const type = `h${headerMatch[1].length}`;
+        const blk = this._makeBlockEl(type);
+        this._populateInlineNodes(blk, headerMatch[2]);
+        containerEl.appendChild(blk);
+        continue;
+      }
+
+      const quoteMatch = line.match(/^\s*>\s?(.*)$/);
+      if (quoteMatch && /^\s*>/.test(line)) {
+        const blk = this._makeBlockEl('quote');
+        this._populateInlineNodes(blk, quoteMatch[1]);
+        containerEl.appendChild(blk);
+        continue;
+      }
+
+      const ulMatch = line.match(/^(\s*)(?:(->|=>|→)|(\\>|\|->|↳)|(?:-|\*))\s+(.*)$/);
+      if (ulMatch) {
+        const indent = Math.min(3, Math.floor(ulMatch[1].replace(/\t/g, '  ').length / 2));
+        const shape = ulMatch[2] ? 'arrow' : (ulMatch[3] ? 'branch' : 'bullet');
+        const blk = this._makeBlockEl('ul', { indent, bulletType: shape });
+        this._populateInlineNodes(this._getBlockBodyEl(blk), ulMatch[4]);
+        containerEl.appendChild(blk);
+        continue;
+      }
+
+      const olMatch = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
+      if (olMatch) {
+        const indent = Math.min(3, Math.floor(olMatch[1].replace(/\t/g, '  ').length / 2));
+        const blk = this._makeBlockEl('ol', { indent });
+        this._populateInlineNodes(this._getBlockBodyEl(blk), olMatch[3]);
+        containerEl.appendChild(blk);
+        continue;
+      }
+
+      const blk = this._makeBlockEl('p');
+      this._populateInlineNodes(blk, line);
+      containerEl.appendChild(blk);
+    }
+
+    this._normalizeBlockContainer(containerEl);
+  }
+
   setValue(markup = '') {
     if (!this.el) return;
     this._suppressInput = true;
     try {
-      this.el.innerHTML = '';
-      const raw = String(markup || '').replace(/\r\n?/g, '\n');
-      if (!raw) {
-        this._ensureAtLeastOneBlock();
-        this._resetHistory('');
-        return;
-      }
-
-      const lines = raw.split('\n');
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-
-        if (/^\s*```/.test(line)) {
-          const codeLines = [];
-          let j = i + 1;
-          while (j < lines.length && !/^\s*```\s*$/.test(lines[j])) {
-            codeLines.push(lines[j]);
-            j++;
-          }
-          i = j < lines.length ? j : lines.length - 1;
-          const blk = this._makeBlockEl('codeblock', { text: codeLines.join('\n') });
-          this.el.appendChild(blk);
-          continue;
-        }
-
-        const checkMatch = line.match(/^(\s*)\[([ xX])\]\s+(.*)$/);
-        if (checkMatch) {
-          const indent = Math.min(3, Math.floor(checkMatch[1].replace(/\t/g, '  ').length / 2));
-          const blk = this._makeBlockEl('check', {
-            indent,
-            checked: checkMatch[2].toLowerCase() === 'x'
-          });
-          this._populateInlineNodes(this._getBlockBodyEl(blk), checkMatch[3]);
-          this.el.appendChild(blk);
-          continue;
-        }
-
-        const headerMatch = line.match(/^(#{1,3})\s+(.+)$/);
-        if (headerMatch) {
-          const type = `h${headerMatch[1].length}`;
-          const blk = this._makeBlockEl(type);
-          this._populateInlineNodes(blk, headerMatch[2]);
-          this.el.appendChild(blk);
-          continue;
-        }
-
-        const quoteMatch = line.match(/^\s*>\s?(.*)$/);
-        if (quoteMatch && /^\s*>/.test(line)) {
-          const blk = this._makeBlockEl('quote');
-          this._populateInlineNodes(blk, quoteMatch[1]);
-          this.el.appendChild(blk);
-          continue;
-        }
-
-        const ulMatch = line.match(/^(\s*)(?:(->|=>|→)|(\\>|\|->|↳)|(?:-|\*))\s+(.*)$/);
-        if (ulMatch) {
-          const indent = Math.min(3, Math.floor(ulMatch[1].replace(/\t/g, '  ').length / 2));
-          const shape = ulMatch[2] ? 'arrow' : (ulMatch[3] ? 'branch' : 'bullet');
-          const blk = this._makeBlockEl('ul', { indent, bulletType: shape });
-          this._populateInlineNodes(this._getBlockBodyEl(blk), ulMatch[4]);
-          this.el.appendChild(blk);
-          continue;
-        }
-
-        const olMatch = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
-        if (olMatch) {
-          const indent = Math.min(3, Math.floor(olMatch[1].replace(/\t/g, '  ').length / 2));
-          const blk = this._makeBlockEl('ol', { indent });
-          this._populateInlineNodes(this._getBlockBodyEl(blk), olMatch[3]);
-          this.el.appendChild(blk);
-          continue;
-        }
-
-        const blk = this._makeBlockEl('p');
-        this._populateInlineNodes(blk, line);
-        this.el.appendChild(blk);
-      }
-
+      this._renderMarkupToContainer(this.el, markup);
       this._ensureAtLeastOneBlock();
       this._resetHistory(this.getValue());
     } finally {
@@ -655,13 +823,48 @@ export class RichComposer {
     // Skip if caret is inside inline code
     if (node.parentNode?.closest?.('code')) return;
 
-    const bodyEl = this._getBlockBodyEl(blockEl);
+    const foldTitleEl = this._getFoldTitleEl(node);
+    const insideFold = Boolean(this._getEnclosingFold(node));
+    const bodyEl = foldTitleEl || this._getBlockBodyEl(blockEl);
     const text = node.nodeValue || '';
     const offset = range.startOffset;
 
-    // 1. Block prefix shortcuts when typing in a plain block
-    if (blockEl.dataset.block === 'p' && bodyEl.firstChild === node) {
+    // 1. Block prefix shortcuts when typing in a plain block (skip inside fold title)
+    if (!foldTitleEl && blockEl.dataset.block === 'p' && bodyEl.firstChild === node) {
       const prefix = text.slice(0, offset);
+
+      // Live Fold shortcuts: >>> + Space OR [fold:Title] + Space (top-level only)
+      if (!insideFold) {
+        const foldShortcutMatch =
+          prefix.match(/^(>>>)[ \u00A0]$/) ||
+          prefix.match(/^\[fold:([^\]\n]+)\][ \u00A0]$/);
+        if (foldShortcutMatch) {
+          const isBracketForm = foldShortcutMatch[0].startsWith('[');
+          const restInNode = text.slice(offset);
+          const foldTitle = isBracketForm ? foldShortcutMatch[1].trim() : restInNode.trim();
+          const foldBodyMarkup = isBracketForm ? restInNode : '';
+          const foldEl = this._makeBlockEl('fold', {
+            title: foldTitle,
+            bodyMarkup: foldBodyMarkup,
+            open: true
+          });
+          blockEl.replaceWith(foldEl);
+          if (!foldEl.nextElementSibling) {
+            foldEl.after(this._makeBlockEl('p'));
+          }
+          if (isBracketForm) {
+            const firstBodyBlk = foldEl.querySelector(':scope > .rc-fold-body > .rc-block') || foldEl;
+            const target = this._getBlockBodyEl(firstBodyBlk);
+            this._placeCaretAtStart(target.firstChild || target);
+          } else {
+            const tEl = foldEl.querySelector(':scope > .rc-fold-header > .rc-fold-title');
+            this._placeCaretAtStart(tEl?.firstChild || tEl);
+          }
+          this._syncOrderedNumbers();
+          return;
+        }
+      }
+
       const blockMatch =
         prefix.match(/^(#{1,3})[ \u00A0]$/) ||
         prefix.match(/^(\[[ \u00A0]?\]|\[[xX]\])[ \u00A0]$/) ||
@@ -684,12 +887,15 @@ export class RichComposer {
         else if (trigger === '-' || trigger === '*') {
           newBlockType = 'ul';
           opts.bulletType = 'bullet';
+          this._lastBulletType = 'bullet';
         } else if (trigger === '->' || trigger === '=>' || trigger === '→') {
           newBlockType = 'ul';
           opts.bulletType = 'arrow';
+          this._lastBulletType = 'arrow';
         } else if (trigger === '↳' || trigger === '\\>' || trigger === '|->') {
           newBlockType = 'ul';
           opts.bulletType = 'branch';
+          this._lastBulletType = 'branch';
         } else if (/^\d+\.$/.test(trigger)) newBlockType = 'ol';
         else if (/^\[[ \u00A0xX]?\]$/.test(trigger)) {
           newBlockType = 'check';
@@ -894,7 +1100,10 @@ export class RichComposer {
     }
 
     const sel = window.getSelection();
-    const blockEl = (sel && sel.rangeCount) ? this._getBlockElement(sel.getRangeAt(0).startContainer) : null;
+    const anchorNode = (sel && sel.rangeCount) ? sel.getRangeAt(0).startContainer : null;
+    const blockEl = anchorNode ? this._getBlockElement(anchorNode) : null;
+    const enclosingFold = anchorNode ? this._getEnclosingFold(anchorNode) : null;
+    const foldTitleEl = anchorNode ? this._getFoldTitleEl(anchorNode) : null;
 
     // Tab / Shift+Tab indents lists and checklists
     if (e.key === 'Tab' && blockEl) {
@@ -906,11 +1115,112 @@ export class RichComposer {
       }
     }
 
-    // Enter handling for custom blocks
+    // Enter handling for custom blocks & live Fold blocks
     if (e.key === 'Enter' && !e.shiftKey && blockEl) {
       const bType = blockEl.dataset?.block;
       if (bType === 'codeblock') {
         return; // Allow newlines natively inside code block
+      }
+
+      // Enter inside fold title moves caret cleanly into fold body
+      if (foldTitleEl && enclosingFold) {
+        e.preventDefault();
+        enclosingFold.dataset.open = 'true';
+        const toggleGlyph = enclosingFold.querySelector(':scope > .rc-fold-header > .rc-fold-toggle');
+        if (toggleGlyph) toggleGlyph.textContent = '▼';
+        const foldBody = enclosingFold.querySelector(':scope > .rc-fold-body');
+        this._normalizeBlockContainer(foldBody);
+        const firstBlk = foldBody?.firstElementChild;
+        const firstTarget = this._getBlockBodyEl(firstBlk) || foldBody;
+        this._placeCaretAtStart(firstTarget?.firstChild || firstTarget);
+        this.onSelectionChange(this.getActiveFormats());
+        return;
+      }
+
+      // Enter on a raw `[fold:Title]` line converts immediately into a live Fold card
+      if (!enclosingFold && bType === 'p') {
+        const plainLine = this._serializeChildren(blockEl).replace(/\u200B/g, '').replace(/\u00A0/g, ' ').trim();
+        const rawFoldLine = plainLine.match(/^\[fold:([^\]\n]+)\]$/);
+        if (rawFoldLine) {
+          e.preventDefault();
+          const foldEl = this._makeBlockEl('fold', { title: rawFoldLine[1].trim(), open: true });
+          blockEl.replaceWith(foldEl);
+          if (!foldEl.nextElementSibling) {
+            foldEl.after(this._makeBlockEl('p'));
+          }
+          const firstBlk = foldEl.querySelector(':scope > .rc-fold-body > .rc-block') || foldEl;
+          const target = this._getBlockBodyEl(firstBlk);
+          this._placeCaretAtStart(target.firstChild || target);
+          this._syncOrderedNumbers();
+          this._pushHistory();
+          this.onChange(this.getValue());
+          this.onSelectionChange(this.getActiveFormats());
+          return;
+        }
+      }
+
+      // Enter on a `.rc-p` paragraph inside `.rc-fold-body` keeps paragraphs cleanly scoped or exits after trailing blank line
+      if (enclosingFold && bType === 'p' && blockEl.parentNode?.classList?.contains('rc-fold-body')) {
+        e.preventDefault();
+        const foldBody = blockEl.parentNode;
+        const cleanText = this._serializeChildren(blockEl).replace(/\u200B/g, '').trim();
+        if (!cleanText && foldBody.children.length > 1 && blockEl === foldBody.lastElementChild) {
+          blockEl.remove();
+          let outsideP = enclosingFold.nextElementSibling;
+          const isOutsideEmptyP = outsideP && outsideP.dataset?.block === 'p' && !this._serializeChildren(outsideP).replace(/\u200B/g, '').trim();
+          if (!isOutsideEmptyP) {
+            outsideP = this._makeBlockEl('p');
+            enclosingFold.after(outsideP);
+          }
+          this._placeCaretAtStart(outsideP.firstChild || outsideP);
+          this._pushHistory();
+          this.onChange(this.getValue());
+          this.onSelectionChange(this.getActiveFormats());
+          return;
+        }
+
+        let tailFrag = null;
+        if (sel && sel.rangeCount) {
+          const curRange = sel.getRangeAt(0);
+          if (!curRange.collapsed && blockEl.contains(curRange.commonAncestorContainer)) {
+            curRange.deleteContents();
+          }
+          if (blockEl.contains(curRange.endContainer)) {
+            const tailRange = document.createRange();
+            tailRange.selectNodeContents(blockEl);
+            tailRange.setStart(curRange.endContainer, curRange.endOffset);
+            tailFrag = tailRange.extractContents();
+          }
+        }
+        const hasBodyContent = Array.from(blockEl.childNodes).some((n) =>
+          (n.nodeType === 1 && n.tagName !== 'BR') ||
+          (n.nodeType === 3 && n.nodeValue.replace(/\u200B/g, '').length > 0)
+        );
+        if (!hasBodyContent) {
+          blockEl.innerHTML = '';
+          blockEl.appendChild(document.createElement('br'));
+        }
+        const nextP = this._makeBlockEl('p');
+        const hasTailContent = Boolean(
+          tailFrag &&
+          Array.from(tailFrag.childNodes).some((n) =>
+            (n.nodeType === 1 && n.tagName !== 'BR') ||
+            (n.nodeType === 3 && n.nodeValue.replace(/\u200B/g, '').length > 0)
+          )
+        );
+        if (hasTailContent) {
+          Array.from(tailFrag.childNodes).forEach((n) => {
+            if (n.nodeType === 1 && n.tagName === 'BR') n.remove();
+          });
+          nextP.innerHTML = '';
+          nextP.appendChild(tailFrag);
+        }
+        blockEl.after(nextP);
+        this._placeCaretAtStart(nextP.firstChild || nextP);
+        this._pushHistory();
+        this.onChange(this.getValue());
+        this.onSelectionChange(this.getActiveFormats());
+        return;
       }
 
       if (bType === 'ul' || bType === 'ol' || bType === 'check' || bType === 'h1' || bType === 'h2' || bType === 'h3' || bType === 'quote') {
@@ -955,7 +1265,8 @@ export class RichComposer {
 
         const nextType = (bType === 'ul' || bType === 'ol' || bType === 'check') ? bType : 'p';
         const indent = Number(blockEl.dataset.indent || 0);
-        const nextBlock = this._makeBlockEl(nextType, { indent, checked: false });
+        const bulletType = bType === 'ul' ? (blockEl.dataset.bulletType || this._lastBulletType || 'bullet') : undefined;
+        const nextBlock = this._makeBlockEl(nextType, { indent, checked: false, bulletType });
         const nextBody = this._getBlockBodyEl(nextBlock);
 
         const hasTailContent = Boolean(
@@ -983,12 +1294,32 @@ export class RichComposer {
       }
     }
 
-    // Backspace at offset 0 of a formatted block steps back indent or unwraps to paragraph
+    // Backspace inside fold title / first fold body block or offset 0 of a formatted block
     if (e.key === 'Backspace' && sel && sel.rangeCount && sel.isCollapsed && blockEl) {
+      const range = sel.getRangeAt(0);
+      if (foldTitleEl && enclosingFold && this._isCaretAtStartOf(range, foldTitleEl)) {
+        const bodyContent = this._serializeBlockContainer(enclosingFold.querySelector(':scope > .rc-fold-body')).trim();
+        if (!bodyContent) {
+          e.preventDefault();
+          this._unwrapFoldBlock(enclosingFold);
+        }
+        return;
+      }
+
+      if (enclosingFold && blockEl.parentNode?.classList?.contains('rc-fold-body') && blockEl === blockEl.parentNode.firstElementChild) {
+        const innerBody = this._getBlockBodyEl(blockEl);
+        if (blockEl.dataset?.block === 'p' && this._isCaretAtStartOf(range, innerBody)) {
+          e.preventDefault();
+          const titleTarget = enclosingFold.querySelector(':scope > .rc-fold-header > .rc-fold-title');
+          if (titleTarget) this._placeCaretAtEnd(titleTarget);
+          this.onSelectionChange(this.getActiveFormats());
+          return;
+        }
+      }
+
       const bType = blockEl.dataset?.block;
-      if (bType && bType !== 'p') {
+      if (bType && bType !== 'p' && bType !== 'fold') {
         const body = this._getBlockBodyEl(blockEl);
-        const range = sel.getRangeAt(0);
         const atStart = this._isCaretAtStartOf(range, body);
         if (atStart) {
           e.preventDefault();
@@ -1166,8 +1497,9 @@ export class RichComposer {
     if (!wrapper) return;
 
     if (range.collapsed) {
+      const foldTitleEl = this._getFoldTitleEl(range.startContainer);
       const blockEl = this._getBlockElement(range.startContainer);
-      const bodyEl = this._getBlockBodyEl(blockEl);
+      const bodyEl = foldTitleEl || (blockEl?.dataset?.block === 'fold' ? null : this._getBlockBodyEl(blockEl));
       const textLen = (bodyEl?.textContent || '').replace(/\u200B/g, '').trim().length;
       if (bodyEl && textLen > 0) {
         range.selectNodeContents(bodyEl);
@@ -1216,19 +1548,64 @@ export class RichComposer {
     parent.removeChild(el);
   }
 
+  _unwrapFoldBlock(foldEl) {
+    if (!foldEl || !foldEl.parentNode) return;
+    const titleEl = foldEl.querySelector(':scope > .rc-fold-header > .rc-fold-title');
+    const bodyEl = foldEl.querySelector(':scope > .rc-fold-body');
+    const rawTitle = titleEl
+      ? this._serializeChildren(titleEl).replace(/\u200B/g, '').replace(/\u00A0/g, ' ').trim()
+      : '';
+
+    const parent = foldEl.parentNode;
+    let firstInserted = null;
+
+    if (rawTitle) {
+      const tp = this._makeBlockEl('p');
+      this._populateInlineNodes(tp, rawTitle);
+      parent.insertBefore(tp, foldEl);
+      if (!firstInserted) firstInserted = tp;
+    }
+
+    if (bodyEl) {
+      const bodyBlocks = Array.from(bodyEl.querySelectorAll(':scope > .rc-block'));
+      for (const blk of bodyBlocks) {
+        const blkText = this._serializeBlockContainer({ childNodes: [blk] }).trim();
+        if (!blkText && (rawTitle || bodyBlocks.length > 1)) continue;
+        parent.insertBefore(blk, foldEl);
+        if (!firstInserted) firstInserted = blk;
+      }
+    }
+
+    if (!firstInserted) {
+      firstInserted = this._makeBlockEl('p');
+      parent.insertBefore(firstInserted, foldEl);
+    }
+
+    foldEl.remove();
+    this._ensureAtLeastOneBlock();
+    const targetBody = this._getBlockBodyEl(firstInserted);
+    this._placeCaretAtStart(targetBody?.firstChild || targetBody);
+    this._pushHistory();
+    this.onChange(this.getValue());
+    this.onSelectionChange(this.getActiveFormats());
+  }
+
   toggleBlock(blockType, options = {}) {
     this.restoreSelection();
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
-    const blockEl = this._getBlockElement(sel.getRangeAt(0).startContainer) || this.el.firstElementChild;
-    if (!blockEl) return;
+    const startNode = sel.getRangeAt(0).startContainer;
+    if (this._getFoldTitleEl(startNode)) return;
+    const blockEl = this._getBlockElement(startNode) || this.el.firstElementChild;
+    if (!blockEl || blockEl.dataset?.block === 'fold') return;
 
     const currentType = blockEl.dataset?.block || 'p';
     const currentShape = blockEl.dataset?.bulletType || 'bullet';
     let nextType = currentType;
-    let bulletType = options.bulletType || 'bullet';
+    let bulletType = options.bulletType || this._lastBulletType || 'bullet';
 
     if (blockType === 'ul') {
+      if (options.bulletType) this._lastBulletType = options.bulletType;
       if (currentType === 'ul' && (!options.bulletType || currentShape === options.bulletType)) {
         nextType = 'p';
       } else {
@@ -1274,10 +1651,10 @@ export class RichComposer {
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
     const blockEl = this._getBlockElement(sel.getRangeAt(0).startContainer);
-    if (!blockEl) return;
+    if (!blockEl || blockEl.dataset?.block === 'fold') return;
     const bType = blockEl.dataset?.block;
     if (bType !== 'ul' && bType !== 'ol' && bType !== 'check') {
-      if (delta > 0) this.toggleBlock('ul');
+      if (delta > 0) this.toggleBlock('ul', { bulletType: this._lastBulletType });
       return;
     }
     const cur = Number(blockEl.dataset.indent || 0);
@@ -1334,37 +1711,76 @@ export class RichComposer {
   insertFoldBlock(title = '') {
     this.restoreSelection();
     const sel = window.getSelection();
-    const foldTitle = (title || '').trim() || 'اضغط لعرض التفاصيل';
-    const foldText = `[fold:${foldTitle}]\nمحتوى التفاصيل هنا\n[/fold]`;
+    const range = (sel && sel.rangeCount) ? sel.getRangeAt(0) : null;
+    const anchorNode = range ? range.startContainer : null;
+    const existingFold = anchorNode ? this._getEnclosingFold(anchorNode) : null;
 
-    const val = this.getValue();
-    if (!val.trim()) {
-      this.setValue(foldText);
-      return;
-    }
-
-    if (sel && sel.rangeCount) {
-      const blockEl = this._getBlockElement(sel.getRangeAt(0).startContainer);
-      if (blockEl) {
-        const p1 = this._makeBlockEl('p');
-        this._populateInlineNodes(p1, `[fold:${foldTitle}]`);
-        const p2 = this._makeBlockEl('p');
-        this._populateInlineNodes(p2, 'محتوى التفاصيل هنا');
-        const p3 = this._makeBlockEl('p');
-        this._populateInlineNodes(p3, '[/fold]');
-
-        blockEl.after(p3);
-        blockEl.after(p2);
-        blockEl.after(p1);
-        this._placeCaretAtEnd(p2);
-        this._pushHistory();
-        this.onChange(this.getValue());
-        this.onSelectionChange(this.getActiveFormats());
+    if (existingFold) {
+      const existingTitleEl = existingFold.querySelector(':scope > .rc-fold-header > .rc-fold-title');
+      const existingBodyEl = existingFold.querySelector(':scope > .rc-fold-body');
+      const hasContent = Boolean(
+        this._serializeChildren(existingTitleEl).replace(/\u200B/g, '').trim() ||
+        this._serializeBlockContainer(existingBodyEl).trim()
+      );
+      if (!hasContent) {
+        this._unwrapFoldBlock(existingFold);
         return;
       }
     }
 
-    this.setValue(`${val}\n\n${foldText}`);
+    let initialBodyMarkup = '';
+    let anchorBlock = anchorNode ? this._getBlockElement(anchorNode) : null;
+    if (existingFold) anchorBlock = existingFold;
+
+    if (range && !range.collapsed && this.el.contains(range.commonAncestorContainer)) {
+      const selected = range.toString().replace(/\u200B/g, '').trim();
+      if (selected) {
+        initialBodyMarkup = selected;
+        range.deleteContents();
+      }
+    } else if (anchorBlock && anchorBlock.dataset?.block === 'p' && !existingFold) {
+      const currentLine = this._serializeChildren(anchorBlock).replace(/\u200B/g, '').trim();
+      if (currentLine) {
+        initialBodyMarkup = currentLine;
+      }
+    }
+
+    const foldEl = this._makeBlockEl('fold', {
+      title: (title || '').trim(),
+      bodyMarkup: initialBodyMarkup,
+      open: true
+    });
+
+    if (anchorBlock && this.el.contains(anchorBlock)) {
+      const anchorIsEmptyP = anchorBlock.dataset?.block === 'p' &&
+        !this._serializeChildren(anchorBlock).replace(/\u200B/g, '').trim();
+      if (anchorIsEmptyP || (!existingFold && anchorBlock.dataset?.block === 'p' && initialBodyMarkup)) {
+        anchorBlock.replaceWith(foldEl);
+      } else {
+        anchorBlock.after(foldEl);
+      }
+    } else {
+      this.el.appendChild(foldEl);
+    }
+
+    // Always keep a tappable trailing paragraph below a bottom fold so user can type outside
+    if (!foldEl.nextElementSibling) {
+      foldEl.after(this._makeBlockEl('p'));
+    }
+
+    if ((title || '').trim()) {
+      const firstBlk = foldEl.querySelector(':scope > .rc-fold-body > .rc-block') || foldEl;
+      const bodyTarget = this._getBlockBodyEl(firstBlk);
+      this._placeCaretAtStart(bodyTarget?.firstChild || bodyTarget);
+    } else {
+      const titleEl = foldEl.querySelector(':scope > .rc-fold-header > .rc-fold-title');
+      this._placeCaretAtStart(titleEl?.firstChild || titleEl);
+    }
+
+    this._ensureAtLeastOneBlock();
+    this._pushHistory();
+    this.onChange(this.getValue());
+    this.onSelectionChange(this.getActiveFormats());
   }
 
   clearFormatting() {
@@ -1374,15 +1790,23 @@ export class RichComposer {
     const range = sel.getRangeAt(0);
 
     if (range.collapsed) {
-      // Clear formatting on current block/whole line
-      const blockEl = this._getBlockElement(range.startContainer);
-      if (blockEl) {
-        const plain = (this._getBlockBodyEl(blockEl).textContent || '').replace(/\u200B/g, '');
-        const p = this._makeBlockEl('p');
-        p.innerHTML = '';
-        p.appendChild(plain ? document.createTextNode(plain) : document.createElement('br'));
-        blockEl.replaceWith(p);
-        this._placeCaretAtEnd(p);
+      const foldTitleEl = this._getFoldTitleEl(range.startContainer);
+      if (foldTitleEl) {
+        const plain = (foldTitleEl.textContent || '').replace(/\u200B/g, '');
+        foldTitleEl.innerHTML = '';
+        foldTitleEl.appendChild(plain ? document.createTextNode(plain) : document.createElement('br'));
+        this._placeCaretAtEnd(foldTitleEl);
+      } else {
+        // Clear formatting on current block/whole line
+        const blockEl = this._getBlockElement(range.startContainer);
+        if (blockEl && blockEl.dataset?.block !== 'fold') {
+          const plain = (this._getBlockBodyEl(blockEl).textContent || '').replace(/\u200B/g, '');
+          const p = this._makeBlockEl('p');
+          p.innerHTML = '';
+          p.appendChild(plain ? document.createTextNode(plain) : document.createElement('br'));
+          blockEl.replaceWith(p);
+          this._placeCaretAtEnd(p);
+        }
       }
     } else {
       const plain = range.toString().replace(/\u200B/g, '');
@@ -1482,71 +1906,10 @@ export class RichComposer {
   }
 
   _applySnapshot(val) {
-    const saved = val;
     this._suppressInput = true;
     try {
-      this.el.innerHTML = '';
-      if (!saved) {
-        this._ensureAtLeastOneBlock();
-      } else {
-        const lines = saved.split('\n');
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          if (/^\s*```/.test(line)) {
-            const codeLines = [];
-            let j = i + 1;
-            while (j < lines.length && !/^\s*```\s*$/.test(lines[j])) {
-              codeLines.push(lines[j]);
-              j++;
-            }
-            i = j < lines.length ? j : lines.length - 1;
-            this.el.appendChild(this._makeBlockEl('codeblock', { text: codeLines.join('\n') }));
-            continue;
-          }
-          const checkMatch = line.match(/^(\s*)\[([ xX])\]\s+(.*)$/);
-          if (checkMatch) {
-            const blk = this._makeBlockEl('check', {
-              indent: Math.min(3, Math.floor(checkMatch[1].replace(/\t/g, '  ').length / 2)),
-              checked: checkMatch[2].toLowerCase() === 'x'
-            });
-            this._populateInlineNodes(this._getBlockBodyEl(blk), checkMatch[3]);
-            this.el.appendChild(blk);
-            continue;
-          }
-          const hMatch = line.match(/^(#{1,3})\s+(.+)$/);
-          if (hMatch) {
-            const blk = this._makeBlockEl(`h${hMatch[1].length}`);
-            this._populateInlineNodes(blk, hMatch[2]);
-            this.el.appendChild(blk);
-            continue;
-          }
-          const qMatch = line.match(/^\s*>\s?(.*)$/);
-          if (qMatch && /^\s*>/.test(line)) {
-            const blk = this._makeBlockEl('quote');
-            this._populateInlineNodes(blk, qMatch[1]);
-            this.el.appendChild(blk);
-            continue;
-          }
-          const ulMatch = line.match(/^(\s*)(?:-|\*)\s+(.*)$/);
-          if (ulMatch) {
-            const blk = this._makeBlockEl('ul', { indent: Math.min(3, Math.floor(ulMatch[1].replace(/\t/g, '  ').length / 2)) });
-            this._populateInlineNodes(this._getBlockBodyEl(blk), ulMatch[2]);
-            this.el.appendChild(blk);
-            continue;
-          }
-          const olMatch = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
-          if (olMatch) {
-            const blk = this._makeBlockEl('ol', { indent: Math.min(3, Math.floor(olMatch[1].replace(/\t/g, '  ').length / 2)) });
-            this._populateInlineNodes(this._getBlockBodyEl(blk), olMatch[3]);
-            this.el.appendChild(blk);
-            continue;
-          }
-          const blk = this._makeBlockEl('p');
-          this._populateInlineNodes(blk, line);
-          this.el.appendChild(blk);
-        }
-        this._ensureAtLeastOneBlock();
-      }
+      this._renderMarkupToContainer(this.el, val || '');
+      this._ensureAtLeastOneBlock();
       this._placeCaretAtEnd(this.el.lastElementChild || this.el);
       this._syncEmptyState();
     } finally {

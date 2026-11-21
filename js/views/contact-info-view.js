@@ -201,6 +201,14 @@ export class ContactInfoView {
                 <div class="option-subtitle" id="sub-long-msg-display">${this.chat.longMessageDisplay === 'expand' ? 'Always expanded (overrides app)' : (this.chat.longMessageDisplay === 'collapse' ? 'Always collapsed (overrides app)' : 'Follow app setting')}</div>
               </div>
             </div>
+
+            <div class="option-row clickable" id="row-note-mode-display">
+              <span class="option-icon">${Icons.noteMode('', 20)}</span>
+              <div class="option-texts">
+                <div class="option-title">Note mode</div>
+                <div class="option-subtitle" id="sub-note-mode-display">${this.chat.noteMode === 'on' ? 'Always on (overrides app)' : (this.chat.noteMode === 'off' ? 'Always off (overrides app)' : 'Follow app setting')}</div>
+              </div>
+            </div>
           </div>
 
           <div class="thick-section-divider"></div>
@@ -558,6 +566,11 @@ export class ContactInfoView {
       this._openLongMessageOverrideDialog();
     });
 
+    // Note Mode Preference (3-state per-chat override)
+    this.container.querySelector('#row-note-mode-display')?.addEventListener('click', () => {
+      this._openNoteModeOverrideDialog();
+    });
+
     // Clear Chat (Custom confirmation dialog)
     this.container.querySelector('#btn-clear-chat-history').addEventListener('click', async () => {
       const confirmed = await showConfirm({
@@ -772,6 +785,60 @@ export class ContactInfoView {
         }
         cleanup();
         Toast.show('Chat long-message preference saved');
+      });
+    });
+
+    document.body.appendChild(overlay);
+  }
+
+  _openNoteModeOverrideDialog() {
+    const current = this.chat?.noteMode || 'default';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay custom-dialog-overlay active';
+
+    const options = [
+      { value: 'default', label: 'Follow app setting', sub: 'Uses the global option in Settings → Chats' },
+      { value: 'on', label: 'Always on', sub: 'Full-width note blocks in this chat' },
+      { value: 'off', label: 'Always off', sub: 'Standard left/right chat bubbles in this chat' }
+    ];
+
+    overlay.innerHTML = `
+      <div class="custom-dialog-card" role="dialog" aria-modal="true">
+        <h3 class="custom-dialog-title">Note mode in this chat</h3>
+        <div class="custom-dialog-body msg-list-dialog-actions">
+          ${options.map((opt) => `
+            <button type="button" class="msg-list-option-btn ${current === opt.value ? 'is-selected' : ''}" data-note-opt="${opt.value}">
+              <span class="msg-list-opt-texts">
+                <strong>${opt.label}</strong>
+                <small>${opt.sub}</small>
+              </span>
+              ${current === opt.value ? Icons.check('long-opt-check', 18) : ''}
+            </button>
+          `).join('')}
+        </div>
+        <div class="custom-dialog-actions">
+          <button type="button" class="dialog-btn dialog-btn-cancel" id="btn-note-opt-cancel">Cancel</button>
+        </div>
+      </div>
+    `;
+
+    const cleanup = () => overlay.remove();
+    overlay.querySelector('#btn-note-opt-cancel')?.addEventListener('click', cleanup);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+
+    overlay.querySelectorAll('[data-note-opt]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const mode = btn.dataset.noteOpt;
+        await db.updateChat(this.chatId, { noteMode: mode });
+        this.chat.noteMode = mode;
+        const subEl = this.container?.querySelector('#sub-note-mode-display');
+        if (subEl) {
+          subEl.textContent = mode === 'on'
+            ? 'Always on (overrides app)'
+            : (mode === 'off' ? 'Always off (overrides app)' : 'Follow app setting');
+        }
+        cleanup();
+        Toast.show('Chat Note Mode preference saved');
       });
     });
 

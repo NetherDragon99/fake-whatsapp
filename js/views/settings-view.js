@@ -21,9 +21,10 @@ export class SettingsView {
       let userAvatarBlob = null;
       let storageStats = { formattedSize: '0 B', chatCount: 0, messageCount: 0 };
       let defaultExpandLongMessages = false;
+      let defaultNoteMode = false;
       let persistenceInfo = { isPersisted: false };
       let backupStatus = { hasBackup: false, lastStats: null };
-      const appVersion = window.APP_VERSION || '2.3.9';
+      const appVersion = window.APP_VERSION || '2.3.10';
       const cacheStatus = window.__waCacheStatus || null;
       const updateState = (window.app && typeof window.app.getUpdateState === 'function')
         ? window.app.getUpdateState()
@@ -39,6 +40,7 @@ export class SettingsView {
         userAvatarBlob = await db.getSetting('userProfileAvatar', null);
         storageStats = await db.getStorageUsage();
         defaultExpandLongMessages = await db.getSetting('defaultExpandLongMessages', false);
+        defaultNoteMode = await db.getSetting('defaultNoteMode', false);
         persistenceInfo = await db.getPersistenceInfo().catch(() => ({ isPersisted: false }));
         backupStatus = db.getBackupStatus();
       } catch (err) {
@@ -130,6 +132,18 @@ export class SettingsView {
               </div>
               <label class="switch-wrap">
                 <input type="checkbox" id="cb-default-expand-long" ${defaultExpandLongMessages ? 'checked' : ''} />
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+
+            <div class="settings-option-row" id="row-default-note-mode">
+              <span class="settings-icon">${Icons.noteMode('', 20)}</span>
+              <div class="settings-texts">
+                <div class="setting-title">Note mode (full-width blocks)</div>
+                <div class="setting-sub">Default for all chats unless overridden per chat</div>
+              </div>
+              <label class="switch-wrap">
+                <input type="checkbox" id="cb-default-note-mode" ${defaultNoteMode ? 'checked' : ''} />
                 <span class="switch-slider"></span>
               </label>
             </div>
@@ -390,6 +404,15 @@ export class SettingsView {
       });
     }
 
+    // Global Note Mode Toggle
+    const noteModeCb = this.container.querySelector('#cb-default-note-mode');
+    if (noteModeCb) {
+      noteModeCb.addEventListener('change', async () => {
+        await db.setSetting('defaultNoteMode', noteModeCb.checked);
+        Toast.show(noteModeCb.checked ? 'Note mode enabled globally' : 'Note mode disabled by default');
+      });
+    }
+
     // Features & Shortcuts Guide Navigation
     this.container.querySelector('#row-features-guide')?.addEventListener('click', () => {
       this.router.navigate('#/settings/guide');
@@ -515,7 +538,7 @@ export class SettingsView {
     });
 
     // Check for Updates, Background Download Progress & Restart to Update
-    const appVersion = window.APP_VERSION || '2.3.8';
+    const appVersion = window.APP_VERSION || '2.3.10';
     const updateRow = this.container.querySelector('#row-check-updates');
     const updateSubEl = this.container.querySelector('#settings-update-status-sub');
     const updateReadyCard = this.container.querySelector('#settings-update-ready-card');

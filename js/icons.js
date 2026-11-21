@@ -493,5 +493,11 @@ export const Icons = {
   quote: (cls = '', size = 20) => `
     <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
       <path d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z"/>
+    </svg>`,
+
+  /** Note mode full-width card icon */
+  noteMode: (cls = '', size = 20) => `
+    <svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM7 8h10v2H7V8zm0 4h10v2H7v-2zm0 4h7v2H7v-2z"/>
     </svg>`
 };
