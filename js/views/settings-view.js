@@ -21,7 +21,9 @@ export class SettingsView {
       let userAvatarBlob = null;
       let storageStats = { formattedSize: '0 B', chatCount: 0, messageCount: 0 };
       let defaultExpandLongMessages = false;
-      const appVersion = window.APP_VERSION || '2.3.8';
+      let persistenceInfo = { isPersisted: false };
+      let backupStatus = { hasBackup: false, lastStats: null };
+      const appVersion = window.APP_VERSION || '2.3.9';
       const cacheStatus = window.__waCacheStatus || null;
       const updateState = (window.app && typeof window.app.getUpdateState === 'function')
         ? window.app.getUpdateState()
@@ -37,6 +39,8 @@ export class SettingsView {
         userAvatarBlob = await db.getSetting('userProfileAvatar', null);
         storageStats = await db.getStorageUsage();
         defaultExpandLongMessages = await db.getSetting('defaultExpandLongMessages', false);
+        persistenceInfo = await db.getPersistenceInfo().catch(() => ({ isPersisted: false }));
+        backupStatus = db.getBackupStatus();
       } catch (err) {
         console.warn('[SettingsView] Error loading settings data:', err);
       }
@@ -173,18 +177,54 @@ export class SettingsView {
               <div class="settings-chevron">${Icons.chevronRight('', 18)}</div>
             </div>
 
+            <div class="settings-option-row clickable" id="row-toggle-persist">
+              <span class="settings-icon">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                  <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/>
+                </svg>
+              </span>
+              <div class="settings-texts">
+                <div class="setting-title">Storage Persistence Protection</div>
+                <div class="setting-sub" id="settings-persist-status-sub">${persistenceInfo.isPersisted ? 'Active • Protected against browser eviction & updates' : 'Standard • Tap to enable permanent storage protection'}</div>
+              </div>
+            </div>
+
+            <div class="settings-option-row clickable" id="row-force-backup">
+              <span class="settings-icon">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                  <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+                </svg>
+              </span>
+              <div class="settings-texts">
+                <div class="setting-title">Back Up Now (Permanent Snapshot)</div>
+                <div class="setting-sub" id="settings-autobackup-sub">${backupStatus.lastStats ? `Mirror active • ${backupStatus.lastStats.chatCount} chats & ${backupStatus.lastStats.messageCount} msgs backed up` : 'Mirror active • Save latest chats to secondary storage'}</div>
+              </div>
+            </div>
+
+            <div class="settings-option-row clickable" id="row-restore-autobackup">
+              <span class="settings-icon">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                  <path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/>
+                </svg>
+              </span>
+              <div class="settings-texts">
+                <div class="setting-title">Restore from Persistent Auto-Backup</div>
+                <div class="setting-sub">Auto-recover conversations if ever lost or wiped</div>
+              </div>
+            </div>
+
             <div class="settings-option-row clickable" id="row-export-backup">
               <span class="settings-icon">${Icons.archive('', 20)}</span>
               <div class="settings-texts">
-                <div class="setting-title">Export Full Backup</div>
-                <div class="setting-sub">Save all chats and media as a single backup archive</div>
+                <div class="setting-title">Export Full Backup (.json)</div>
+                <div class="setting-sub">Save all chats and media as a standalone backup file</div>
               </div>
             </div>
 
             <div class="settings-option-row clickable" id="row-restore-backup">
               <span class="settings-icon">${Icons.forward('', 20)}</span>
               <div class="settings-texts">
-                <div class="setting-title">Restore Backup</div>
+                <div class="setting-title">Restore Backup File (.json)</div>
                 <div class="setting-sub">Import previously exported database archive</div>
               </div>
               <input type="file" id="backup-restore-input" accept=".zip,.json" style="display:none;" />
@@ -366,6 +406,68 @@ export class SettingsView {
       this.router.navigate('#/manage-storage');
     });
 
+    // Toggle / Request Persistent Storage Protection
+    this.container.querySelector('#row-toggle-persist')?.addEventListener('click', async () => {
+      Toast.show('Checking persistent storage...');
+      const granted = await db.ensurePersistence();
+      const sub = this.container.querySelector('#settings-persist-status-sub');
+      if (sub) {
+        sub.textContent = granted
+          ? 'Active • Protected against browser eviction & updates'
+          : 'Standard • Permission not granted by browser';
+      }
+      Toast.show(granted ? 'Storage persistence active & protected!' : 'Storage is standard (not granted by browser)');
+    });
+
+    // Trigger Immediate Backup Snapshot
+    this.container.querySelector('#row-force-backup')?.addEventListener('click', async () => {
+      Toast.show('Creating permanent backup...');
+      try {
+        const snap = await db.forceBackup();
+        if (snap) {
+          const sub = this.container.querySelector('#settings-autobackup-sub');
+          if (sub) {
+            sub.textContent = `Mirror active • ${snap.chatCount} chats & ${snap.messageCount} msgs backed up just now`;
+          }
+          Toast.show(`Backed up ${snap.chatCount} chats & ${snap.messageCount} messages across all tiers!`);
+        } else {
+          Toast.show('No conversations to back up yet.');
+        }
+      } catch (err) {
+        await showAlert({ title: 'Backup Failed', message: err.message || 'Could not save backup.' });
+      }
+    });
+
+    // Restore from Persistent Auto-Backup
+    this.container.querySelector('#row-restore-autobackup')?.addEventListener('click', async () => {
+      try {
+        const confirmed = await showConfirm({
+          title: 'Restore from Auto-Backup',
+          message: 'Restore conversations and settings from your persistent auto-backup mirror?',
+          confirmText: 'Restore',
+          cancelText: 'Cancel'
+        });
+        if (confirmed) {
+          Toast.show('Restoring from auto-backup...');
+          const result = await db.restoreFromAutoBackup();
+          Toast.show(`Restored ${result.count} conversations successfully!`);
+          setTimeout(() => this.router.navigate('#/chats'), 400);
+        }
+      } catch (err) {
+        await showAlert({ title: 'Restore Failed', message: err.message || 'No auto-backup found to restore.' });
+      }
+    });
+
+    // Real-time Backup Status Update Listener
+    this._onBackupUpdatedEvent = (e) => {
+      const stats = e.detail;
+      const sub = this.container?.querySelector('#settings-autobackup-sub');
+      if (sub && stats) {
+        sub.textContent = `Mirror active • ${stats.chatCount} chats & ${stats.messageCount} msgs backed up just now`;
+      }
+    };
+    window.addEventListener('wa:backup-updated', this._onBackupUpdatedEvent);
+
     // Export Full Backup
     this.container.querySelector('#row-export-backup').addEventListener('click', async () => {
       Toast.show('Packaging backup archive...');
@@ -541,6 +643,10 @@ export class SettingsView {
   }
 
   cleanup() {
+    if (this._onBackupUpdatedEvent) {
+      window.removeEventListener('wa:backup-updated', this._onBackupUpdatedEvent);
+      this._onBackupUpdatedEvent = null;
+    }
     if (this._onCacheStatusEvent) {
       window.removeEventListener('wa:cache-status', this._onCacheStatusEvent);
       this._onCacheStatusEvent = null;

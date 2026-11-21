@@ -31,8 +31,8 @@ import { assetUrl } from './config/base-path.js';
 import { backgroundTasks } from './utils/background-tasks.js';
 
 // Application Version Constant
-window.APP_VERSION = '2.3.8';
-window.APP_CACHE_NAME = 'wa-clone-v2.3.8';
+window.APP_VERSION = '2.3.9';
+window.APP_CACHE_NAME = 'wa-clone-v2.3.9';
 
 // Global deferred PWA install prompt holder
 window.deferredInstallPrompt = null;
@@ -136,9 +136,28 @@ class Application {
     const savedBubbleColor = localStorage.getItem('wa_outgoing_bubble_color');
     if (savedBubbleColor) applyOutgoingBubbleColor(savedBubbleColor);
 
-    // 1. Initialize IndexedDB
+    // 1. Initialize IndexedDB & Persistent Disaster Recovery
     try {
       await db.init();
+
+      // Check and auto-restore if database was wiped or is empty
+      try {
+        const autoRestoreResult = await db.checkAutoRestore();
+        if (autoRestoreResult && autoRestoreResult.restored) {
+          console.log('[AutoBackup] Auto-recovered chats from persistent backup:', autoRestoreResult);
+          setTimeout(() => {
+            Toast.show(`Restored ${autoRestoreResult.count} conversation(s) from persistent backup`);
+          }, 400);
+        }
+      } catch (backupErr) {
+        console.warn('[AutoBackup] Error checking auto-restore:', backupErr);
+      }
+
+      // Safe beforeunload backup flush
+      window.addEventListener('beforeunload', () => {
+        db.forceBackup().catch(() => {});
+      });
+
       const dbTheme = await db.getSetting('themeMode', savedTheme);
       if (dbTheme === 'light') {
         document.documentElement.setAttribute('data-theme', 'light');
@@ -476,6 +495,13 @@ class Application {
     } catch (e) { }
 
     Toast.show('Applying update...');
+
+    // Force commit persistent backup before restarting to update
+    try {
+      await db.forceBackup();
+    } catch (e) {
+      console.warn('[Updater] Pre-update force backup failed:', e);
+    }
 
     if (this.swRegistration) {
       try {

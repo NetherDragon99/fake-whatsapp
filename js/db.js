@@ -1,4 +1,6 @@
 // IndexedDB Storage Layer for WhatsApp Android Clone
+import { storageBackup } from './utils/storage-backup.js';
+
 const DB_NAME = 'WhatsAppCloneDB';
 const DB_VERSION = 1;
 
@@ -71,14 +73,29 @@ class Database {
 
       request.onsuccess = (event) => {
         this.db = event.target.result;
-        if (typeof navigator !== 'undefined' && navigator.storage && typeof navigator.storage.persist === 'function') {
-          navigator.storage.persist().catch(() => { });
-        }
+        this.db.onversionchange = () => {
+          console.warn('[DB] Database version change detected, closing connection');
+          if (this.db) {
+            this.db.close();
+            this.db = null;
+          }
+          this.initPromise = null;
+        };
+        this.db.onclose = () => {
+          this.db = null;
+          this.initPromise = null;
+        };
+        storageBackup.ensurePersistence().catch(() => { });
         resolve(this.db);
       };
 
       request.onerror = (event) => {
+        this.initPromise = null;
         reject(event.target.error);
+      };
+
+      request.onblocked = () => {
+        console.warn('[DB] Database open blocked by another open connection');
       };
     });
 
@@ -122,7 +139,10 @@ class Database {
       const tx = this.db.transaction('chats', 'readwrite');
       const store = tx.objectStore('chats');
       store.put(chat);
-      tx.oncomplete = () => resolve(chat);
+      tx.oncomplete = () => {
+        storageBackup.scheduleBackup(this);
+        resolve(chat);
+      };
       tx.onerror = () => reject(tx.error);
     });
   }
@@ -283,7 +303,10 @@ class Database {
         }
       };
 
-      tx.oncomplete = () => resolve(true);
+      tx.oncomplete = () => {
+        storageBackup.scheduleBackup(this);
+        resolve(true);
+      };
       tx.onerror = () => reject(tx.error);
     });
   }
@@ -407,7 +430,10 @@ class Database {
           }
         };
       }
-      tx.oncomplete = () => resolve(true);
+      tx.oncomplete = () => {
+        storageBackup.scheduleBackup(this);
+        resolve(true);
+      };
       tx.onerror = () => reject(tx.error);
     });
   }
@@ -430,6 +456,7 @@ class Database {
 
       tx.oncomplete = () => {
         this._callsBackfillChecked = false;
+        storageBackup.scheduleBackup(this);
         resolve(true);
       };
       tx.onerror = () => reject(tx.error);
@@ -450,7 +477,10 @@ class Database {
         }
         const updated = { ...msg, ...updates };
         store.put(updated);
-        tx.oncomplete = () => resolve(updated);
+        tx.oncomplete = () => {
+          storageBackup.scheduleBackup(this);
+          resolve(updated);
+        };
       };
       getReq.onerror = () => reject(tx.error);
     });
@@ -461,7 +491,10 @@ class Database {
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction('messages', 'readwrite');
       tx.objectStore('messages').delete(id);
-      tx.oncomplete = () => resolve(true);
+      tx.oncomplete = () => {
+        storageBackup.scheduleBackup(this);
+        resolve(true);
+      };
       tx.onerror = () => reject(tx.error);
     });
   }
@@ -532,7 +565,10 @@ class Database {
         }
         store.put(item);
       }
-      tx.oncomplete = () => resolve(true);
+      tx.oncomplete = () => {
+        storageBackup.scheduleBackup(this);
+        resolve(true);
+      };
       tx.onerror = () => reject(tx.error);
     });
   }
@@ -582,7 +618,10 @@ class Database {
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction('calls', 'readwrite');
       tx.objectStore('calls').put(callItem);
-      tx.oncomplete = () => resolve(callItem);
+      tx.oncomplete = () => {
+        storageBackup.scheduleBackup(this);
+        resolve(callItem);
+      };
       tx.onerror = () => reject(tx.error);
     });
   }
@@ -596,7 +635,10 @@ class Database {
       for (const c of calls) {
         store.put(c);
       }
-      tx.oncomplete = () => resolve(true);
+      tx.oncomplete = () => {
+        storageBackup.scheduleBackup(this);
+        resolve(true);
+      };
       tx.onerror = () => reject(tx.error);
     });
   }
@@ -680,7 +722,10 @@ class Database {
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction('filters', 'readwrite');
       tx.objectStore('filters').put(filter);
-      tx.oncomplete = () => resolve(filter);
+      tx.oncomplete = () => {
+        storageBackup.scheduleBackup(this);
+        resolve(filter);
+      };
       tx.onerror = () => reject(tx.error);
     });
   }
@@ -690,7 +735,10 @@ class Database {
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction('filters', 'readwrite');
       tx.objectStore('filters').delete(id);
-      tx.oncomplete = () => resolve(true);
+      tx.oncomplete = () => {
+        storageBackup.scheduleBackup(this);
+        resolve(true);
+      };
       tx.onerror = () => reject(tx.error);
     });
   }
@@ -717,7 +765,10 @@ class Database {
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction('settings', 'readwrite');
       tx.objectStore('settings').put({ key, value });
-      tx.oncomplete = () => resolve(value);
+      tx.oncomplete = () => {
+        storageBackup.scheduleBackup(this);
+        resolve(value);
+      };
       tx.onerror = () => reject(tx.error);
     });
   }
@@ -1011,7 +1062,10 @@ class Database {
       for (const id of idSet) {
         store.delete(id);
       }
-      tx.oncomplete = () => resolve(true);
+      tx.oncomplete = () => {
+        storageBackup.scheduleBackup(this);
+        resolve(true);
+      };
       tx.onerror = () => reject(tx.error);
     });
   }
@@ -1036,7 +1090,10 @@ class Database {
           store.delete(id);
         }
       }
-      tx.oncomplete = () => resolve(true);
+      tx.oncomplete = () => {
+        storageBackup.scheduleBackup(this);
+        resolve(true);
+      };
       tx.onerror = () => reject(tx.error);
     });
   }
@@ -1129,7 +1186,10 @@ class Database {
     }
 
     return new Promise((resolve, reject) => {
-      tx.oncomplete = () => resolve(true);
+      tx.oncomplete = () => {
+        storageBackup.scheduleBackup(this);
+        resolve(true);
+      };
       tx.onerror = () => reject(tx.error);
     });
   }
@@ -1144,9 +1204,36 @@ class Database {
     tx.objectStore('filters').clear();
     tx.objectStore('settings').clear();
     return new Promise((resolve, reject) => {
-      tx.oncomplete = () => resolve(true);
+      tx.oncomplete = () => {
+        storageBackup.scheduleBackup(this);
+        resolve(true);
+      };
       tx.onerror = () => reject(tx.error);
     });
+  }
+  // --- Disaster Recovery & Storage Persistence API ---
+  async checkAutoRestore() {
+    return storageBackup.checkAndAutoRestoreIfEmpty(this);
+  }
+
+  async forceBackup() {
+    return storageBackup.forceBackup(this);
+  }
+
+  async restoreFromAutoBackup() {
+    return storageBackup.restoreFromAutoBackup(this);
+  }
+
+  getBackupStatus() {
+    return storageBackup.getBackupStatus();
+  }
+
+  async ensurePersistence() {
+    return storageBackup.ensurePersistence();
+  }
+
+  async getPersistenceInfo() {
+    return storageBackup.getPersistenceInfo();
   }
 }
 
