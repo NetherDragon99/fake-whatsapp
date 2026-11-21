@@ -44,10 +44,16 @@ export function finalizeParsedMessages(rawMessages = [], {
       }
     }
 
+    let callInfo = m.callInfo ? { ...m.callInfo } : null;
+    if (callInfo && callInfo.isCall) {
+      callInfo.direction = isOutgoing ? 'outgoing' : (callInfo.isMissed ? 'missed' : 'incoming');
+    }
+
     const finalMsg = {
       ...m,
       chatId,
       isOutgoing,
+      callInfo,
       mediaId: linkedMediaId,
       isVoiceNote: isVoice,
       duration: m.duration || 0,

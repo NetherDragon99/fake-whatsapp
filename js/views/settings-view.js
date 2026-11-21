@@ -21,7 +21,7 @@ export class SettingsView {
       let userAvatarBlob = null;
       let storageStats = { formattedSize: '0 B', chatCount: 0, messageCount: 0 };
       let defaultExpandLongMessages = false;
-      const appVersion = window.APP_VERSION || '2.3.7';
+      const appVersion = window.APP_VERSION || '2.3.8';
       const cacheStatus = window.__waCacheStatus || null;
       const updateState = (window.app && typeof window.app.getUpdateState === 'function')
         ? window.app.getUpdateState()
@@ -413,7 +413,7 @@ export class SettingsView {
     });
 
     // Check for Updates, Background Download Progress & Restart to Update
-    const appVersion = window.APP_VERSION || '2.3.7';
+    const appVersion = window.APP_VERSION || '2.3.8';
     const updateRow = this.container.querySelector('#row-check-updates');
     const updateSubEl = this.container.querySelector('#settings-update-status-sub');
     const updateReadyCard = this.container.querySelector('#settings-update-ready-card');
@@ -487,6 +487,7 @@ export class SettingsView {
     };
     window.addEventListener('wa:cache-status', this._onCacheStatusEvent);
     window.addEventListener('wa:update-state', this._onUpdateStateEvent);
+    window.addEventListener('app-update-state-change', this._onUpdateStateEvent);
 
     restartBtn?.addEventListener('click', async () => {
       if (!window.app || typeof window.app.applyPendingUpdate !== 'function') return;
@@ -546,6 +547,7 @@ export class SettingsView {
     }
     if (this._onUpdateStateEvent) {
       window.removeEventListener('wa:update-state', this._onUpdateStateEvent);
+      window.removeEventListener('app-update-state-change', this._onUpdateStateEvent);
       this._onUpdateStateEvent = null;
     }
   }

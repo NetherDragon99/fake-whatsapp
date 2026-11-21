@@ -111,7 +111,8 @@ export class NestedChainSheet {
     listPositionByMsgId = new Map(),
     onJumpToMessage = () => {},
     onAddNestedChild = () => {},
-    onUnlinkNested = async () => {}
+    onUnlinkNested = async () => {},
+    onReparentNested = async () => {}
   }) {
     if (!rootMsg) return;
     this._ensureBuilt();
@@ -128,7 +129,7 @@ export class NestedChainSheet {
       const listEl = document.createElement('div');
       listEl.className = 'nested-tree-list';
 
-      const appendNode = (msg, depth) => {
+      const appendNode = (msg, depth, siblingIndex = 0, siblingsArray = []) => {
         const idStr = String(msg.id);
         if (visited.has(idStr)) return;
         visited.add(idStr);
@@ -136,6 +137,7 @@ export class NestedChainSheet {
 
         const row = document.createElement('div');
         row.className = `nested-tree-node${idStr === focusId ? ' is-focused' : ''}`;
+        row.dataset.msgId = idStr;
         row.style.setProperty('--tree-depth', String(Math.min(6, depth)));
 
         const senderName = msg.isOutgoing ? 'You' : (msg.sender || 'Contact');
@@ -147,6 +149,7 @@ export class NestedChainSheet {
 
         row.innerHTML = `
           <div class="nested-tree-branch-guide">${depth > 0 ? '└─' : ''}</div>
+          <button type="button" class="nested-tree-drag-handle" title="Hold & drag to nest under another message" aria-label="Drag">☰</button>
           <div class="nested-tree-card" role="button" tabindex="0">
             <div class="nested-tree-card-top">
               <div class="nested-tree-sender-group">
@@ -159,10 +162,84 @@ export class NestedChainSheet {
             <div class="nested-tree-snippet" dir="auto">${escapeHtml(this._getMessageSnippet(msg))}</div>
           </div>
           <div class="nested-tree-actions">
+            ${depth > 0 ? `<button type="button" class="nested-tree-btn outdent-btn" title="Move level up (-)">-</button>` : ''}
+            ${siblingIndex > 0 ? `<button type="button" class="nested-tree-btn indent-btn" title="Nest under above sibling (+)">+</button>` : ''}
             <button type="button" class="nested-tree-btn add-child" title="Add nested message under this">${Icons.treeBranch('', 16)}</button>
             ${depth > 0 ? `<button type="button" class="nested-tree-btn unlink-child" title="Unnest this message">${Icons.close('', 16)}</button>` : ''}
           </div>
         `;
+
+        const dragHandle = row.querySelector('.nested-tree-drag-handle');
+        if (dragHandle) {
+          dragHandle.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            row.classList.add('is-dragged');
+            let currentTargetRow = null;
+
+            const onPointerMove = (ev) => {
+              const elUnder = document.elementFromPoint(ev.clientX, ev.clientY);
+              const targetNode = elUnder?.closest('.nested-tree-node');
+              if (targetNode && targetNode !== row) {
+                if (currentTargetRow !== targetNode) {
+                  currentTargetRow?.classList.remove('is-drop-target');
+                  currentTargetRow = targetNode;
+                  currentTargetRow.classList.add('is-drop-target');
+                }
+              } else if (currentTargetRow) {
+                currentTargetRow.classList.remove('is-drop-target');
+                currentTargetRow = null;
+              }
+            };
+
+            const onPointerUp = async () => {
+              window.removeEventListener('pointermove', onPointerMove);
+              window.removeEventListener('pointerup', onPointerUp);
+              window.removeEventListener('pointercancel', onPointerUp);
+              row.classList.remove('is-dragged');
+              if (currentTargetRow) {
+                currentTargetRow.classList.remove('is-drop-target');
+                const targetMsgId = currentTargetRow.dataset.msgId;
+                const targetMsg = msgById.get(targetMsgId);
+                if (targetMsg && targetMsgId !== idStr) {
+                  await onReparentNested(msg, targetMsg);
+                  renderBody();
+                }
+              }
+            };
+
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('pointerup', onPointerUp);
+            window.addEventListener('pointercancel', onPointerUp);
+          });
+        }
+
+        row.querySelector('.indent-btn')?.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (siblingsArray && siblingIndex > 0) {
+            const priorSibling = siblingsArray[siblingIndex - 1];
+            if (priorSibling) {
+              await onReparentNested(msg, priorSibling);
+              renderBody();
+            }
+          }
+        });
+
+        row.querySelector('.outdent-btn')?.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (depth > 0 && msg.nestedParent?.id) {
+            const curParent = msgById.get(String(msg.nestedParent.id));
+            if (curParent?.nestedParent?.id) {
+              const grandParent = msgById.get(String(curParent.nestedParent.id));
+              if (grandParent) {
+                await onReparentNested(msg, grandParent);
+                renderBody();
+                return;
+              }
+            }
+            await onUnlinkNested(msg);
+            renderBody();
+          }
+        });
 
         row.querySelector('.nested-tree-card')?.addEventListener('click', () => {
           this.close();
@@ -184,12 +261,12 @@ export class NestedChainSheet {
         listEl.appendChild(row);
 
         const children = nestedChildrenByParentId.get(idStr) || [];
-        for (const child of children) {
-          appendNode(child, depth + 1);
-        }
+        children.forEach((child, idx) => {
+          appendNode(child, depth + 1, idx, children);
+        });
       };
 
-      appendNode(topAncestor, 0);
+      appendNode(topAncestor, 0, 0, [topAncestor]);
 
       const titleEl = this.sheetEl.querySelector('#nested-tree-title');
       if (titleEl) {

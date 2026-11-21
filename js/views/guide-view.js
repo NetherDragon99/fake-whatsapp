@@ -12,25 +12,25 @@ const APP_FEATURES_SECTIONS = [
   {
     id: 'nested-trees',
     title: 'Multi-Level Nested Messages (Tree)',
-    keywords: 'nested tree parent child hierarchy branch sub-message',
+    keywords: 'nested tree parent child hierarchy branch sub-message drag drop',
     icon: Icons.treeBranch('', 20),
     bullets: [
       '<strong>Arbitrary Depth (A → B → C...):</strong> Select any message (even an already-nested one) and tap <b>Nest under...</b>, then tap its parent message.',
       '<strong>Quick Compose Child:</strong> Select a message and tap <b>Add nested message</b> to compose directly underneath it.',
-      '<strong>Visual Tree Connectors & Sheet:</strong> Adjacent nested messages display connected tree lines &amp; arrows. Tap <b>↳ Nested under</b> to jump to the parent, or tap the <b>N nested</b> badge to inspect and manage the entire multi-level tree.',
+      '<strong>Visual Tree Connectors & Sheet:</strong> Adjacent nested messages display connected tree lines &amp; arrows with continuous sibling branches and deep indentation. Tap <b>↳ Nested under</b> to jump to parent, or tap <b>N nested</b> badge to inspect, reorder with drag &amp; drop, or adjust depth levels (+/-).',
       '<strong>Independent &amp; Safe:</strong> Prevents self-nesting and cycles automatically, and never triggers an unwanted <i>Edited</i> tag.'
     ]
   },
   {
     id: 'message-lists',
     title: 'Numbered (1, 2, 3) & Bulleted (•) Message Lists',
-    keywords: 'numbered bulleted list sort order sequence continue independent compose',
+    keywords: 'numbered bulleted list sort order sequence continue independent compose shapes arrow branch',
     icon: Icons.listNumbered('', 20),
     bullets: [
       '<strong>Standalone System:</strong> Select one or multiple messages and open <b>Numbered / Bulleted list...</b> to group them with simple <code>1, 2, 3...</code> numbers or <code>•</code> bullets — completely independent of nesting.',
       '<strong>Auto-Renumbering:</strong> Deleting or removing any item automatically renumbers all remaining items cleanly with zero gaps.',
       '<strong>Continue List:</strong> Choose <b>Continue list</b> on any message to keep sending new items directly into the same list.',
-      '<strong>Freely Composable:</strong> Combine message lists with nested trees, replies, checklists, pins, link previews, and rich text without conflicts (numbered nested items always display simple numbers).'
+      '<strong>Freely Composable:</strong> Combine message lists with nested trees, replies, checklists, pins, link previews, and rich text without conflicts.'
     ]
   },
   {
@@ -48,32 +48,51 @@ const APP_FEATURES_SECTIONS = [
   {
     id: 'fullscreen-composer',
     title: 'Fullscreen WYSIWYG Composer & Link Previews',
-    keywords: 'fullscreen composer toolbar formatting link preview edit youtube offline wysiwyg',
+    keywords: 'fullscreen composer toolbar formatting link preview edit youtube offline wysiwyg fold lists',
     icon: Icons.formatText('', 20),
     bullets: [
-      '<strong>Live Formatting:</strong> Shortcuts transform visually inside the editor immediately without leaving raw symbols behind.',
-      '<strong>Smooth Fullscreen Transition:</strong> Drag upward from the composer handle or tap the format/expand button. The editor spans 100% full width while Undo/Redo/Clear appear on top and the scrollable formatting toolbar docks seamlessly between Emoji, Attach, Camera, and Send.',
-      '<strong>Hybrid Embedded Link Previews:</strong> URLs show instant offline cards (with automatic YouTube thumbnails) and enrich online when connected, with <b>Edit (✏️)</b> &amp; <b>Dismiss (×)</b> buttons before sending (shown at top in normal view and bottom in fullscreen).'
+      '<strong>Live Formatting & Selection Scope:</strong> Shortcuts transform visually inside the editor. Selecting text formats only the selection; when caret is not selecting text, formatting toggles on the entire current line.',
+      '<strong>3 List Shapes & Smart Numbering:</strong> Choose between Thick Bullet •, Arrow →, and Branch ↳ directly via typing shortcuts or toolbar popover. Sub-level numbered lists restart cleanly from 1 with guide lines.',
+      '<strong>Collapsible Details:</strong> Insert <code>[fold:Title]...[/fold]</code> blocks to create interactive collapsible accordions inside bubbles.',
+      '<strong>Smooth Fullscreen Transition:</strong> Tapping expand button or dragging handle opens fullscreen without closing on text taps; Undo/Redo/Clear stay on top while format toolbar docks seamlessly.'
     ]
   },
   {
     id: 'voice-and-tools',
-    title: 'Voice Pause/Resume, Message Info & Navigation Tools',
-    keywords: 'voice recording pause resume duration waveform message info scroll date jump reply link',
+    title: 'Voice Notes, Call Logs & Navigation Tools',
+    keywords: 'voice recording pause resume duration waveform call empty parser scroll date jump',
     icon: Icons.mic('', 20),
     bullets: [
-      '<strong>Accurate Pause/Resume Voice Notes:</strong> Pausing stops the active timer and stitches resumed segments cleanly so sent duration and playback waveform never include pause gaps.',
-      '<strong>Scrollable Message Info:</strong> Long previews stay height-capped with a <b>Show full preview</b> toggle inside a single smoothly scrollable sheet.',
-      '<strong>Nearest-Date Jump & Reply Linking:</strong> Jump to any date from chat Search or menu (automatically lands on the closest day if exact date has no messages), and link/unlink reply quotes on imported messages without forcing <i>Edited</i>.'
+      '<strong>Accurate Voice Notes:</strong> Pausing stops the active timer and stitches resumed segments cleanly so sent duration and waveform never include pause gaps.',
+      '<strong>WhatsApp Export Call Detection:</strong> Empty lines with timestamp and sender automatically resolve as Voice Calls (incoming/outgoing).',
+      '<strong>Nearest-Date Jump & Reply Linking:</strong> Jump to any date from chat Search or menu (automatically lands on the closest day if exact date has no messages).'
     ]
   }
 ];
+
+function getToolbarButtonPreview(item) {
+  if (item.id === 'bold') return '<strong>B</strong>';
+  if (item.id === 'italic') return '<em>I</em>';
+  if (item.id === 'underline') return '<u>U</u>';
+  if (item.id === 'strike') return '<del>S</del>';
+  if (item.id === 'headers') return '<span class="fmt-txt-icon">H</span>';
+  if (item.id === 'code-block') return '<span class="fmt-txt-icon">{ }</span>';
+  if (item.id === 'sup-sub') return '<span class="fmt-txt-icon">x² / x₂</span>';
+  if (item.id === 'lists-shapes') return '<span>• / → / ↳</span>';
+  if (item.id === 'lists-numbered') return '<span>1. 2. 3.</span>';
+  if (item.id === 'fold') return (Icons.collapseAll ? Icons.collapseAll('', 18) : '<span>Fold</span>');
+  if (item.iconName && Icons[item.iconName]) {
+    return Icons[item.iconName]('', 18);
+  }
+  return item.toolbarLabel || '';
+}
 
 export class GuideView {
   constructor(router) {
     this.router = router;
     this.container = null;
     this._exampleTexts = new Map();
+    this._activeTab = 'features';
   }
 
   async render(rootEl) {
@@ -89,6 +108,15 @@ export class GuideView {
           <div class="app-title">Features &amp; Shortcuts Guide</div>
         </header>
 
+        <div class="guide-tabs-bar" role="tablist">
+          <button type="button" class="guide-tab-btn is-active" data-tab="features" role="tab" aria-selected="true">
+            المميزات (Features)
+          </button>
+          <button type="button" class="guide-tab-btn" data-tab="shortcuts" role="tab" aria-selected="false">
+            اختصارات التنسيق (Shortcuts)
+          </button>
+        </div>
+
         <div class="guide-search-wrap">
           <div class="guide-search-pill">
             ${Icons.search('guide-search-icon', 18)}
@@ -96,23 +124,27 @@ export class GuideView {
           </div>
         </div>
 
-        <div class="guide-content" id="guide-content-scroll">
-          <section class="guide-section" id="guide-shortcuts-section">
-            <div class="guide-section-header">Live Formatting &amp; Unique Shortcuts</div>
-            <p class="guide-section-desc">
-              All shortcuts apply visually as you type inside the composer without leaving raw symbols behind. Tap any shortcut chip to copy it, or test interactive spoilers &amp; checkboxes below.
-            </p>
-            <div class="guide-cards-list" id="guide-shortcuts-list"></div>
-          </section>
-
-          <section class="guide-section" id="guide-features-section">
-            <div class="guide-section-header">App Features &amp; Workflows</div>
-            <div class="guide-cards-list" id="guide-features-list"></div>
-          </section>
-
-          <div class="guide-empty-state" id="guide-empty-state" style="display: none;">
-            No matching features or shortcuts found.
+        <div class="guide-pager-container" id="guide-pager-container">
+          <div class="guide-pager-page" id="guide-page-features" data-page="features">
+            <section class="guide-section" id="guide-features-section">
+              <div class="guide-section-header">App Features &amp; Workflows</div>
+              <div class="guide-cards-list" id="guide-features-list"></div>
+            </section>
           </div>
+
+          <div class="guide-pager-page" id="guide-page-shortcuts" data-page="shortcuts">
+            <section class="guide-section" id="guide-shortcuts-section">
+              <div class="guide-section-header">Live Formatting &amp; Unique Shortcuts</div>
+              <p class="guide-section-desc">
+                All shortcuts apply visually as you type inside the composer. Tap any shortcut chip to copy it, or test interactive spoilers, checkboxes &amp; collapsible accordions below.
+              </p>
+              <div class="guide-cards-list" id="guide-shortcuts-list"></div>
+            </section>
+          </div>
+        </div>
+
+        <div class="guide-empty-state" id="guide-empty-state" style="display: none;">
+          No matching features or shortcuts found.
         </div>
       </div>
     `;
@@ -125,8 +157,6 @@ export class GuideView {
     const q = query.trim().toLowerCase();
     const shortcutsList = this.container.querySelector('#guide-shortcuts-list');
     const featuresList = this.container.querySelector('#guide-features-list');
-    const shortcutsSec = this.container.querySelector('#guide-shortcuts-section');
-    const featuresSec = this.container.querySelector('#guide-features-section');
     const emptyEl = this.container.querySelector('#guide-empty-state');
 
     const matchingShortcuts = FORMATTING_SHORTCUTS.filter((item) => {
@@ -156,7 +186,10 @@ export class GuideView {
               <span class="guide-card-category">${escapeHtml(item.category)}</span>
               <h3 class="guide-card-title" dir="auto">${escapeHtml(item.title)}</h3>
             </div>
-            <span class="guide-toolbar-pill">${escapeHtml(item.toolbarLabel)}</span>
+            <div class="guide-toolbar-item-badge" title="${escapeHtml(item.toolbarTip || item.toolbarLabel)}">
+              ${getToolbarButtonPreview(item)}
+              <span>${escapeHtml(item.toolbarLabel)}</span>
+            </div>
           </div>
           <div class="guide-shortcut-row">
             <button type="button" class="guide-shortcut-chip" data-copy-shortcut="${escapeHtml(item.shortcut)}" title="Copy shortcut">
@@ -165,7 +198,8 @@ export class GuideView {
             </button>
           </div>
           <p class="guide-card-desc">${escapeHtml(item.description)}</p>
-          <div class="guide-live-preview-bubble">
+          ${item.toolbarTip ? `<div class="guide-toolbar-tip-text">💡 ${escapeHtml(item.toolbarTip)}</div>` : ''}
+          <div class="guide-live-preview-bubble" style="margin-top: 8px;">
             <div class="msg-text-body" dir="auto">${renderRichMessageHtml(curMarkup, { interactive: true })}</div>
           </div>
         `;
@@ -202,8 +236,6 @@ export class GuideView {
       }
     }
 
-    if (shortcutsSec) shortcutsSec.style.display = matchingShortcuts.length > 0 ? '' : 'none';
-    if (featuresSec) featuresSec.style.display = matchingFeatures.length > 0 ? '' : 'none';
     if (emptyEl) {
       emptyEl.style.display = (matchingShortcuts.length === 0 && matchingFeatures.length === 0) ? 'block' : 'none';
     }
@@ -212,13 +244,20 @@ export class GuideView {
   _bindInteractivePreview(previewEl, itemId) {
     if (!previewEl) return;
     previewEl.querySelectorAll('.wa-spoiler').forEach((sp) => {
-      sp.addEventListener('click', () => {
+      sp.addEventListener('click', (e) => {
+        e.stopPropagation();
         const revealed = sp.classList.toggle('is-revealed');
         sp.dataset.revealed = revealed ? 'true' : 'false';
       });
     });
+
     previewEl.querySelectorAll('.wa-check-input').forEach((cb) => {
+      cb.addEventListener('click', (e) => {
+        e.stopPropagation();
+      });
       cb.addEventListener('change', (e) => {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
         const idx = Number(e.target.dataset.checkIdx);
         const cur = this._exampleTexts.get(itemId) || '';
         const next = toggleCheckboxInMarkup(cur, idx);
@@ -227,12 +266,66 @@ export class GuideView {
         if (textWrap) textWrap.classList.toggle('is-checked', e.target.checked);
       });
     });
+
+    previewEl.addEventListener('click', (e) => {
+      if (e.target.closest('.wa-check-input') || e.target.closest('.wa-check-box') || e.target.closest('.wa-fold-summary')) {
+        e.stopPropagation();
+      }
+    });
+  }
+
+  _switchTab(tabName) {
+    this._activeTab = tabName;
+    const tabBtns = this.container.querySelectorAll('.guide-tab-btn');
+    tabBtns.forEach((btn) => {
+      const isMatch = btn.dataset.tab === tabName;
+      btn.classList.toggle('is-active', isMatch);
+      btn.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+    });
+
+    const pager = this.container.querySelector('#guide-pager-container');
+    const targetPage = this.container.querySelector(`#guide-page-${tabName}`);
+    if (pager && targetPage) {
+      pager.scrollTo({
+        left: targetPage.offsetLeft,
+        behavior: 'smooth'
+      });
+    }
   }
 
   _bindEvents() {
-    this.container.querySelector('#btn-guide-back')?.addEventListener('click', () => {
-      this.router.goBack();
+    this.container.querySelector('#btn-guide-back')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.router.back();
     });
+
+    const tabBtns = this.container.querySelectorAll('.guide-tab-btn');
+    tabBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this._switchTab(btn.dataset.tab);
+      });
+    });
+
+    const pager = this.container.querySelector('#guide-pager-container');
+    if (pager) {
+      let scrollTimer = null;
+      pager.addEventListener('scroll', () => {
+        clearTimeout(scrollTimer);
+        scrollTimer = setTimeout(() => {
+          const width = pager.clientWidth || 1;
+          const pageIndex = Math.round(pager.scrollLeft / width);
+          const activeName = pageIndex === 1 ? 'shortcuts' : 'features';
+          if (this._activeTab !== activeName) {
+            this._activeTab = activeName;
+            this.container.querySelectorAll('.guide-tab-btn').forEach((btn) => {
+              const isMatch = btn.dataset.tab === activeName;
+              btn.classList.toggle('is-active', isMatch);
+              btn.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+            });
+          }
+        }, 60);
+      }, { passive: true });
+    }
 
     const searchInput = this.container.querySelector('#guide-search-input');
     searchInput?.addEventListener('input', () => {

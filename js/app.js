@@ -31,8 +31,8 @@ import { assetUrl } from './config/base-path.js';
 import { backgroundTasks } from './utils/background-tasks.js';
 
 // Application Version Constant
-window.APP_VERSION = '2.3.7';
-window.APP_CACHE_NAME = 'wa-clone-v2.3.7';
+window.APP_VERSION = '2.3.8';
+window.APP_CACHE_NAME = 'wa-clone-v2.3.8';
 
 // Global deferred PWA install prompt holder
 window.deferredInstallPrompt = null;
@@ -67,7 +67,9 @@ class Application {
   }
 
   _emitUpdateState() {
-    window.dispatchEvent(new CustomEvent('wa:update-state', { detail: this.getUpdateState() }));
+    const detail = this.getUpdateState();
+    window.dispatchEvent(new CustomEvent('wa:update-state', { detail }));
+    window.dispatchEvent(new CustomEvent('app-update-state-change', { detail }));
   }
 
   setupViewportSync() {

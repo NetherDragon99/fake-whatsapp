@@ -499,7 +499,7 @@ export class WhatsAppParser {
 
         const firstFlags = extractMessageFlags(content);
         const attachment = this.detectAttachment(firstFlags.cleanText);
-        const callInfo = this.detectCall(content);
+        let callInfo = this.detectCall(content);
 
         const isDeleted = content.includes('This message was deleted') ||
                           content.includes('You deleted this message') ||
@@ -508,6 +508,19 @@ export class WhatsAppParser {
                           content.includes('<الوسائط غير مدرجة>');
 
         const text = attachment.hasAttachment ? attachment.caption : firstFlags.cleanText;
+
+        // WhatsApp export call detection: empty message line after timestamp & sender indicates a voice call
+        if (!callInfo.isCall && !attachment.hasAttachment && !isDeleted && !isOmitted) {
+          const stripped = (text || '').replace(/[\u200E\u200F\u202A-\u202E\uFEFF\s]/g, '');
+          if (stripped.length === 0) {
+            callInfo = {
+              isCall: true,
+              callType: 'voice',
+              isMissed: false,
+              direction: 'incoming'
+            };
+          }
+        }
 
         currentMsg = {
           id: msgId,

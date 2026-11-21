@@ -299,7 +299,8 @@ export class ChatView {
                     <button type="button" class="format-tool-btn" data-fmt="header" title="Headers (# / ## / ###)"><span class="fmt-txt-icon">H</span></button>
                     <button type="button" class="format-tool-btn" data-fmt="spoiler" title="Spoiler (||text||)">${Icons.spoilerEye('', 17)}</button>
                     <button type="button" class="format-tool-btn" data-fmt="check" title="Interactive Checklist ([ ] )">${Icons.checklist('', 17)}</button>
-                    <button type="button" class="format-tool-btn" data-fmt="ul" title="Bulleted List (- )">${Icons.listBulleted('', 17)}</button>
+                    <button type="button" class="format-tool-btn" data-fmt="fold" title="Fold / Collapsible Block ([fold:Title]...[/fold])">${Icons.collapseAll('', 17)}</button>
+                    <button type="button" class="format-tool-btn" data-fmt="ul" title="Bulleted & Arrow List (- , -> , ↳ )">${Icons.listBulleted('', 17)}</button>
                     <button type="button" class="format-tool-btn" data-fmt="ol" title="Numbered List (1. )">${Icons.listNumbered('', 17)}</button>
                     <button type="button" class="format-tool-btn" data-fmt="indent-inc" title="Increase Indent (Tab)">${Icons.indentIncrease('', 17)}</button>
                     <button type="button" class="format-tool-btn" data-fmt="indent-dec" title="Decrease Indent (Shift+Tab)">${Icons.indentDecrease('', 17)}</button>
@@ -979,19 +980,9 @@ export class ChatView {
 
       const startY = e.clientY;
       const startPillHeight = inputPill.getBoundingClientRect().height;
-      let dragActivated = !fromFsHeader;
+      let dragActivated = false;
       let latestPillHeight = startPillHeight;
       let latestRatio = startPillHeight / getViewportHeight();
-
-      if (dragActivated) {
-        e.preventDefault();
-        isDraggingInput = true;
-        inputBar?.classList.add('is-input-dragging');
-        inputPill.classList.add('is-manual-size');
-        inputPill.style.height = `${Math.round(startPillHeight)}px`;
-        editorEl.style.height = '';
-        editorEl.style.overflowY = 'auto';
-      }
 
       const cleanupListeners = () => {
         window.removeEventListener('pointermove', onPointerMove);
@@ -1003,7 +994,7 @@ export class ChatView {
       const onPointerMove = (moveEvent) => {
         const dy = startY - moveEvent.clientY;
         if (!dragActivated) {
-          if (Math.abs(dy) < 4) return;
+          if (Math.abs(dy) < 8) return;
           dragActivated = true;
           isDraggingInput = true;
           inputBar?.classList.add('is-input-dragging');
@@ -1090,7 +1081,58 @@ export class ChatView {
       this.richComposer?.clearFormatting();
     });
 
-    // Formatting Toolbar Actions & Popovers (Highlight Colors, Headers H1-H3, Word Hyperlink)
+    // Formatting Toolbar Actions & Popovers (Highlight Colors, Headers H1-H3, Word Hyperlink, List Shapes, Fold Block)
+    const TOOL_ACTION_NAMES = {
+      bold: 'Bold (عريض)',
+      italic: 'Italic (مائل)',
+      underline: 'Underline (خط سفلي)',
+      strike: 'Strikethrough (مشطوب)',
+      highlight: 'Highlight (تظليل بلون)',
+      header: 'Headers (عناوين H1-H3)',
+      spoiler: 'Spoiler (نص مخفي)',
+      check: 'Checklist (مربعات اختيار)',
+      fold: 'Fold Block (طي وفرد)',
+      ul: 'List Shapes (أشكال القوائم)',
+      ol: 'Numbered List (قائمة مرقمة)',
+      'indent-inc': 'Indent (إزاحة للداخل)',
+      'indent-dec': 'Outdent (إزاحة للخارج)',
+      link: 'Link (رابط على كلمة)',
+      quote: 'Quote (اقتباس)',
+      code: 'Inline Code (كود)',
+      codeblock: 'Code Block (مربع كود)',
+      sup: 'Superscript (أس علوي)',
+      sub: 'Subscript (دليل سفلي)'
+    };
+
+    let actionTooltipTimer = null;
+    const showActionTooltip = (targetEl, labelText) => {
+      clearTimeout(actionTooltipTimer);
+      let tooltipEl = this.container.querySelector('#composer-action-tooltip');
+      if (!tooltipEl) {
+        tooltipEl = document.createElement('div');
+        tooltipEl.id = 'composer-action-tooltip';
+        tooltipEl.className = 'composer-action-tooltip';
+        this.container.appendChild(tooltipEl);
+      }
+      tooltipEl.textContent = labelText;
+      tooltipEl.style.display = 'block';
+
+      const rect = targetEl.getBoundingClientRect();
+      const parentRect = this.container.getBoundingClientRect();
+      const top = Math.max(10, rect.top - parentRect.top - 36);
+      const left = Math.max(12, Math.min(parentRect.width - 160, rect.left - parentRect.left + (rect.width / 2) - 60));
+      tooltipEl.style.top = `${Math.round(top)}px`;
+      tooltipEl.style.left = `${Math.round(left)}px`;
+      tooltipEl.classList.remove('is-fading');
+
+      actionTooltipTimer = setTimeout(() => {
+        tooltipEl.classList.add('is-fading');
+        setTimeout(() => {
+          tooltipEl.style.display = 'none';
+        }, 220);
+      }, 1600);
+    };
+
     if (formatToolbar) {
       formatToolbar.querySelectorAll('.format-tool-btn[data-fmt]').forEach((btn) => {
         btn.addEventListener('mousedown', (e) => e.preventDefault());
@@ -1099,6 +1141,7 @@ export class ChatView {
           e.stopPropagation();
           if (!this.richComposer) return;
           const fmt = btn.dataset.fmt;
+          showActionTooltip(btn, TOOL_ACTION_NAMES[fmt] || fmt);
 
           if (fmt === 'highlight') {
             if (this._activePopover === 'highlight') {
@@ -1113,6 +1156,7 @@ export class ChatView {
               </button>
             `).join('');
             formatPopover.innerHTML = `
+              <div class="composer-popover-title">Highlight Color (اختر لون التظليل)</div>
               <div class="composer-popover-row">
                 ${swatches}
                 <button type="button" class="hl-swatch-btn hl-clear-btn" data-hl-code="none">Remove</button>
@@ -1138,6 +1182,7 @@ export class ChatView {
             this._activePopover = 'header';
             const curBlock = this.richComposer.getActiveFormats().block;
             formatPopover.innerHTML = `
+              <div class="composer-popover-title">Headers (اختر حجم العنوان)</div>
               <div class="composer-popover-row">
                 ${['p', 'h1', 'h2', 'h3'].map((b) => `
                   <button type="button" class="header-pick-btn ${curBlock === b ? 'is-active' : ''}" data-h-block="${b}">
@@ -1159,6 +1204,48 @@ export class ChatView {
             return;
           }
 
+          if (fmt === 'ul') {
+            if (this._activePopover === 'ul') {
+              closeFormatPopover();
+              return;
+            }
+            this._activePopover = 'ul';
+            formatPopover.innerHTML = `
+              <div class="composer-popover-title">List Shapes (أشكال القوائم النقطية)</div>
+              <div class="composer-popover-row">
+                <button type="button" class="list-shape-pick-btn" data-ul-shape="bullet" title="Thick Bullet •">
+                  <span class="shape-glyph is-bullet">•</span>
+                  <span>نقطة عريضة</span>
+                </button>
+                <button type="button" class="list-shape-pick-btn" data-ul-shape="arrow" title="Arrow →">
+                  <span class="shape-glyph is-arrow">→</span>
+                  <span>سهم عادي</span>
+                </button>
+                <button type="button" class="list-shape-pick-btn" data-ul-shape="branch" title="Branch ↳">
+                  <span class="shape-glyph is-branch">↳</span>
+                  <span>سهم متفرع</span>
+                </button>
+              </div>
+            `;
+            formatPopover.style.display = 'block';
+            formatPopover.querySelectorAll('[data-ul-shape]').forEach((sBtn) => {
+              sBtn.addEventListener('mousedown', (ev) => ev.preventDefault());
+              sBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                const shape = sBtn.dataset.ulShape;
+                this.richComposer.toggleBlock('ul', { bulletType: shape });
+                closeFormatPopover();
+              });
+            });
+            return;
+          }
+
+          if (fmt === 'fold') {
+            closeFormatPopover();
+            this.richComposer.insertFoldBlock();
+            return;
+          }
+
           closeFormatPopover();
 
           if (fmt === 'link') {
@@ -1167,7 +1254,7 @@ export class ChatView {
             this.richComposer.indent(1);
           } else if (fmt === 'indent-dec') {
             this.richComposer.indent(-1);
-          } else if (['ul', 'ol', 'check', 'quote', 'codeblock'].includes(fmt)) {
+          } else if (['ol', 'check', 'quote', 'codeblock'].includes(fmt)) {
             this.richComposer.toggleBlock(fmt);
           } else {
             this.richComposer.toggleInline(fmt);
@@ -2391,6 +2478,15 @@ export class ChatView {
 
     const payload = this._buildNestedParentPayload(targetParentMsg);
     const affectedIds = new Set([String(targetParentMsg.id)]);
+
+    // Collect all existing siblings and children so tree connectors redraw together cleanly
+    if (this.scroller) {
+      const existingChildren = this.scroller.nestedChildrenByParentId.get(String(targetParentMsg.id)) || [];
+      for (const s of existingChildren) {
+        affectedIds.add(String(s.id || s));
+      }
+    }
+
     for (const m of sources) {
       if (m.nestedParent?.id) affectedIds.add(String(m.nestedParent.id));
       affectedIds.add(String(m.id));
@@ -2401,6 +2497,10 @@ export class ChatView {
     for (const m of sources) {
       await db.updateMessage(m.id, { nestedParent: payload });
       m.nestedParent = { ...payload };
+      const inScroller = this.scroller?.allMessages?.find((x) => String(x.id) === String(m.id));
+      if (inScroller) inScroller.nestedParent = { ...payload };
+      const inChat = this.messages?.find((x) => String(x.id) === String(m.id));
+      if (inChat) inChat.nestedParent = { ...payload };
     }
 
     await this.scroller?.refreshMessagesById(Array.from(affectedIds));
@@ -2481,6 +2581,22 @@ export class ChatView {
       },
       onUnlinkNested: async (childMsg) => {
         await this.unnestMessages([childMsg]);
+      },
+      onReparentNested: async (childMsg, newParentMsg) => {
+        if (!childMsg || !newParentMsg) return;
+        if (String(childMsg.id) === String(newParentMsg.id)) return;
+        if (this.scroller?.wouldCreateNestedCycle([childMsg.id], newParentMsg.id)) {
+          Toast.show('Cannot nest under descendant');
+          return;
+        }
+        const payload = this._buildNestedParentPayload(newParentMsg);
+        await db.updateMessage(childMsg.id, { nestedParent: payload });
+        childMsg.nestedParent = { ...payload };
+        const inScroller = this.scroller?.allMessages?.find((x) => String(x.id) === String(childMsg.id));
+        if (inScroller) inScroller.nestedParent = { ...payload };
+        const inChat = this.messages?.find((x) => String(x.id) === String(childMsg.id));
+        if (inChat) inChat.nestedParent = { ...payload };
+        await this.scroller?.refreshMessagesById([String(childMsg.id), String(newParentMsg.id)]);
       }
     });
   }

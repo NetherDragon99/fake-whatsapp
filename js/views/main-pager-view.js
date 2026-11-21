@@ -124,6 +124,7 @@ export class MainPagerView {
     syncDotState(window.app?.getUpdateState?.());
     this._onUpdateStateHandler = (e) => syncDotState(e.detail);
     window.addEventListener('wa:update-state', this._onUpdateStateHandler);
+    window.addEventListener('app-update-state-change', this._onUpdateStateHandler);
 
     // Bottom Navigation tab clicks
     this.bottomNav.querySelectorAll('.nav-tab').forEach((tab) => {
@@ -306,6 +307,11 @@ export class MainPagerView {
 
     if (this.homeView && typeof this.homeView.cleanup === 'function') {
       this.homeView.cleanup();
+    }
+    if (this._onUpdateStateHandler) {
+      window.removeEventListener('wa:update-state', this._onUpdateStateHandler);
+      window.removeEventListener('app-update-state-change', this._onUpdateStateHandler);
+      this._onUpdateStateHandler = null;
     }
     if (this.callsView && typeof this.callsView.cleanup === 'function') {
       this.callsView.cleanup();

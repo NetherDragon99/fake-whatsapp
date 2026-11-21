@@ -226,9 +226,16 @@ export class RichComposer {
       div.appendChild(body);
     } else if (type === 'ul' || type === 'ol') {
       const marker = document.createElement('span');
-      marker.className = type === 'ol' ? 'rc-ol-marker' : 'rc-ul-marker';
       marker.setAttribute('contenteditable', 'false');
-      marker.textContent = type === 'ol' ? '1.' : '•';
+      if (type === 'ol') {
+        marker.className = 'rc-ol-marker';
+        marker.textContent = '1.';
+      } else {
+        const shape = options.bulletType || 'bullet';
+        div.dataset.bulletType = shape;
+        marker.className = `rc-ul-marker is-${shape}`;
+        marker.textContent = shape === 'arrow' ? '→' : (shape === 'branch' ? '↳' : '•');
+      }
       const body = document.createElement('span');
       body.className = 'rc-item-body';
       body.appendChild(document.createElement('br'));
@@ -317,7 +324,9 @@ export class RichComposer {
         olCounters.clear();
         outLines.push(`> ${inlineStr}`);
       } else if (blockType === 'ul') {
-        outLines.push(`${pad}- ${inlineStr}`);
+        const shape = node.dataset?.bulletType || 'bullet';
+        const prefix = shape === 'arrow' ? '-> ' : (shape === 'branch' ? '↳ ' : '- ');
+        outLines.push(`${pad}${prefix}${inlineStr}`);
       } else if (blockType === 'ol') {
         for (const k of Array.from(olCounters.keys())) {
           if (k > indent) olCounters.delete(k);
@@ -442,11 +451,12 @@ export class RichComposer {
           continue;
         }
 
-        const ulMatch = line.match(/^(\s*)(?:-|\*)\s+(.*)$/);
+        const ulMatch = line.match(/^(\s*)(?:(->|=>|→)|(\\>|\|->|↳)|(?:-|\*))\s+(.*)$/);
         if (ulMatch) {
           const indent = Math.min(3, Math.floor(ulMatch[1].replace(/\t/g, '  ').length / 2));
-          const blk = this._makeBlockEl('ul', { indent });
-          this._populateInlineNodes(this._getBlockBodyEl(blk), ulMatch[2]);
+          const shape = ulMatch[2] ? 'arrow' : (ulMatch[3] ? 'branch' : 'bullet');
+          const blk = this._makeBlockEl('ul', { indent, bulletType: shape });
+          this._populateInlineNodes(this._getBlockBodyEl(blk), ulMatch[4]);
           this.el.appendChild(blk);
           continue;
         }
@@ -655,7 +665,7 @@ export class RichComposer {
       const blockMatch =
         prefix.match(/^(#{1,3})[ \u00A0]$/) ||
         prefix.match(/^(\[[ \u00A0]?\]|\[[xX]\])[ \u00A0]$/) ||
-        prefix.match(/^([-*])[ \u00A0]$/) ||
+        prefix.match(/^([-*]|->|=>|→|↳|\\>|\|->)[ \u00A0]$/) ||
         prefix.match(/^(\d+\.)[ \u00A0]$/) ||
         prefix.match(/^(>)[ \u00A0]$/) ||
         prefix.match(/^(```)$/);
@@ -671,8 +681,16 @@ export class RichComposer {
         else if (trigger === '##') newBlockType = 'h2';
         else if (trigger === '###') newBlockType = 'h3';
         else if (trigger === '>') newBlockType = 'quote';
-        else if (trigger === '-' || trigger === '*') newBlockType = 'ul';
-        else if (/^\d+\.$/.test(trigger)) newBlockType = 'ol';
+        else if (trigger === '-' || trigger === '*') {
+          newBlockType = 'ul';
+          opts.bulletType = 'bullet';
+        } else if (trigger === '->' || trigger === '=>' || trigger === '→') {
+          newBlockType = 'ul';
+          opts.bulletType = 'arrow';
+        } else if (trigger === '↳' || trigger === '\\>' || trigger === '|->') {
+          newBlockType = 'ul';
+          opts.bulletType = 'branch';
+        } else if (/^\d+\.$/.test(trigger)) newBlockType = 'ol';
         else if (/^\[[ \u00A0xX]?\]$/.test(trigger)) {
           newBlockType = 'check';
           opts.checked = trigger.toLowerCase() === '[x]';
@@ -1132,15 +1150,6 @@ export class RichComposer {
         } else {
           this._unwrapElement(existingTag);
         }
-      } else if (range.collapsed) {
-        // Exit tag cleanly at a trailing node when collapsed
-        const exit = document.createTextNode('\u200B');
-        existingTag.after(exit);
-        const r = document.createRange();
-        r.setStart(exit, 1);
-        r.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(r);
       } else {
         this._unwrapElement(existingTag);
       }
@@ -1152,20 +1161,37 @@ export class RichComposer {
 
     if (type === 'highlight' && param === 'none') return;
 
-    // 2. Wrap selected text (or insert styled placeholder to type into)
+    // 2. Wrap selected text (or entire line/block if collapsed)
     const wrapper = this._createInlineTag(type, param);
     if (!wrapper) return;
 
     if (range.collapsed) {
-      const innerText = document.createTextNode('text');
-      wrapper.appendChild(innerText);
-      range.insertNode(wrapper);
-      const trail = document.createTextNode('\u200B');
-      wrapper.after(trail);
-      const r = document.createRange();
-      r.selectNodeContents(wrapper);
-      sel.removeAllRanges();
-      sel.addRange(r);
+      const blockEl = this._getBlockElement(range.startContainer);
+      const bodyEl = this._getBlockBodyEl(blockEl);
+      const textLen = (bodyEl?.textContent || '').replace(/\u200B/g, '').trim().length;
+      if (bodyEl && textLen > 0) {
+        range.selectNodeContents(bodyEl);
+        if (bodyEl.lastChild && bodyEl.lastChild.nodeName === 'BR') {
+          range.setEndBefore(bodyEl.lastChild);
+        }
+        const contents = range.extractContents();
+        wrapper.appendChild(contents);
+        range.insertNode(wrapper);
+        const r = document.createRange();
+        r.selectNodeContents(wrapper);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      } else {
+        const innerText = document.createTextNode('text');
+        wrapper.appendChild(innerText);
+        range.insertNode(wrapper);
+        const trail = document.createTextNode('\u200B');
+        wrapper.after(trail);
+        const r = document.createRange();
+        r.selectNodeContents(wrapper);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
     } else {
       const contents = range.extractContents();
       wrapper.appendChild(contents);
@@ -1190,7 +1216,7 @@ export class RichComposer {
     parent.removeChild(el);
   }
 
-  toggleBlock(blockType) {
+  toggleBlock(blockType, options = {}) {
     this.restoreSelection();
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
@@ -1198,13 +1224,26 @@ export class RichComposer {
     if (!blockEl) return;
 
     const currentType = blockEl.dataset?.block || 'p';
-    const nextType = currentType === blockType ? 'p' : blockType;
+    const currentShape = blockEl.dataset?.bulletType || 'bullet';
+    let nextType = currentType;
+    let bulletType = options.bulletType || 'bullet';
+
+    if (blockType === 'ul') {
+      if (currentType === 'ul' && (!options.bulletType || currentShape === options.bulletType)) {
+        nextType = 'p';
+      } else {
+        nextType = 'ul';
+      }
+    } else {
+      nextType = currentType === blockType ? 'p' : blockType;
+    }
+
     const indent = (nextType === 'ul' || nextType === 'ol' || nextType === 'check')
       ? Number(blockEl.dataset?.indent || 0)
       : 0;
 
     const oldBody = this._getBlockBodyEl(blockEl);
-    const replacement = this._makeBlockEl(nextType, { indent, checked: false });
+    const replacement = this._makeBlockEl(nextType, { indent, checked: false, bulletType });
     const newBody = this._getBlockBodyEl(replacement);
     newBody.innerHTML = '';
 
@@ -1290,6 +1329,42 @@ export class RichComposer {
     this.onChange(this.getValue());
     this.onSelectionChange(this.getActiveFormats());
     return true;
+  }
+
+  insertFoldBlock(title = '') {
+    this.restoreSelection();
+    const sel = window.getSelection();
+    const foldTitle = (title || '').trim() || 'اضغط لعرض التفاصيل';
+    const foldText = `[fold:${foldTitle}]\nمحتوى التفاصيل هنا\n[/fold]`;
+
+    const val = this.getValue();
+    if (!val.trim()) {
+      this.setValue(foldText);
+      return;
+    }
+
+    if (sel && sel.rangeCount) {
+      const blockEl = this._getBlockElement(sel.getRangeAt(0).startContainer);
+      if (blockEl) {
+        const p1 = this._makeBlockEl('p');
+        this._populateInlineNodes(p1, `[fold:${foldTitle}]`);
+        const p2 = this._makeBlockEl('p');
+        this._populateInlineNodes(p2, 'محتوى التفاصيل هنا');
+        const p3 = this._makeBlockEl('p');
+        this._populateInlineNodes(p3, '[/fold]');
+
+        blockEl.after(p3);
+        blockEl.after(p2);
+        blockEl.after(p1);
+        this._placeCaretAtEnd(p2);
+        this._pushHistory();
+        this.onChange(this.getValue());
+        this.onSelectionChange(this.getActiveFormats());
+        return;
+      }
+    }
+
+    this.setValue(`${val}\n\n${foldText}`);
   }
 
   clearFormatting() {

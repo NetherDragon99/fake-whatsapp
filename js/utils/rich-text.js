@@ -24,6 +24,8 @@ export const FORMATTING_SHORTCUTS = [
     title: 'Bold (عريض)',
     shortcut: '*text*',
     toolbarLabel: 'B',
+    iconName: 'bold',
+    toolbarTip: 'Toolbar: Tap B button or wrap text with *asterisks*',
     description: 'Wrap text with single asterisks (non-space edges) to apply live bold formatting.',
     exampleMarkup: 'This is *bold text* inside a message'
   },
@@ -33,6 +35,8 @@ export const FORMATTING_SHORTCUTS = [
     title: 'Italic (مائل)',
     shortcut: '_text_',
     toolbarLabel: 'I',
+    iconName: 'italic',
+    toolbarTip: 'Toolbar: Tap I button or wrap text with _underscores_',
     description: 'Wrap text with underscores (non-space edges) for italic styling.',
     exampleMarkup: 'This is _italic text_ for emphasis'
   },
@@ -42,6 +46,8 @@ export const FORMATTING_SHORTCUTS = [
     title: 'Underline (خط سفلي)',
     shortcut: '++text++',
     toolbarLabel: 'U',
+    iconName: 'underline',
+    toolbarTip: 'Toolbar: Tap U button or wrap text with ++double plus++',
     description: 'Double plus marks apply underline without colliding with normal punctuation.',
     exampleMarkup: 'Please ++confirm this step++ before sending'
   },
@@ -51,6 +57,8 @@ export const FORMATTING_SHORTCUTS = [
     title: 'Strikethrough (مشطوب)',
     shortcut: '~text~',
     toolbarLabel: 'S',
+    iconName: 'strike',
+    toolbarTip: 'Toolbar: Tap S button or wrap text with ~tildes~',
     description: 'Wrap text with single tildes to strike it through.',
     exampleMarkup: 'Price is ~150~ 120 EGP'
   },
@@ -60,6 +68,8 @@ export const FORMATTING_SHORTCUTS = [
     title: 'Highlight (تظليل بلون)',
     shortcut: '==text== or ==g:text==',
     toolbarLabel: 'Highlight (6 colors)',
+    iconName: 'highlight',
+    toolbarTip: 'Toolbar: Tap Highlight button to pick from 6 colors, or use ==code:text==',
     description: 'Use ==text== for Yellow, or prefix y:, g:, b:, p:, o:, v: for Yellow, Green, Blue, Pink, Orange, Violet.',
     exampleMarkup: '==Important== · ==g:Approved== · ==b:Info== · ==p:Note== · ==o:Warn== · ==v:Idea=='
   },
@@ -69,6 +79,8 @@ export const FORMATTING_SHORTCUTS = [
     title: 'Spoiler (نص مخفي)',
     shortcut: '||text||',
     toolbarLabel: 'Spoiler',
+    iconName: 'spoilerEye',
+    toolbarTip: 'Toolbar: Tap Spoiler eye button or wrap text with ||double pipes||',
     description: 'Blur sensitive text until tapped (tap preview below to test revealing).',
     exampleMarkup: 'Plot twist: ||Tap here to reveal secret||'
   },
@@ -78,6 +90,8 @@ export const FORMATTING_SHORTCUTS = [
     title: 'Superscript & Subscript',
     shortcut: '^^text^^  /  ,,text,,',
     toolbarLabel: 'x² / x₂',
+    iconName: 'formatText',
+    toolbarTip: 'Toolbar: Tap x² or x₂ button or use ^^superscript^^ and ,,subscript,,',
     description: 'Unique double carets or double commas raise or lower text cleanly.',
     exampleMarkup: 'E = mc^^2^^ and water is H,,2,,O'
   },
@@ -87,6 +101,8 @@ export const FORMATTING_SHORTCUTS = [
     title: 'Inline Code (كود)',
     shortcut: '`code`',
     toolbarLabel: 'Code',
+    iconName: 'codeBlock',
+    toolbarTip: 'Toolbar: Tap Code button or wrap code in `backticks`',
     description: 'Wrap monospace code snippets in backticks.',
     exampleMarkup: 'Run `npm run build` locally'
   },
@@ -96,8 +112,10 @@ export const FORMATTING_SHORTCUTS = [
     title: 'Code Block (مربع كود)',
     shortcut: '``` + Enter',
     toolbarLabel: 'Code Block',
+    iconName: 'codeBlock',
+    toolbarTip: 'Toolbar: Tap { } code block button or type ``` and press Enter',
     description: 'Start a line with triple backticks for multi-line code blocks.',
-    exampleMarkup: '```\nconst version = "2.3.7";\n```'
+    exampleMarkup: '```\nconst version = "2.3.8";\n```'
   },
   {
     id: 'headers',
@@ -105,6 +123,8 @@ export const FORMATTING_SHORTCUTS = [
     title: 'Headers H1 / H2 / H3 (عناوين)',
     shortcut: '#  /  ##  /  ###  + Space',
     toolbarLabel: 'H1 / H2 / H3',
+    iconName: 'formatText',
+    toolbarTip: 'Toolbar: Tap H button to choose H1, H2, or H3, or type #, ##, ### + Space',
     description: 'Type 1 to 3 hashes followed by Space at the start of a line.',
     exampleMarkup: '# Main Title\n## Section Header\n### Subheading'
   },
@@ -114,17 +134,43 @@ export const FORMATTING_SHORTCUTS = [
     title: 'Interactive Checkboxes (مربعات اختيار)',
     shortcut: '[ ]  /  [x]  + Space',
     toolbarLabel: 'Checklist',
+    iconName: 'checklist',
+    toolbarTip: 'Toolbar: Tap Checklist button or type [ ] + Space (Tab to indent)',
     description: 'Create tappable checklists inside bubbles; tapping saves state without marking Edited.',
     exampleMarkup: '[x] Update engine\n[ ] Review final output\n  [ ] Nested sub-task (Tab)'
   },
   {
-    id: 'lists',
+    id: 'lists-shapes',
     category: 'Structure & Lists',
-    title: 'Nested Lists (قوائم مرقمة ونقطية)',
-    shortcut: '-  or  1.  + Space (Tab to nest)',
-    toolbarLabel: 'Bullet / Numbered',
-    description: 'Start a line with "- " or "1. " and press Tab to indent nested sub-items.',
-    exampleMarkup: '1. First step\n  - Sub-detail one\n  - Sub-detail two\n2. Second step'
+    title: 'Unsorted Lists: 3 Shapes (نقطية وأسهم)',
+    shortcut: '- (•)  /  -> (→)  /  ↳ (↳) + Space',
+    toolbarLabel: '• / → / ↳',
+    iconName: 'listBulleted',
+    toolbarTip: 'Toolbar: Tap bullet button to pick shape (Thick Bullet •, Arrow →, Branch ↳)',
+    description: 'Use - for thick bullet •, -> for arrow →, or ↳ / \\> for branch arrow ↳ (Tab to indent).',
+    exampleMarkup: '- Thick bullet item\n  -> Nested arrow sub-item\n  ↳ Branch sub-point'
+  },
+  {
+    id: 'lists-numbered',
+    category: 'Structure & Lists',
+    title: 'Multi-Tier Numbered Lists (قوائم مرقمة ذكية)',
+    shortcut: '1. + Space (Tab to nest)',
+    toolbarLabel: '1. 2. 3.',
+    iconName: 'listNumbered',
+    toolbarTip: 'Toolbar: Tap 1. 2. 3. button or type 1. + Space (Tab to indent nested level)',
+    description: 'Nested sorted lists restart numbering cleanly for each branch with connecting guide lines.',
+    exampleMarkup: '1. First primary step\n  1. Sub-step one\n  2. Sub-step two\n2. Second primary step'
+  },
+  {
+    id: 'fold',
+    category: 'Structure & Lists',
+    title: 'Collapsible Block (صندوق قابل للطي والفرد)',
+    shortcut: '[fold:Title] Content [/fold]',
+    toolbarLabel: 'Fold / Details',
+    iconName: 'collapseAll',
+    toolbarTip: 'Toolbar: Tap Fold button or type [fold:Title]...[/fold]',
+    description: 'Creates a tappable accordion box with title header that can be expanded and collapsed inside the message.',
+    exampleMarkup: '[fold:اضغط لعرض التفاصيل المخفية]\nهذا النص قابل للطي والفرد ويحتوي على:\n- بنود مفصلة\n- روابط ومعلومات إضافية\n[/fold]'
   },
   {
     id: 'blockquote',
@@ -132,6 +178,8 @@ export const FORMATTING_SHORTCUTS = [
     title: 'Blockquote (اقتباس)',
     shortcut: '>  + Space',
     toolbarLabel: 'Quote',
+    iconName: 'quote',
+    toolbarTip: 'Toolbar: Tap Quote button or type > + Space at start of line',
     description: 'Start a line with ">" followed by Space to quote a note inside the bubble.',
     exampleMarkup: '> Quoted statement inside this message'
   },
@@ -141,6 +189,8 @@ export const FORMATTING_SHORTCUTS = [
     title: 'Word Hyperlink (رابط على كلمة)',
     shortcut: '[word](https://...)',
     toolbarLabel: 'Link',
+    iconName: 'linkIcon',
+    toolbarTip: 'Toolbar: Select word and tap Link button, or type [word](url)',
     description: 'Attach a clickable link directly onto any word or phrase.',
     exampleMarkup: 'Open [Documentation Portal](https://example.com) anytime'
   }
@@ -289,6 +339,58 @@ export function renderRichMessageHtml(text, options = {}) {
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i];
 
+    // 0. Collapsible block: [fold:Title] ... [/fold]
+    const foldMatch = rawLine.match(/^(\s*)\[fold:([^\]\n]+)\](.*)$/);
+    if (foldMatch) {
+      const title = foldMatch[2].trim();
+      const firstLineContent = foldMatch[3].trim();
+      const foldLines = [];
+      if (firstLineContent) {
+        if (firstLineContent.includes('[/fold]')) {
+          const innerOneLine = firstLineContent.replace('[/fold]', '').trim();
+          const innerHtml = renderRichMessageHtml(innerOneLine, options);
+          segments.push({
+            type: 'block',
+            html:
+              `<details class="wa-fold-block">` +
+                `<summary class="wa-fold-summary">` +
+                  `<span class="wa-fold-arrow" aria-hidden="true">▶</span>` +
+                  `<span class="wa-fold-title" dir="auto">${escapeHtml(title)}</span>` +
+                `</summary>` +
+                `<div class="wa-fold-content" dir="auto">${innerHtml}</div>` +
+              `</details>`
+          });
+          continue;
+        }
+        foldLines.push(firstLineContent);
+      }
+      let j = i + 1;
+      while (j < lines.length && !lines[j].includes('[/fold]')) {
+        foldLines.push(lines[j]);
+        j++;
+      }
+      if (j < lines.length) {
+        const lastLineContent = lines[j].replace('[/fold]', '').trim();
+        if (lastLineContent) foldLines.push(lastLineContent);
+        i = j;
+      } else {
+        i = lines.length - 1;
+      }
+      const innerHtml = renderRichMessageHtml(foldLines.join('\n'), options);
+      segments.push({
+        type: 'block',
+        html:
+          `<details class="wa-fold-block">` +
+            `<summary class="wa-fold-summary">` +
+              `<span class="wa-fold-arrow" aria-hidden="true">▶</span>` +
+              `<span class="wa-fold-title" dir="auto">${escapeHtml(title)}</span>` +
+            `</summary>` +
+            `<div class="wa-fold-content" dir="auto">${innerHtml}</div>` +
+          `</details>`
+      });
+      continue;
+    }
+
     // 1. Fenced code block ```
     if (/^\s*```/.test(rawLine)) {
       const codeLines = [];
@@ -353,16 +455,18 @@ export function renderRichMessageHtml(text, options = {}) {
       continue;
     }
 
-    // 5. Bulleted list: - item or * item (requiring trailing text after space)
-    const ulMatch = rawLine.match(/^(\s*)(?:-|\*)\s+(.*)$/);
+    // 5. Bulleted list: 3 shapes (- / * for bullet •, -> / => / → for arrow →, \> / |-> / ↳ for branch ↳)
+    const ulMatch = rawLine.match(/^(\s*)(?:(->|=>|→)|(\\>|\|->|↳)|(?:-|\*))\s+(.*)$/);
     if (ulMatch) {
       const indent = Math.min(3, Math.floor(ulMatch[1].replace(/\t/g, '  ').length / 2));
-      const innerHtml = renderInlineFormatting(escapeHtml(ulMatch[2]));
+      const shape = ulMatch[2] ? 'arrow' : (ulMatch[3] ? 'branch' : 'bullet');
+      const glyph = shape === 'arrow' ? '→' : (shape === 'branch' ? '↳' : '•');
+      const innerHtml = renderInlineFormatting(escapeHtml(ulMatch[4]));
       segments.push({
         type: 'block',
         html:
-          `<div class="wa-list-row wa-list-ul" data-indent="${indent}">` +
-            `<span class="wa-list-marker" aria-hidden="true">•</span>` +
+          `<div class="wa-list-row wa-list-ul wa-list-shape-${shape}" data-indent="${indent}">` +
+            `<span class="wa-list-marker is-${shape}" aria-hidden="true">${glyph}</span>` +
             `<span class="wa-list-content">${innerHtml}</span>` +
           `</div>`
       });
@@ -406,6 +510,8 @@ export function stripRichMarkup(text) {
     .replace(/\r\n?/g, '\n')
     .replace(/```[^\n]*\n?([\s\S]*?)```/g, '$1')
     .replace(/`([^`\n]+?)`/g, '$1')
+    .replace(/\[fold:([^\]\n]+)\]\n?/g, '$1: ')
+    .replace(/\[\/fold\]/g, '')
     .replace(/\[([^\]\n]+?)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g, '$1')
     .replace(/==(?:[ygbpov]:)?([^\s=\n](?:[^=\n]*?[^\s=\n])?)==/g, '$1')
     .replace(/\+\+([^\s+\n](?:[^+\n]*?[^\s+\n])?)\+\+/g, '$1')
@@ -417,6 +523,7 @@ export function stripRichMarkup(text) {
     .replace(/(^|[\s(\[{.,!?:;>])~([^\s~\n](?:[^~\n]*?[^\s~\n])?)~(?=$|[\s)\]}.,!?:;<])/g, '$1$2')
     .replace(/^(\s*)\[[xX]\]\s+/gm, '$1☑ ')
     .replace(/^(\s*)\[\s?\]\s+/gm, '$1☐ ')
+    .replace(/^(\s*)(?:->|=>|→|\\>|\|->|↳)\s+/gm, '$1→ ')
     .replace(/^#{1,3}\s+/gm, '')
     .replace(/^\s*>\s?/gm, '')
     .trim();

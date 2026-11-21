@@ -1425,7 +1425,7 @@ export class VirtualMessageScroller {
     const idStr = String(msg.id);
 
     // Clear prior dynamic structural elements when updating in place
-    row.classList.remove('is-nested-msg', 'has-tree-connector');
+    row.classList.remove('is-nested-msg', 'has-tree-connector', 'has-following-sibling', 'is-sibling-connector');
     delete row.dataset.nestDepth;
     row.style.removeProperty('--nest-visual-depth');
     bubble.querySelector('.msg-list-badge')?.remove();
@@ -1449,16 +1449,30 @@ export class VirtualMessageScroller {
     if (depth > 0 && msg.nestedParent && msg.nestedParent.id) {
       const myIdx = this._indexByMsgId.get(idStr);
       const prevMsg = (myIdx !== undefined && myIdx > 0) ? this.allMessages[myIdx - 1] : null;
-      const isDirectAfterParent = prevMsg && String(prevMsg.id) === String(msg.nestedParent.id);
-      const isSiblingOrBranchAfter = prevMsg && this._getTreeRootId(prevMsg.id) === this._getTreeRootId(idStr);
+      const nextMsg = (myIdx !== undefined && myIdx < this.allMessages.length - 1) ? this.allMessages[myIdx + 1] : null;
+
+      const pidStr = String(msg.nestedParent.id);
+      const prevPidStr = prevMsg?.nestedParent?.id ? String(prevMsg.nestedParent.id) : null;
+      const nextPidStr = nextMsg?.nestedParent?.id ? String(nextMsg.nestedParent.id) : null;
+
+      const isDirectAfterParent = prevMsg && String(prevMsg.id) === pidStr;
+      const isSiblingAfterSibling = prevMsg && prevPidStr === pidStr;
+      const isSiblingOrBranchAfter = prevMsg && (this._getTreeRootId(prevMsg.id) === this._getTreeRootId(idStr) || isSiblingAfterSibling);
 
       row.classList.add('is-nested-msg');
       row.dataset.nestDepth = String(depth);
 
       const visualDepth = (isDirectAfterParent || isSiblingOrBranchAfter) ? Math.min(4, depth) : 1;
       row.style.setProperty('--nest-visual-depth', String(visualDepth));
+
+      const hasFollowingSibling = nextMsg && (nextPidStr === pidStr || this._getTreeRootId(nextMsg.id) === this._getTreeRootId(idStr));
+      row.classList.toggle('has-following-sibling', Boolean(hasFollowingSibling));
+
       if (isDirectAfterParent || isSiblingOrBranchAfter) {
         row.classList.add('has-tree-connector');
+        if (isSiblingAfterSibling) {
+          row.classList.add('is-sibling-connector');
+        }
       }
 
       const refHeader = document.createElement('div');
